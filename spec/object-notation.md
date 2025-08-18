@@ -28,14 +28,25 @@ comment =
 ```
 **identifiers** are case sensitive names of types, fields...
 
-**typeid** are identifiers used to reference types, it is the type name, with optional namespace at start.
-
 **whitespace** are ignored, they are space, tab, new line and carriage return.
 
 **comments** are ignored, they are written with `//` upto the end of the line or `/* ... */`.
 ```c
 // comment
 /* also comment */
+```
+
+## types identifiers
+```
+typeid = metadata* [indentifier "."] identifier
+```
+type identifiers are reference to types.
+
+optionally types identifiers can have a namespace, and can be decorated with metadata.
+
+```rust
+namespace.MyStruct
+@pattern("email") str
 ```
 
 ## number literals

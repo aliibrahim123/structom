@@ -3,15 +3,17 @@ structom can be encoded in binary format for efficient data serialization.
 
 binary files contains only one root value, they dont support declarations except the import declaration.
 
+binary files are encoded in little endian.
+
 ## base encoding
 ```
-+------------+--------+--------+
-| decl_count | decls  | value  |
-+------------+--------+--------+
-|    u8      |   N    |   N    |
-+------------+--------+--------+
++------------+--------+-----------+--------+
+| decl_count | decls  | root_type | value  |
++------------+--------+-----------+--------+
+|    u8      |   N    |  typeid   |   N    |
++------------+--------+-----------+--------+
 ```
-the data starts with the number of declarations, followed by the declarations, and finally the root value.
+the data starts with the number of declarations, followed by the declarations (if there), and finally the root typeid then its value.
 
 ## fixed size numbers
 numbers are encoded in little endian, they can be unsigned or signed encoded in twos complement.
@@ -68,4 +70,4 @@ typeids are identifiers used to identify types.
 
 typeids for builtin types are encoded in 7 bit id.
 
-typeids for user defined types are encoded in 7 bit idspace defined by the import declaration, and a u7 or u15 id to the type in the declaration file.
+typeids for user defined types are encoded in 7 bit idspace defined by the import declaration, and a u7 or u15 id to the type as defined in the declaration file.
