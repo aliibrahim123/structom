@@ -52,7 +52,7 @@ namespace.MyStruct
 ## number literals
 ```
 dec_digit = "0" ... "9"
-dec_part = ("1" ... "9") (dec_digit | "_" dec_digit)*
+dec_part = dec_digit (dec_digit | "_" dec_digit)*
 bin_digit = "0" | "1"
 bin_part = bin_digit (bin_digit | "_" bin_digit)*
 hex_digit = "0" ... "9" | "a" ... "f" | "A" ... "F"

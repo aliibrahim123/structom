@@ -15,6 +15,8 @@ binary files are encoded in little endian.
 ```
 the data starts with the number of declarations, followed by the declarations (if there), and finally the root typeid then its value.
 
+type value is separated from its id, as the typeid can be infered from declarations.
+
 ## fixed size numbers
 numbers are encoded in little endian, they can be unsigned or signed encoded in twos complement.
 

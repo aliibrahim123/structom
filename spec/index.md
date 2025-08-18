@@ -6,7 +6,7 @@ structom has 3 different forms for data representation:
 - **binary objects**: effecient direct form for shemaless data.
 - **serialized structs**: flattern form for performant data serialization.
 
-structom provide the expected general data types, in addition, it provide additional rich data structures (tagged unions, tupples) and commonly used data types (date, time, color...).
+structom provide the expected general data types, in addition, it provide additional rich data structures (tagged unions).
 
 structom supports both schema and schemaless data, and provide support for user defined erased metadata, enhancing the generic data types with specified bases (hexadecimal, utf-16...) and patterns (url, email, uuid...).
 
