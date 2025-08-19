@@ -73,5 +73,3 @@ struct MyStruct {
 	b: @base("hex") u32
 }
 ```
-
-for more information read [standared metadata](./standared-metadata.md)

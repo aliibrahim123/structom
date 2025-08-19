@@ -25,4 +25,4 @@ structom is designed to be very versatile and expressive, while remaining effici
 7. [**rich types**](./rich-types.md)
 
 ### other
-8. [**standared metadata**](./standared-metadata.md)
+8. [**tables**](./tables.md)

@@ -4,7 +4,6 @@
 	int: 3,
 	float: 3.14,
 	bool: true,
-	null: null
 	str: "a"
 }
 ```
@@ -202,15 +201,15 @@ for more information, read about [string literals](./object-notation.md#string-l
 +--------+
 
 base value              value in fields    
-+--------+--------+     +-------+     
-|  len   | chars  |     | chars |
-+--------+--------+     +-------+
-| varint | x len  |     | x len |
-+--------+--------+     +-------+
++---------+--------+     +-------+     
+|   len   | chars  |     | chars |
++---------+--------+     +-------+
+| varuint |  len   |     |  len  |
++---------+--------+     +-------+
 ```
 strings are encoded in UTF-8, they consists of a varuint specifing the length in bytes of the string, followed by the content of the string.
 
-in case a string is encoded in a field value, the length section is omitted, and it is inferred from the `len` section in the field encoding.
+in case a string is encoded in a field value, the length section is omitted, and the length is inferred from the `len` section in the field encoding.
 
 ## any
 ```rust
