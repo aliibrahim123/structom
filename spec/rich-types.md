@@ -2,6 +2,7 @@
 ```javascript
 {
 	date: inst "1234-05-06T07:08:09.123Z";
+	uuid: uuid "123e4567-e89b-12d3-a456-426655440000";
 }
 ```
 rich types are composite types that represent commonly used data types.
@@ -105,3 +106,25 @@ dur
 `instN` is encoded like `inst` but with an extra `u32` that represents the number of nanoseconds in the value.
 
 `dur` is encoded through a `i64` number that represents the number of nanoseconds in the value.
+
+## uuid
+```rust
+uuid "123e4567-e89b-12d3-a456-426655440000"
+```
+uuid (universal unique identifier) is a commonly used 128-bit identifier.
+
+### value notation
+```
+"uuid" '"' 8 * hex_digit "-" 4 * hex_digit "-" 4 * hex_digit "-" 4 * hex_digit "-" 12 * hex_digit '"'
+```
+`uuid` values are written inside a string, they are a series of 8, 4, 4, then 12 hexadecimal digits separated by hyphens.
+
+### binary encoding
+```
++--------+  +--------+
+|   id   |  | value  |
++--------+  +--------+
+|  0x33  |  |  u128  |
++--------+  +--------+
+```
+`uuid` is encoded as a `u128` little endian number.
