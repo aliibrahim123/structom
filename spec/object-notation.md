@@ -65,20 +65,14 @@ number = "0b" bin_part | "0x" hex_part | dec_part
 ## string literals
 ```
 any_char = ? any unicode character ?
-str_raw = "'" ((any_char - "'") | "''")* "'"
 escape_seq = "\" (
 	"0" | "n" | "r" | "t" | '"' | "\" 
 	| "x" hex_digit hex_digit 
 	| "u{" hex_digit 5 * [hex_digit | "_" hex_digit] "}" 
   )
-str_escape = '"' (any_char - ('"' | "\") | escape_seq)* '"'
-str = str_raw | str_escape
+str = '"' (any_char - ('"' | "\") | escape_seq)* '"'
 ```
-strings can be raw or escaped.
-
-**raw strings** are strings that correspond to the same text as their content, they are written with single quotes, single quotes are escaped with 2 single quotes.
-
-**escaped strings** are strings that supports escape sequences, they are written with double quotes.
+strings are written with double quotes, they support escape sequences.
 
 **escape sequences**:
 - `\0`: null character.
