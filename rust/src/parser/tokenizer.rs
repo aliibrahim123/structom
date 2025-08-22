@@ -10,10 +10,10 @@ pub enum Token<'s> {
 	Str(String),
 
 	// numbers
-	Uint { value: u64, suffix: &'s str },
-	Int { value: i64, suffix: &'s str },
-	BigInt { value: Vec<u8>, suffix: &'s str },
-	Float { value: f64, suffix: &'s str },
+	Uint(u64),
+	Int(i64),
+	BigInt(Vec<u8>),
+	Float(f64),
 
 	// symbols
 	Comma,
@@ -41,7 +41,6 @@ enum NbValueType {
 	BigInt,
 }
 
-#[allow(dead_code)]
 fn unsupported_suffix(suffix: &str, ind: usize) -> Error {
 	Error::SyntaxError {
 		disc: "unsupported suffix",
@@ -174,23 +173,8 @@ fn parse_float(source: &str, mut ind: usize) -> Result<(Token, usize), Error> {
 	// remove dashes
 	let nb_source = parse_dashes_in_nb(&source[start_ind..ind], start_ind)?;
 
-	// suffix
-	let suffix_end = while_matching(
-		source,
-		ind,
-		|c| matches!(c, 'a'..='z' | 'A'..='Z' | '0'..='9'),
-	);
-	let suffix = &source[ind..suffix_end];
-	ind = suffix_end;
-
 	// create token
-	Ok((
-		Token::Float {
-			value: nb_source.parse::<f64>().unwrap(),
-			suffix,
-		},
-		ind,
-	))
+	Ok((Token::Float(nb_source.parse::<f64>().unwrap()), ind))
 }
 
 fn parse_nb(source: &str, mut ind: usize) -> Result<(Token, usize), Error> {
@@ -254,8 +238,6 @@ fn parse_nb(source: &str, mut ind: usize) -> Result<(Token, usize), Error> {
 
 	// value type
 	let value_type = match get_char(suffix, 0) {
-		Some('u') => NbValueType::Uint,
-		Some('i') => NbValueType::Int,
 		Some('b') => NbValueType::BigInt,
 		_ => match has_sign {
 			true => NbValueType::Int,
@@ -277,18 +259,18 @@ fn parse_nb(source: &str, mut ind: usize) -> Result<(Token, usize), Error> {
 
 			// parse
 			let value = u64::from_str_radix(&nb_source, base).unwrap();
-			Ok((Token::Uint { value, suffix }, ind))
+			Ok((Token::Uint(value), ind))
 		}
 		NbValueType::Int => {
 			// parse
 			let value = i64::from_str_radix(&nb_source, base).unwrap() * if neg { -1 } else { 1 };
-			Ok((Token::Int { value, suffix }, ind))
+			Ok((Token::Int(value), ind))
 		}
 		NbValueType::BigInt => {
 			let value = Vec::<u8>::new();
 			// todo
 
-			Ok((Token::BigInt { value, suffix }, ind))
+			Ok((Token::BigInt(value), ind))
 		}
 	}
 }

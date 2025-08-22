@@ -11,9 +11,9 @@ primitive types are built in types that represent the general simple data types 
 
 ## fixed size integers
 ```rust
-1u8
--129i16
-0x07Ff_07Ffu32
+1
+-129
+0x07Ff_07Ff
 ```
 fixed size integers are whole numbers, signed or unsigned.
 
@@ -32,13 +32,10 @@ i64  | 64   | 8     | signed   | -9223372036854775808 | 9223372036854775807  |
 
 ### value notation
 ```
-signed_nb = ["+" | "-"] nb
-uint_value = nb ["u" ("8" | "16" | "32" | "64")]
-int_value = signed_nb ["i" ("8" | "16" | "32" | "64")]
+uint_value = nb 
+int_value = ["+" | "-"] nb
 ```
-fixed size integers are witten with number literals, optionally suffixed with the integer type.
-
-the suffix is required if the type can not be infered.
+fixed size integers are witten with number literals.
 
 ### binary encoding
 ```
@@ -64,7 +61,7 @@ type | id   | bytes |
 ## variable size integers
 ```
 123
--123vint
+-123
 1234567890_1234567890bint
 ```
 variable size integers are integers, signed or unsigned, that takes a variable number of bytes.
@@ -75,12 +72,12 @@ variable size integers are integers, signed or unsigned, that takes a variable n
 
 ### value notation
 ```
-vint_value = signed_nb ["vint"]
-vuint_value = nb ["vuint"]
-bint_value = signed_nb "bint"
-buint_value = nb "buint"
+vint_value = signed_nb
+vuint_value = nb
+bint_value = signed_nb ["bint"]
+buint_value = nb ["buint"]
 ```
-variable size integers are written with number literals, optionally suffixed with the integer type.
+variable size integers are written with number literals.
 
 the suffix is required if the type can not be infered for bigint.
 
@@ -106,9 +103,7 @@ bint  | 0x1f |
 ## floating point numbers
 ```rust
 123.456
-123.456f16
-123.456f32
-123.456f64
+3.3e-12
 ```
 floating point numbers are IEEE 754 compliant numbers.
 
@@ -117,19 +112,18 @@ they can be of half, single or double precision.
 ### value notation
 ```
 float_exp = ("e" | "E") ["+" | "-"] dec_part
-float_suffix = "f" ("16" | "32" | "64")
 float_value =
-	["+" | "-"] (dec_part | [dec_part] "." dec_part) [float_exp] [float_suffix] | 
-	("nan" | (["+" | "-"] "inf")) ["_" float_suffix]
+	["+" | "-"] (dec_part | [dec_part] "." dec_part) [float_exp] | 
+	("nan" | (["+" | "-"] "inf"))
 
 ```
-floating point numbers are written with float literals, optionally suffixed with the float type.
+floating point numbers are written with float literals.
 
 float literals are written in decimal base, with optional exponent.
 
 float literals can be NaN, positive or negative infinity.
 
-if a number literal value in not inferable and with no suffix, it is assumed to be `f32` value.
+if a number literal value in not inferable, it is assumed to be `f32` value.
 
 ### binary encoding
 ```
