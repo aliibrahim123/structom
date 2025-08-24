@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use crate::{
 	errors::{Error, end_of_input, unexpected_token},
 	parser::utils::{get_char, while_matching},
@@ -5,48 +7,53 @@ use crate::{
 
 #[derive(Debug)]
 pub enum Token<'s> {
-	// words
-	Identifier(&'s str),
-	Str(String),
+	Identifier(&'s str, usize),
+	Str(String, usize),
 
-	// numbers
-	Uint(u64),
-	Int(i64),
-	BigInt(Vec<u8>),
-	Float(f64),
+	Uint(u64, usize),
+	Int(i64, usize),
+	BigInt(Vec<u8>, usize),
+	Float(f64, usize),
 
-	// symbols
-	Comma,
-	Colon,
-	Dot,
-	Alt,
-	Question,
-	Minus,
-	Plus,
+	Symbol(char, usize),
 
-	// delimiters
-	OpenParen,
-	CloseParen,
-	OpenBracket,
-	CloseBracket,
-	OpenCurly,
-	CloseCurly,
-	LessThan,
-	GreaterThan,
+	EOF(usize),
+}
+
+impl Token<'_> {
+	pub fn ind(&self) -> usize {
+		match self {
+			Token::Identifier(_, ind) => *ind,
+			Token::Str(_, ind) => *ind,
+			Token::Uint(_, ind) => *ind,
+			Token::Int(_, ind) => *ind,
+			Token::BigInt(_, ind) => *ind,
+			Token::Float(_, ind) => *ind,
+			Token::Symbol(_, ind) => *ind,
+			Token::EOF(ind) => *ind,
+		}
+	}
+}
+
+impl Display for Token<'_> {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		match self {
+			Token::Identifier(ident, _) => write!(f, "{}", ident),
+			Token::Str(str, _) => write!(f, "\"{}\"", str),
+			Token::Uint(nb, _) => write!(f, "nb({})", nb),
+			Token::Int(nb, _) => write!(f, "nb({})", nb),
+			Token::BigInt(nb, _) => write!(f, "nb({})", 0),
+			Token::Float(nb, _) => write!(f, "nb({})", nb),
+			Token::Symbol(symbol, _) => write!(f, "{}", symbol),
+			Token::EOF(_) => write!(f, "end_of_file"),
+		}
+	}
 }
 
 enum NbValueType {
 	Int,
 	Uint,
 	BigInt,
-}
-
-fn unsupported_suffix(suffix: &str, ind: usize) -> Error {
-	Error::SyntaxError {
-		disc: "unsupported suffix",
-		token: Some(suffix.to_string()),
-		ind,
-	}
 }
 
 fn parse_dashes_in_nb(nb: &str, start_ind: usize) -> Result<String, Error> {
@@ -75,10 +82,11 @@ fn parse_escape_sequences(source: &str, start_ind: usize) -> Result<String, Erro
 	let mut res = String::new();
 	let mut last_ind = 0;
 
-	let invalid_seq = |seq: &str, ind| Error::SyntaxError {
-		disc: "invalid escape sequence",
-		token: Some(seq.to_string()),
-		ind: start_ind + ind,
+	let invalid_seq = |seq: &str, ind| {
+		Error::SyntaxError(format!(
+			"invalid escape sequence `{seq}` at {}",
+			start_ind + ind
+		))
 	};
 
 	while let Some(i) = source[last_ind..].find('\\') {
@@ -126,6 +134,7 @@ fn parse_escape_sequences(source: &str, start_ind: usize) -> Result<String, Erro
 			}
 			_ => return Err(invalid_seq(&source[ind..ind + 2], ind)),
 		};
+
 		res.push(resolved);
 		last_ind = ind + escape_len;
 	}
@@ -138,9 +147,9 @@ fn parse_escape_sequences(source: &str, start_ind: usize) -> Result<String, Erro
 fn parse_float(source: &str, mut ind: usize) -> Result<(Token, usize), Error> {
 	let start_ind = ind;
 	// sign
-	if get_char(source, ind).is_some_and(|c| matches!(c, '-' | '+')) {
+	if let Some('-' | '+') = get_char(source, ind) {
 		ind += 1;
-	};
+	}
 
 	// decimal part
 	let decimal_end = while_matching(source, ind, |c| matches!(c, '0'..='9' | '_'));
@@ -155,11 +164,11 @@ fn parse_float(source: &str, mut ind: usize) -> Result<(Token, usize), Error> {
 	}
 
 	// exponent
-	if get_char(source, ind).is_some_and(|c| matches!(c, 'e' | 'E')) {
+	if let Some('e' | 'E') = get_char(source, ind) {
 		let e_ind = ind;
 		ind += 1;
 		//sign
-		if get_char(source, ind).is_some_and(|c| matches!(c, '-' | '+')) {
+		if let Some('-' | '+') = get_char(source, ind) {
 			ind += 1;
 		}
 		let exp_start = ind;
@@ -174,7 +183,8 @@ fn parse_float(source: &str, mut ind: usize) -> Result<(Token, usize), Error> {
 	let nb_source = parse_dashes_in_nb(&source[start_ind..ind], start_ind)?;
 
 	// create token
-	Ok((Token::Float(nb_source.parse::<f64>().unwrap()), ind))
+	let value = nb_source.parse::<f64>().unwrap();
+	Ok((Token::Float(value, start_ind), ind))
 }
 
 fn parse_nb(source: &str, mut ind: usize) -> Result<(Token, usize), Error> {
@@ -187,6 +197,7 @@ fn parse_nb(source: &str, mut ind: usize) -> Result<(Token, usize), Error> {
 		_ => (false, false),
 	};
 	if has_sign {
+		// skip sign
 		ind += 1
 	};
 
@@ -198,9 +209,10 @@ fn parse_nb(source: &str, mut ind: usize) -> Result<(Token, usize), Error> {
 			_ => 10,
 		},
 		Some(_) => 10,
-		None => return Err(end_of_input(source)),
+		None => return Err(end_of_input(source.len())),
 	};
 	if base != 10 {
+		// skip 0x or 0b
 		ind += 2
 	}
 
@@ -218,12 +230,12 @@ fn parse_nb(source: &str, mut ind: usize) -> Result<(Token, usize), Error> {
 	};
 	let nb_source = parse_dashes_in_nb(&source[start_ind..end_ind], start_ind)?;
 	if nb_source.len() == 0 {
-		return Err(end_of_input(source));
+		return Err(end_of_input(source.len()));
 	}
 	ind = end_ind;
 
 	// case float
-	if get_char(source, ind).is_some_and(|c| matches!(c, '.' | 'e' | 'E')) {
+	if let Some('.' | 'e' | 'E') = get_char(source, ind) {
 		return parse_float(source, sign_ind);
 	}
 
@@ -250,27 +262,25 @@ fn parse_nb(source: &str, mut ind: usize) -> Result<(Token, usize), Error> {
 		NbValueType::Uint => {
 			// disallow negative sign
 			if neg {
-				return Err(Error::SyntaxError {
-					disc: "negative sign in unsigned number",
-					token: Some('-'.to_string()),
-					ind: sign_ind,
-				});
+				return Err(Error::SyntaxError(format!(
+					"negative sign in unsigned number at {sign_ind}",
+				)));
 			};
 
 			// parse
 			let value = u64::from_str_radix(&nb_source, base).unwrap();
-			Ok((Token::Uint(value), ind))
+			Ok((Token::Uint(value, sign_ind), ind))
 		}
 		NbValueType::Int => {
 			// parse
 			let value = i64::from_str_radix(&nb_source, base).unwrap() * if neg { -1 } else { 1 };
-			Ok((Token::Int(value), ind))
+			Ok((Token::Int(value, sign_ind), ind))
 		}
 		NbValueType::BigInt => {
 			let value = Vec::<u8>::new();
 			// todo
 
-			Ok((Token::BigInt(value), ind))
+			Ok((Token::BigInt(value, sign_ind), ind))
 		}
 	}
 }
@@ -281,7 +291,7 @@ pub fn tokenize(source: &str) -> Result<Vec<Token>, Error> {
 
 	let next = |char, ind| match source[ind..].find(char) {
 		Some(i) => Ok(ind + i),
-		_ => Err(end_of_input(source)),
+		_ => Err(end_of_input(source.len())),
 	};
 
 	while source.len() > ind {
@@ -292,28 +302,28 @@ pub fn tokenize(source: &str) -> Result<Vec<Token>, Error> {
 
 			'.' => {
 				// case .digit, float
-				if get_char(source, ind + 1).is_some_and(|c| matches!(c, '0'..='9')) {
+				if let Some('0'..='9') = get_char(source, ind + 1) {
 					let (token, _ind) = parse_float(source, ind)?;
 					tokens.push(token);
 					ind = _ind;
 					continue;
 				} else {
-					tokens.push(Token::Dot)
+					tokens.push(Token::Symbol('.', ind));
 				}
 			}
 			// one char tokens
-			',' => tokens.push(Token::Comma),
-			':' => tokens.push(Token::Colon),
-			'(' => tokens.push(Token::OpenParen),
-			')' => tokens.push(Token::CloseParen),
-			'[' => tokens.push(Token::OpenBracket),
-			']' => tokens.push(Token::CloseBracket),
-			'{' => tokens.push(Token::OpenCurly),
-			'}' => tokens.push(Token::CloseCurly),
-			'<' => tokens.push(Token::LessThan),
-			'>' => tokens.push(Token::GreaterThan),
-			'?' => tokens.push(Token::Question),
-			'@' => tokens.push(Token::Alt),
+			',' => tokens.push(Token::Symbol(',', ind)),
+			':' => tokens.push(Token::Symbol(':', ind)),
+			'(' => tokens.push(Token::Symbol('(', ind)),
+			')' => tokens.push(Token::Symbol(')', ind)),
+			'[' => tokens.push(Token::Symbol('[', ind)),
+			']' => tokens.push(Token::Symbol(']', ind)),
+			'{' => tokens.push(Token::Symbol('{', ind)),
+			'}' => tokens.push(Token::Symbol('}', ind)),
+			'<' => tokens.push(Token::Symbol('<', ind)),
+			'>' => tokens.push(Token::Symbol('>', ind)),
+			'?' => tokens.push(Token::Symbol('?', ind)),
+			'@' => tokens.push(Token::Symbol('@', ind)),
 
 			// identifiers
 			'a'..='z' | 'A'..='Z' | '_' => {
@@ -323,7 +333,7 @@ pub fn tokenize(source: &str) -> Result<Vec<Token>, Error> {
 					|c| matches!(c, 'a'..='z' | 'A'..='Z' | '_' | '-' |'0'..='9'),
 				);
 
-				tokens.push(Token::Identifier(&source[ind..end_ind]));
+				tokens.push(Token::Identifier(&source[ind..end_ind], ind));
 				ind = end_ind;
 				continue;
 			}
@@ -331,7 +341,7 @@ pub fn tokenize(source: &str) -> Result<Vec<Token>, Error> {
 			// strings
 			'"' => {
 				let mut end_index = ind;
-				// get end quote
+				// get end quote, handling escaped quotes
 				loop {
 					end_index = next("\"", end_index + 1)?;
 					if get_char(source, end_index - 1).unwrap() != '\\' {
@@ -340,7 +350,7 @@ pub fn tokenize(source: &str) -> Result<Vec<Token>, Error> {
 				}
 
 				let str = parse_escape_sequences(&source[ind + 1..end_index], ind)?;
-				tokens.push(Token::Str(str));
+				tokens.push(Token::Str(str, ind));
 				ind = end_index + 1;
 				continue;
 			}
@@ -352,8 +362,8 @@ pub fn tokenize(source: &str) -> Result<Vec<Token>, Error> {
 					&& get_char(source, ind + 1).is_some_and(|c| !matches!(c, '0'..='9'))
 				{
 					tokens.push(match cur_char {
-						'-' => Token::Minus,
-						'+' => Token::Plus,
+						'-' => Token::Symbol('-', ind),
+						'+' => Token::Symbol('+', ind),
 						_ => unreachable!(),
 					});
 					ind += 1;
@@ -371,10 +381,12 @@ pub fn tokenize(source: &str) -> Result<Vec<Token>, Error> {
 			'/' => {
 				let next_char = get_char(source, ind + 1);
 				match next_char {
+					// single line
 					Some('/') => ind = source[ind..].find("\n").unwrap_or(source.len()) + 1,
+					// multi line
 					Some('*') => ind = next("*/", ind)? + 2,
 					Some(char) => return Err(unexpected_token(char, ind)),
-					None => return Err(end_of_input(source)),
+					None => return Err(end_of_input(source.len())),
 				}
 				continue;
 			}
@@ -386,6 +398,7 @@ pub fn tokenize(source: &str) -> Result<Vec<Token>, Error> {
 		// inc ind for one char tokens
 		ind += 1;
 	}
+	tokens.push(Token::EOF(source.len()));
 
 	Ok(tokens)
 }

@@ -1,41 +1,43 @@
 use std::collections::HashMap;
 
 #[derive(Debug)]
-pub struct DeclarationFile {
+pub struct DeclFile {
 	pub name: String,
 	pub id: u64,
-	pub items: Vec<Option<DeclarationItem>>,
-	pub items_by_name: HashMap<String, u16>,
+	pub(crate) items: HashMap<u16, DeclItem>,
+	pub(crate) items_by_name: HashMap<String, u16>,
 }
 
-#[derive(PartialEq, Hash, Debug)]
+#[derive(Debug)]
 pub struct TypeId {
 	pub ns: u64,
 	pub id: u16,
 	pub variant: Option<u16>,
+	pub metadata: Option<Vec<(String, String)>>,
 }
 
 #[derive(Debug)]
-struct Field {
+pub struct Field {
 	pub name: String,
 	pub tag: u32,
-	pub item: TypeId,
+	pub typeid: TypeId,
+	pub is_optional: bool,
 }
 #[derive(Default, Debug)]
-struct StructDef {
-	fields: Vec<Option<Field>>,
-	fields_by_name: HashMap<String, u32>,
+pub struct StructDef {
+	pub fields: Vec<Option<Field>>,
+	pub fields_by_name: HashMap<String, u32>,
 }
 
 #[derive(Debug)]
-struct EnumVariant {
-	name: String,
-	tag: u32,
-	def: Option<StructDef>,
+pub struct EnumVariant {
+	pub name: String,
+	pub tag: u32,
+	pub def: Option<StructDef>,
 }
 
 #[derive(Debug)]
-pub enum DeclarationItem {
+pub enum DeclItem {
 	Struct {
 		name: String,
 		typeid: u16,
@@ -49,37 +51,42 @@ pub enum DeclarationItem {
 	},
 }
 
+pub trait DeclProvider {
+	fn get_by_id<'a>(&'a self, name: u64) -> &'a DeclFile;
+	fn get_by_name<'a>(&'a self, name: &str) -> Option<&'a DeclFile>;
+}
+
 static mut DECLARE_ID_COUNTER: u64 = 0;
-impl DeclarationFile {
+impl DeclFile {
 	pub fn new(name: String) -> Self {
 		let id = unsafe {
 			DECLARE_ID_COUNTER += 1;
 			DECLARE_ID_COUNTER
 		};
-		DeclarationFile {
+		DeclFile {
 			name,
 			id,
-			items: vec![],
+			items: HashMap::new(),
 			items_by_name: HashMap::new(),
 		}
 	}
 
-	pub fn add_item(&mut self, item: DeclarationItem) -> Result<(), ()> {
+	pub fn add_item(&mut self, item: DeclItem) {
 		self.items_by_name
 			.insert(item.name().to_string(), item.typeid());
-		add_item(&mut self.items, item.typeid() as usize, item)
+		self.items.insert(item.typeid(), item);
 	}
 
-	pub fn get_by_name(&self, name: &str) -> Option<&DeclarationItem> {
+	pub fn get_by_name(&self, name: &str) -> Option<&DeclItem> {
 		let id = self.items_by_name.get(name);
 		id.and_then(|id| self.get_by_id(*id))
 	}
-	pub fn get_by_id(&self, id: u16) -> Option<&DeclarationItem> {
-		self.items.get(id as usize).and_then(|item| item.as_ref())
+	pub fn get_by_id(&self, id: u16) -> Option<&DeclItem> {
+		self.items.get(&id)
 	}
 }
 
-impl DeclarationItem {
+impl DeclItem {
 	pub fn name(&self) -> &str {
 		match self {
 			Self::Struct { name, .. } => name,
@@ -90,6 +97,15 @@ impl DeclarationItem {
 		match self {
 			Self::Struct { typeid, .. } => *typeid,
 			Self::Enum { typeid, .. } => *typeid,
+		}
+	}
+
+	pub fn new_enum(name: String, typeid: u16) -> Self {
+		Self::Enum {
+			name,
+			typeid,
+			variants: vec![],
+			variants_by_name: HashMap::new(),
 		}
 	}
 
@@ -136,6 +152,33 @@ impl StructDef {
 	}
 	pub fn get_field_by_id(&self, tag: u32) -> Option<&Field> {
 		self.fields.get(tag as usize).and_then(|v| v.as_ref())
+	}
+}
+
+impl Field {
+	pub fn new(name: String, tag: u32, typeid: TypeId, is_optional: bool) -> Self {
+		Self {
+			name,
+			tag,
+			typeid,
+			is_optional,
+		}
+	}
+}
+
+impl TypeId {
+	pub fn new(
+		ns: u64,
+		id: u16,
+		variant: Option<u16>,
+		metadata: Option<Vec<(String, String)>>,
+	) -> Self {
+		Self {
+			ns,
+			id,
+			variant,
+			metadata,
+		}
 	}
 }
 

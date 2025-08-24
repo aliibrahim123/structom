@@ -1,24 +1,17 @@
 #[derive(Debug)]
 pub enum Error {
-	SyntaxError {
-		disc: &'static str,
-		token: Option<String>,
-		ind: usize,
-	},
+	SyntaxError(String),
+	TypeError(String),
 }
 
-pub(crate) fn end_of_input(source: &str) -> Error {
-	Error::SyntaxError {
-		disc: "end of input",
-		token: None,
-		ind: source.len(),
-	}
+pub fn end_of_input(len: usize) -> Error {
+	Error::SyntaxError("end of input".to_string())
 }
 
-pub(crate) fn unexpected_token(token: char, ind: usize) -> Error {
-	Error::SyntaxError {
-		disc: "unexpected token",
-		token: Some(token.to_string()),
-		ind,
+pub fn unexpected_token<T: ToString>(token: T, ind: usize) -> Error {
+	let token = token.to_string();
+	if token == "end_of_file" {
+		return end_of_input(ind);
 	}
+	Error::SyntaxError(format!("unexpected token `{token}` at {ind}"))
 }
