@@ -83,12 +83,12 @@ struct DurParseCTX<'a> {
 }
 fn parse_dur_part(
 	ctx: &mut DurParseCTX, unit: &str, multiplier: u64, max: u64,
-) -> Result<(), Error> {
+) -> Result<bool, Error> {
 	let DurParseCTX { val, parts, ind, is_first, .. } = ctx;
 
 	// skip if not input
 	if *ind == parts.len() {
-		return Ok(());
+		return Ok(false);
 	}
 
 	// get number
@@ -104,7 +104,7 @@ fn parse_dur_part(
 		if unit == "ns" {
 			return Err(unexpected_token(suffix, part_ind + nb_end));
 		}
-		return Ok(());
+		return Ok(false);
 	}
 
 	// if number is so large
@@ -143,7 +143,7 @@ fn parse_dur_part(
 	*ind += 1;
 	*is_first = false;
 
-	Ok(())
+	Ok(true)
 }
 pub fn parse_dur(mut source: &str, start_ind: usize, src_ind: usize) -> Result<Value, Error> {
 	// case negative
@@ -171,8 +171,8 @@ pub fn parse_dur(mut source: &str, start_ind: usize, src_ind: usize) -> Result<V
 
 	// parse by units for largest to smallest
 	parse_dur_part(&mut ctx, "y", 31536000000000000, 300)?;
-	parse_dur_part(&mut ctx, "mn", 2592000000000000, 12)?;
-	parse_dur_part(&mut ctx, "d", 86400000000000, 30)?;
+	let has_months = parse_dur_part(&mut ctx, "mn", 2592000000000000, 12)?;
+	parse_dur_part(&mut ctx, "d", 86400000000000, if has_months { 30 } else { 365 })?;
 	parse_dur_part(&mut ctx, "h", 3600000000000, 24)?;
 	parse_dur_part(&mut ctx, "m", 60000000000, 60)?;
 	parse_dur_part(&mut ctx, "s", 1000000000, 60)?;
@@ -183,7 +183,7 @@ pub fn parse_dur(mut source: &str, start_ind: usize, src_ind: usize) -> Result<V
 	// create duration
 	let dur = TimeDelta::new(
 		ctx.val / 1_000_000_000 * if neg { -1 } else { 1 },
-		(ctx.val % 1_000_000_000) as u32,
+		(ctx.val.abs() % 1_000_000_000) as u32,
 	);
 	if dur.is_none() {
 		return Err(Error::SyntaxError(format!("invalid dur at {start_ind}")));

@@ -102,7 +102,6 @@ fn parse_map(
 	let keyid = &TypeId::new(0, typeid.variant, None);
 	let itemid = typeid.item.as_ref().unwrap().as_ref();
 	let mut watched_comma = true;
-	println!("typeid: {keyid:?}");
 
 	// loop through items
 	loop {
@@ -379,7 +378,6 @@ pub fn parse_value(
 	let start_ind = *ind;
 
 	let metadata = parse_metadata(tokens, ind, &|| format!("at index {start_ind}"), options)?;
-	println!("{} {:?}", typeid.name(provider), tokens[*ind]);
 	*ind += 1;
 	let value = match tokens.get(*ind - 1) {
 		Some(Token::Identifier(ident, _)) => {
@@ -466,7 +464,7 @@ pub fn parse_value(
 			Value::Float(*nb)
 		}
 		Some(Token::BigInt(_, _)) => {
-			if typeid.ns != 0 || typeid.id != 0x1e {
+			if typeid.ns != 0 || !matches!(typeid.id, 1 | 0x1e) {
 				return mismatch_types(&typeid.name(provider), "bint", *ind);
 			}
 			Value::BigInt(vec![])

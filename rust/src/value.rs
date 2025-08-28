@@ -10,7 +10,6 @@ use chrono::{DateTime, TimeDelta, Utc};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value {
-	Null,
 	Bool(bool),
 	Int(i64),
 	Uint(u64),
@@ -26,7 +25,6 @@ pub enum Value {
 
 #[derive(Debug, Clone, PartialEq, Hash, Eq)]
 pub enum Key {
-	Null,
 	Bool(bool),
 	Int(i64),
 	Uint(u64),
@@ -39,12 +37,12 @@ pub enum Key {
 
 impl Default for Value {
 	fn default() -> Self {
-		Value::Null
+		Value::Uint(0)
 	}
 }
 impl Default for Key {
 	fn default() -> Self {
-		Key::Null
+		Key::Uint(0)
 	}
 }
 
@@ -52,7 +50,6 @@ impl TryFrom<Value> for Key {
 	type Error = ();
 	fn try_from(value: Value) -> Result<Self, Self::Error> {
 		match value {
-			Value::Null => Ok(Key::Null),
 			Value::Bool(b) => Ok(Key::Bool(b)),
 			Value::Int(i) => Ok(Key::Int(i)),
 			Value::Uint(i) => Ok(Key::Uint(i)),
@@ -68,7 +65,6 @@ impl TryFrom<Value> for Key {
 impl From<Key> for Value {
 	fn from(key: Key) -> Self {
 		match key {
-			Key::Null => Value::Null,
 			Key::Bool(b) => Value::Bool(b),
 			Key::Int(i) => Value::Int(i),
 			Key::Uint(i) => Value::Uint(i),
@@ -140,23 +136,6 @@ impl From<&str> for Value {
 impl From<&str> for Key {
 	fn from(s: &str) -> Self {
 		Key::Str(s.to_string())
-	}
-}
-
-impl<T: Into<Value>> From<Option<T>> for Value {
-	fn from(v: Option<T>) -> Self {
-		match v {
-			Some(v) => v.into(),
-			_ => Value::Null,
-		}
-	}
-}
-impl<T: Into<Key>> From<Option<T>> for Key {
-	fn from(v: Option<T>) -> Self {
-		match v {
-			Some(v) => v.into(),
-			_ => Key::Null,
-		}
 	}
 }
 
@@ -465,7 +444,7 @@ impl IndexMut<&Key> for Value {
 		match self {
 			Value::Map(m) => match m.contains_key(index) {
 				true => m.get_mut(index).unwrap(),
-				false => m.entry(index.clone()).or_insert(Value::Null),
+				false => m.entry(index.clone()).or_insert(Value::default()),
 			},
 			_ => panic!(),
 		}

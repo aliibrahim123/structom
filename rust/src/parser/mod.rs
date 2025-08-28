@@ -1,18 +1,14 @@
 mod declaration;
 mod rich_types;
-mod tokenizer;
+pub mod tokenizer;
 mod utils;
 mod value;
 
 use crate::{
 	DeclProvider, Error, Value,
-	declaration::{DeclFile, DeclItem, StructDef, TypeId},
+	declaration::{DeclFile, TypeId},
 	errors::unexpected_token,
-	parser::{
-		declaration::{DeclContext, parse_declaration},
-		tokenizer::tokenize,
-		value::parse_value,
-	},
+	parser::{declaration::parse_declaration, tokenizer::tokenize},
 };
 
 #[derive(Debug)]

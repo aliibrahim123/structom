@@ -64,7 +64,7 @@ suffix | unit        | max value
 ------ | ----------- | ---------
 `y`    | year        | 300
 `mn`   | month       | 12
-`d`    | day         | 30
+`d`    | day         | 30 (365 if there is no month part)
 `h`    | hour        | 24
 `m`    | minute      | 60
 `s`    | second      | 60
@@ -127,4 +127,4 @@ uuid (universal unique identifier) is a commonly used 128-bit identifier.
 |  0x33  |  |  u128  |
 +--------+  +--------+
 ```
-`uuid` is encoded as a `u128` little endian number.
+`uuid` is encoded as a `u128` big endian number.
