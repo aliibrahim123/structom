@@ -6,4 +6,5 @@ readme = "../readme.md"
 license = "MIT"
 
 [dependencies]
+chrono = "0.4.41"
 

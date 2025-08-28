@@ -39,14 +39,14 @@ instant value are written according to format `YYYY-MM-DDTHH:MM:SS.ssssZ`:
 - `MM`: the minute part, 2 digits.
 - `SS`: the second part, 2 digits.
 - `ssss`: the fractional part, 3 to 9 digits.
-- `Z`: the timezone part, `Z` for UTC, `Z+HH:MM` or `Z-HH:MM` for other offsets.
+- `Z`: the timezone part, `Z` for UTC, `+HH:MM` or `-HH:MM` for other offsets.
 
 the time and timezone parts are optional, the `T` separator can be space for convenience.
 
 ```javascript
 inst "1234-05-06"
 inst "-123-04-05 12:34:56Z"
-inst "1234-05-06T07:08:09.1234567890Z+01:30"
+inst "1234-05-06T07:08:09.1234567890+01:30"
 ```
 
 ### duration value notation
@@ -84,21 +84,21 @@ inst
 +--------+  +--------+
 |   id   |  | value  |
 +--------+  +--------+
-|  0x30  |  |  s64   |
+|  0x30  |  |  i64   |
 +--------+  +--------+
 
 instN       value:
 +--------+  +--------+--------+
 |   id   |  | off_ms |   ns   |
 +--------+  +--------+--------+
-|  0x31  |  |  s64   |  u32   |
+|  0x31  |  |  i64   |  u32   |
 +--------+  +--------+--------+
 
 dur
 +--------+  +--------+
 |   id   |  | value  |
 +--------+  +--------+
-|  0x32  |  |  s64   |
+|  0x32  |  |  i64   |
 +--------+  +--------+
 ```
 `inst` is encoded through a `i64` number that represents the number of milliseconds passed since the unix epoch.

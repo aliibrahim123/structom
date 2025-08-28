@@ -50,12 +50,12 @@ fixed size integers are encoded in 2 complement little endian in 1, 2, 4 or 8 by
 type | id   | bytes |
 ---- | ---- | ----- |
  u8  | 0x10 | 1     |
- i8  | 0x11 | 1     |
- u16 | 0x12 | 2     |
- i16 | 0x13 | 2     |
- u32 | 0x14 | 4     |
- i32 | 0x15 | 4     |
- u64 | 0x16 | 8     |
+ u16 | 0x11 | 2     |
+ u32 | 0x12 | 4     |
+ u64 | 0x13 | 8     |
+ i8  | 0x14 | 1     |
+ i16 | 0x15 | 2     |
+ i32 | 0x16 | 4     |
  i64 | 0x17 | 8     |
 
 ## variable size integers
@@ -68,18 +68,17 @@ variable size integers are integers, signed or unsigned, that takes a variable n
 
 `vint` and `vuint` are variable size integers that correspond to 64 bit signed and unsigned integers, taking 1 to 9 bytes.
 
-`bint` and `buint` are variable size integers of arbitrary sizes, taking as many bytes as needed.
+`bint` is variable size integer of arbitrary sizes, taking as many bytes as needed.
 
 ### value notation
 ```
 vint_value = signed_nb
 vuint_value = nb
-bint_value = signed_nb ["bint"]
-buint_value = nb ["buint"]
+bint_value = signed_nb "bint"
 ```
 variable size integers are written with number literals.
 
-the suffix is required if the type can not be infered for bigint.
+the suffix is required for bigint.
 
 if a number literal value in not inferable and with no suffix, it is assumed to be a `vuint` then `vint` value.
 
@@ -97,8 +96,7 @@ type  | id   |
 ----- | ---- |
 vuint | 0x1c |
 vint  | 0x1d |
-buint | 0x1e |
-bint  | 0x1f |
+bint  | 0x1e |
 
 ## floating point numbers
 ```rust

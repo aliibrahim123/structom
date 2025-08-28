@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+use crate::builtins::BUILT_INS_NAMES;
+
 #[derive(Debug)]
 pub struct DeclFile {
 	pub name: String,
@@ -12,7 +14,8 @@ pub struct DeclFile {
 pub struct TypeId {
 	pub ns: u64,
 	pub id: u16,
-	pub variant: Option<u16>,
+	pub variant: u16,
+	pub item: Option<Box<TypeId>>,
 	pub metadata: Option<Vec<(String, String)>>,
 }
 
@@ -63,17 +66,11 @@ impl DeclFile {
 			DECLARE_ID_COUNTER += 1;
 			DECLARE_ID_COUNTER
 		};
-		DeclFile {
-			name,
-			id,
-			items: HashMap::new(),
-			items_by_name: HashMap::new(),
-		}
+		DeclFile { name, id, items: HashMap::new(), items_by_name: HashMap::new() }
 	}
 
 	pub fn add_item(&mut self, item: DeclItem) {
-		self.items_by_name
-			.insert(item.name().to_string(), item.typeid());
+		self.items_by_name.insert(item.name().to_string(), item.typeid());
 		self.items.insert(item.typeid(), item);
 	}
 
@@ -101,21 +98,12 @@ impl DeclItem {
 	}
 
 	pub fn new_enum(name: String, typeid: u16) -> Self {
-		Self::Enum {
-			name,
-			typeid,
-			variants: vec![],
-			variants_by_name: HashMap::new(),
-		}
+		Self::Enum { name, typeid, variants: vec![], variants_by_name: HashMap::new() }
 	}
 
 	pub fn add_variant(&mut self, variant: EnumVariant) -> Result<(), ()> {
 		match self {
-			Self::Enum {
-				variants,
-				variants_by_name,
-				..
-			} => {
+			Self::Enum { variants, variants_by_name, .. } => {
 				variants_by_name.insert(variant.name.to_string(), variant.tag);
 				add_item(variants, variant.tag as usize, variant)
 			}
@@ -124,11 +112,9 @@ impl DeclItem {
 	}
 	pub fn get_variant_by_name(&self, name: &str) -> Option<&EnumVariant> {
 		match self {
-			Self::Enum {
-				variants_by_name, ..
-			} => variants_by_name
-				.get(name)
-				.and_then(|v| self.get_variant_by_id(*v)),
+			Self::Enum { variants_by_name, .. } => {
+				variants_by_name.get(name).and_then(|v| self.get_variant_by_id(*v))
+			}
 			_ => None,
 		}
 	}
@@ -142,8 +128,7 @@ impl DeclItem {
 
 impl StructDef {
 	pub fn add_field(&mut self, field: Field) -> Result<(), ()> {
-		self.fields_by_name
-			.insert(field.name.to_string(), field.tag);
+		self.fields_by_name.insert(field.name.to_string(), field.tag);
 		add_item(&mut self.fields, field.tag as usize, field)
 	}
 	pub fn get_field_by_name(&self, name: &str) -> Option<&Field> {
@@ -157,29 +142,66 @@ impl StructDef {
 
 impl Field {
 	pub fn new(name: String, tag: u32, typeid: TypeId, is_optional: bool) -> Self {
-		Self {
-			name,
-			tag,
-			typeid,
-			is_optional,
-		}
+		Self { name, tag, typeid, is_optional }
 	}
 }
 
 impl TypeId {
-	pub fn new(
-		ns: u64,
-		id: u16,
-		variant: Option<u16>,
+	pub fn new(ns: u64, id: u16, metadata: Option<Vec<(String, String)>>) -> Self {
+		Self { ns, id, variant: 0, item: None, metadata }
+	}
+	pub fn with_variant(
+		ns: u64, id: u16, variant: u16, sub_type: Option<TypeId>,
 		metadata: Option<Vec<(String, String)>>,
 	) -> Self {
-		Self {
-			ns,
-			id,
-			variant,
-			metadata,
+		Self { ns, id, variant, item: sub_type.map(|t| Box::new(t)), metadata }
+	}
+
+	pub const ANY: Self = Self { ns: 0, id: 1, variant: 0, item: None, metadata: None };
+
+	pub fn is_any(&self) -> bool {
+		self.ns == 0 && self.id == 1
+	}
+
+	pub fn name(&self, provider: &dyn DeclProvider) -> String {
+		if self.ns == 0 {
+			// arr
+			if self.id == 0x22 {
+				return format!("arr<{}>", self.item.as_ref().unwrap().name(provider));
+			}
+			// map
+			if self.id == 0x23 {
+				return format!(
+					"map<{}, {}>",
+					BUILT_INS_NAMES[&self.variant],
+					self.item.as_ref().unwrap().name(provider)
+				);
+			}
+			// other builtin
+			BUILT_INS_NAMES[&self.id].to_string()
+		// user defined
+		} else {
+			let file = provider.get_by_id(self.ns);
+
+			format!("`{}`.{}", file.name, file.get_by_id(self.id).unwrap().name())
 		}
 	}
+}
+
+impl PartialEq for TypeId {
+	fn eq(&self, other: &Self) -> bool {
+		if self.is_any() {
+			return true;
+		}
+		self.ns == other.ns
+			&& self.id == other.id
+			&& self.variant == other.variant
+			&& self.item == other.item
+	}
+}
+
+pub fn resolve_typeid<'a>(typeid: &TypeId, provider: &'a dyn DeclProvider) -> &'a DeclItem {
+	provider.get_by_id(typeid.ns).get_by_id(typeid.id).unwrap()
 }
 
 fn add_item<'a, T>(vec: &mut Vec<Option<T>>, id: usize, item: T) -> Result<(), ()> {

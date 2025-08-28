@@ -83,10 +83,7 @@ fn parse_escape_sequences(source: &str, start_ind: usize) -> Result<String, Erro
 	let mut last_ind = 0;
 
 	let invalid_seq = |seq: &str, ind| {
-		Error::SyntaxError(format!(
-			"invalid escape sequence `{seq}` at {}",
-			start_ind + ind
-		))
+		Error::SyntaxError(format!("invalid escape sequence `{seq}` at {}", start_ind + ind))
 	};
 
 	while let Some(i) = source[last_ind..].find('\\') {
@@ -104,9 +101,8 @@ fn parse_escape_sequences(source: &str, start_ind: usize) -> Result<String, Erro
 			// \xhh
 			'x' => {
 				// extract code
-				let code_str = source
-					.get(ind + 2..ind + 4)
-					.ok_or_else(|| invalid_seq(&source[ind..], ind))?;
+				let code_str =
+					source.get(ind + 2..ind + 4).ok_or_else(|| invalid_seq(&source[ind..], ind))?;
 
 				// hex -> char
 				let code = u8::from_str_radix(code_str, 16)
@@ -183,8 +179,11 @@ fn parse_float(source: &str, mut ind: usize) -> Result<(Token, usize), Error> {
 	let nb_source = parse_dashes_in_nb(&source[start_ind..ind], start_ind)?;
 
 	// create token
-	let value = nb_source.parse::<f64>().unwrap();
-	Ok((Token::Float(value, start_ind), ind))
+	let value = nb_source.parse::<f64>();
+	if value.is_err() {
+		return Err(Error::SyntaxError(format!("invalid number {nb_source} at {start_ind}")));
+	}
+	Ok((Token::Float(value.unwrap(), start_ind), ind))
 }
 
 fn parse_nb(source: &str, mut ind: usize) -> Result<(Token, usize), Error> {
@@ -221,11 +220,7 @@ fn parse_nb(source: &str, mut ind: usize) -> Result<(Token, usize), Error> {
 	let end_ind = match base {
 		2 => while_matching(source, ind + 2, |c| matches!(c, '0' | '1' | '_')),
 		10 => while_matching(source, ind, |c| matches!(c, '0'..='9' | '_')),
-		16 => while_matching(
-			source,
-			ind,
-			|c| matches!(c, '0'..='9' | 'a'..='f' | 'A'..='F' | '_'),
-		),
+		16 => while_matching(source, ind, |c| matches!(c, '0'..='9' | 'a'..='f' | 'A'..='F' | '_')),
 		_ => unreachable!(),
 	};
 	let nb_source = parse_dashes_in_nb(&source[start_ind..end_ind], start_ind)?;
@@ -240,21 +235,23 @@ fn parse_nb(source: &str, mut ind: usize) -> Result<(Token, usize), Error> {
 	}
 
 	// suffix
-	let suffix_end = while_matching(
-		source,
-		ind,
-		|c| matches!(c, 'a'..='z' | 'A'..='Z' | '0' ..= '9'),
-	);
+	let suffix_end =
+		while_matching(source, ind, |c| matches!(c, 'a'..='z' | 'A'..='Z' | '0' ..= '9'));
 	let suffix = &source[end_ind..suffix_end];
 	ind = suffix_end;
 
 	// value type
-	let value_type = match get_char(suffix, 0) {
-		Some('b') => NbValueType::BigInt,
-		_ => match has_sign {
+	let value_type = match suffix {
+		"bint" => NbValueType::BigInt,
+		"" => match has_sign {
 			true => NbValueType::Int,
 			false => NbValueType::Uint,
 		},
+		_ => {
+			return Err(Error::SyntaxError(format!(
+				"unsupported suffix \"{suffix}\" at {sign_ind}",
+			)));
+		}
 	};
 
 	//create token
@@ -268,13 +265,23 @@ fn parse_nb(source: &str, mut ind: usize) -> Result<(Token, usize), Error> {
 			};
 
 			// parse
-			let value = u64::from_str_radix(&nb_source, base).unwrap();
-			Ok((Token::Uint(value, sign_ind), ind))
+			let value = u64::from_str_radix(&nb_source, base);
+			if value.is_err() {
+				return Err(Error::SyntaxError(format!(
+					"unsigned number ({nb_source}) out of range at {sign_ind}",
+				)));
+			}
+			Ok((Token::Uint(value.unwrap(), sign_ind), ind))
 		}
 		NbValueType::Int => {
 			// parse
-			let value = i64::from_str_radix(&nb_source, base).unwrap() * if neg { -1 } else { 1 };
-			Ok((Token::Int(value, sign_ind), ind))
+			let value = i64::from_str_radix(&nb_source, base);
+			if value.is_err() {
+				return Err(Error::SyntaxError(format!(
+					"signed number ({nb_source}) out of range at {sign_ind}",
+				)));
+			}
+			Ok((Token::Int(value.unwrap() * if neg { -1 } else { 1 }, sign_ind), ind))
 		}
 		NbValueType::BigInt => {
 			let value = Vec::<u8>::new();

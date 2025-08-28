@@ -4,8 +4,9 @@ use std::{
 	hash::Hash,
 	ops::{Index, IndexMut},
 	slice::SliceIndex,
-	time::{Duration, Instant},
 };
+
+use chrono::{DateTime, TimeDelta, Utc};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value {
@@ -16,8 +17,8 @@ pub enum Value {
 	BigInt(Vec<u8>),
 	Float(f64),
 	Str(String),
-	Inst(Instant),
-	Dur(Duration),
+	Inst(DateTime<Utc>),
+	Dur(TimeDelta),
 	UUID([u8; 16]),
 	Array(Vec<Value>),
 	Map(HashMap<Key, Value>),
@@ -30,8 +31,8 @@ pub enum Key {
 	Int(i64),
 	Uint(u64),
 	BigInt(Vec<u8>),
-	Inst(Instant),
-	Dur(Duration),
+	Inst(DateTime<Utc>),
+	Dur(TimeDelta),
 	UUID([u8; 16]),
 	Str(String),
 }
@@ -81,7 +82,7 @@ impl From<Key> for Value {
 }
 
 macro_rules! from_impl {
-	($ty:ident, $enum:ident, $var:ident) => {
+	($ty:ty, $enum:ident, $var:ident) => {
 		impl From<$ty> for $enum {
 			fn from(v: $ty) -> Self {
 				$enum::$var(v)
@@ -102,8 +103,8 @@ from_impl!(i64, Value, Int);
 from_impl!(u64, Value, Uint);
 from_impl!(f64, Value, Float);
 from_impl!(String, Value, Str);
-from_impl!(Instant, Value, Inst);
-from_impl!(Duration, Value, Dur);
+from_impl!(DateTime<Utc>, Value, Inst);
+from_impl!(TimeDelta, Value, Dur);
 
 from_impl!(u8, Value, Uint, u64);
 from_impl!(u16, Value, Uint, u64);
@@ -119,8 +120,8 @@ from_impl!(bool, Key, Bool);
 from_impl!(i64, Key, Int);
 from_impl!(u64, Key, Uint);
 from_impl!(String, Key, Str);
-from_impl!(Instant, Key, Inst);
-from_impl!(Duration, Key, Dur);
+from_impl!(DateTime<Utc>, Key, Inst);
+from_impl!(TimeDelta, Key, Dur);
 
 from_impl!(u8, Key, Uint, u64);
 from_impl!(u16, Key, Uint, u64);
@@ -171,7 +172,7 @@ impl<K: Into<Key>, V: Into<Value>> From<HashMap<K, V>> for Value {
 }
 
 macro_rules! try_into_impl {
-	($ty:ident, $enum:ident, $var:ident) => {
+	($ty:ty, $enum:ident, $var:ident) => {
 		impl TryInto<$ty> for $enum {
 			type Error = ();
 			fn try_into(self) -> Result<$ty, Self::Error> {
@@ -184,7 +185,7 @@ macro_rules! try_into_impl {
 	};
 }
 macro_rules! try_into_int_impl {
-	($ty:ident, $enum:ident) => {
+	($ty:ty, $enum:ident) => {
 		impl TryInto<$ty> for $enum {
 			type Error = ();
 			fn try_into(self) -> Result<$ty, Self::Error> {
@@ -202,8 +203,8 @@ try_into_impl!(u64, Value, Uint);
 try_into_impl!(i64, Value, Int);
 try_into_impl!(f64, Value, Float);
 try_into_impl!(String, Value, Str);
-try_into_impl!(Instant, Value, Inst);
-try_into_impl!(Duration, Value, Dur);
+try_into_impl!(DateTime<Utc>, Value, Inst);
+try_into_impl!(TimeDelta, Value, Dur);
 
 try_into_int_impl!(u8, Value);
 try_into_int_impl!(u16, Value);
@@ -219,8 +220,8 @@ try_into_impl!(bool, Key, Bool);
 try_into_impl!(u64, Key, Uint);
 try_into_impl!(i64, Key, Int);
 try_into_impl!(String, Key, Str);
-try_into_impl!(Instant, Key, Inst);
-try_into_impl!(Duration, Key, Dur);
+try_into_impl!(DateTime<Utc>, Key, Inst);
+try_into_impl!(TimeDelta, Key, Dur);
 
 try_into_int_impl!(u8, Key);
 try_into_int_impl!(u16, Key);
@@ -316,8 +317,8 @@ as_impl!(bool, as_bool, Value, Bool);
 as_impl!(i64, as_int, Value, Int);
 as_impl!(u64, as_uint, Value, Uint);
 as_impl!(f64, as_float, Value, Float);
-as_impl!(Instant, as_inst, Value, Inst);
-as_impl!(Duration, as_dur, Value, Dur);
+as_impl!(DateTime<Utc>, as_inst, Value, Inst);
+as_impl!(TimeDelta, as_dur, Value, Dur);
 as_ref_impl!(str, as_str, Value, Str);
 as_ref_impl!([Value], as_slice, Value, Array);
 as_mut_impl!(Vec<Value>, as_vec, Value, Array);
@@ -329,8 +330,8 @@ as_ref_impl!([u8], as_bigint, Value, BigInt);
 as_impl!(bool, as_bool, Key, Bool);
 as_impl!(i64, as_int, Key, Int);
 as_impl!(u64, as_uint, Key, Uint);
-as_impl!(Instant, as_inst, Key, Inst);
-as_impl!(Duration, as_dur, Key, Dur);
+as_impl!(DateTime<Utc>, as_inst, Key, Inst);
+as_impl!(TimeDelta, as_dur, Key, Dur);
 as_ref_impl!(str, as_str, Key, Str);
 as_impl!([u8; 16], as_uuid, Key, UUID);
 as_ref_impl!([u8], as_bigint, Key, BigInt);
@@ -388,8 +389,8 @@ macro_rules! eq_int_impl {
 
 eq_impl!(bool, Value, Bool);
 eq_impl!(String, Value, Str);
-eq_impl!(Instant, Value, Inst);
-eq_impl!(Duration, Value, Dur);
+eq_impl!(DateTime<Utc>, Value, Inst);
+eq_impl!(TimeDelta, Value, Dur);
 eq_impl!(f64, Value, Float);
 eq_impl!(&str, Value, Str);
 
@@ -406,8 +407,8 @@ eq_int_impl!(isize, Value);
 
 eq_impl!(bool, Key, Bool);
 eq_impl!(String, Key, Str);
-eq_impl!(Instant, Key, Inst);
-eq_impl!(Duration, Key, Dur);
+eq_impl!(DateTime<Utc>, Key, Inst);
+eq_impl!(TimeDelta, Key, Dur);
 eq_impl!(&str, Key, Str);
 
 eq_int_impl!(u64, Key);
@@ -472,8 +473,7 @@ impl IndexMut<&Key> for Value {
 }
 impl Value {
 	pub fn get_by_index<I: SliceIndex<[Value]>>(
-		&self,
-		index: I,
+		&self, index: I,
 	) -> Option<&<I as SliceIndex<[Value]>>::Output> {
 		match self {
 			Value::Array(a) => a.get(index),
@@ -481,8 +481,7 @@ impl Value {
 		}
 	}
 	pub fn get_by_index_mut<I: SliceIndex<[Value]>>(
-		&mut self,
-		index: I,
+		&mut self, index: I,
 	) -> Option<&mut <I as SliceIndex<[Value]>>::Output> {
 		match self {
 			Value::Array(a) => a.get_mut(index),

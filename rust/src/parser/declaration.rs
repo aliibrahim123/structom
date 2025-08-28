@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::{
 	DeclFile, DeclProvider, Error,
-	builtins::BUILT_INS_DEC_FILE,
+	builtins::BUILT_INS_IDS,
 	declaration::{DeclItem, EnumVariant, Field, StructDef, TypeId},
 	errors::{end_of_input, unexpected_token},
 	parser::{
@@ -16,11 +16,11 @@ use crate::{
 };
 
 pub struct DeclContext<'a> {
-	file: &'a mut DeclFile,
-	no_ns_imports: Vec<&'a DeclFile>,
-	ns_imports: HashMap<&'a str, &'a DeclFile>,
-	cur_low_id: u16,
-	cur_high_id: u16,
+	pub file: &'a mut DeclFile,
+	pub no_ns_imports: Vec<&'a DeclFile>,
+	pub ns_imports: HashMap<&'a str, &'a DeclFile>,
+	pub cur_low_id: u16,
+	pub cur_high_id: u16,
 }
 
 impl<'a> DeclContext<'a> {
@@ -37,13 +37,8 @@ impl<'a> DeclContext<'a> {
 
 // parse [tag]
 fn parse_tag(
-	tokens: &[Token],
-	ind: &mut usize,
-	cur_tag: &mut u32,
-	tag_name: &str,
-	item: &str,
-	item_name: &str,
-	ctx: &mut DeclContext<'_>,
+	tokens: &[Token], ind: &mut usize, cur_tag: &mut u32, tag_name: &str, item: &str,
+	item_name: &str, ctx: &mut DeclContext<'_>,
 ) -> Result<u32, Error> {
 	let mut tag = *cur_tag as u64;
 
@@ -73,10 +68,7 @@ fn parse_tag(
 }
 
 fn parse_import<'a>(
-	tokens: &'a [Token],
-	ind: &mut usize,
-	imports: &mut Vec<u64>,
-	ctx: &mut DeclContext<'a>,
+	tokens: &'a [Token], ind: &mut usize, imports: &mut Vec<u64>, ctx: &mut DeclContext<'a>,
 	provider: &'a dyn DeclProvider,
 ) -> Result<(), Error> {
 	// skip "import"
@@ -124,12 +116,8 @@ fn parse_import<'a>(
 }
 
 fn parse_anonymous_item(
-	type_name: &str,
-	tokens: &[Token],
-	ind: &mut usize,
-	ctx: &mut DeclContext,
-	options: &ParseOptions,
-	metadata: Option<Vec<(String, String)>>,
+	type_name: &str, tokens: &[Token], ind: &mut usize, ctx: &mut DeclContext,
+	options: &ParseOptions, metadata: Option<Vec<(String, String)>>,
 ) -> Result<TypeId, Error> {
 	match type_name {
 		"struct" => {
@@ -141,7 +129,7 @@ fn parse_anonymous_item(
 
 			_ = ctx.file.add_item(DeclItem::Struct { name, typeid, def });
 
-			return Ok(TypeId::new(ctx.file.id, typeid, None, metadata));
+			return Ok(TypeId::new(ctx.file.id, typeid, metadata));
 		}
 		"enum" => {
 			let typeid = ctx.cur_high_id;
@@ -154,19 +142,14 @@ fn parse_anonymous_item(
 
 			_ = ctx.file.add_item(decl);
 
-			return Ok(TypeId::new(ctx.file.id, typeid, None, metadata));
+			return Ok(TypeId::new(ctx.file.id, typeid, metadata));
 		}
 		_ => unreachable!(),
 	}
 }
 
-fn parse_metadata(
-	tokens: &[Token],
-	ind: &mut usize,
-	field: &str,
-	struct_name: &str,
-	file_name: &str,
-	options: &ParseOptions,
+pub fn parse_metadata(
+	tokens: &[Token], ind: &mut usize, loc: &impl Fn() -> String, options: &ParseOptions,
 ) -> Result<Option<Vec<(String, String)>>, Error> {
 	let mut metadata = None;
 
@@ -188,7 +171,8 @@ fn parse_metadata(
 			// check for metadata collision
 			if metadata.iter().any(|(n, _)| name == n) {
 				return Err(Error::TypeError(format!(
-					"declaring multiple metadata with the same name \"{name}\" at field \"{field}\" in struct \"{struct_name}\" in declaration file \"{file_name}\""
+					"declaring multiple metadata with the same name \"{name}\" {}",
+					loc()
 				)));
 			}
 			metadata.push((name.to_string(), value.to_string()));
@@ -198,17 +182,94 @@ fn parse_metadata(
 	Ok(metadata)
 }
 
-fn parse_typeid(
-	tokens: &[Token],
-	ind: &mut usize,
-	field: &str,
-	struct_name: &str,
-	ctx: &mut DeclContext<'_>,
-	options: &ParseOptions,
-) -> Result<TypeId, Error> {
-	let file_name = &ctx.file.name;
+// macro since it depend on a specific form of parse_typeid, one for
+// declarations and one for values
+#[macro_export]
+macro_rules! parse_typeid_general {
+	($args:expr, $loc:expr) => {{
+		let (tokens, ind, type_name, loc, metadata, ctx, options) = $args;
+		// array
+		if type_name == "arr" {
+			consume_symbol('<', tokens, ind)?;
+			let itemid = parse_typeid(tokens, ind, loc, ctx, options)?;
+			consume_symbol('>', tokens, ind)?;
 
-	let metadata = parse_metadata(tokens, ind, field, struct_name, file_name, options)?;
+			return Ok(TypeId::with_variant(0, 0x22, 0, Some(itemid), metadata));
+		}
+
+		// map
+		if type_name == "map" {
+			consume_symbol('<', tokens, ind)?;
+
+			let keyid = parse_typeid(tokens, ind, loc, ctx, options)?;
+			if (keyid.ns != 0 || keyid.id == 0x23 || keyid.id == 0x22) {
+				return Err(Error::TypeError(format!(
+					"map key can only be a primitive {}",
+					$loc(ctx)
+				)));
+			}
+
+			consume_symbol(',', tokens, ind)?;
+			let valueid = parse_typeid(tokens, ind, loc, ctx, options)?;
+			consume_symbol('>', tokens, ind)?;
+
+			return Ok(TypeId::with_variant(0, 0x23, keyid.id, Some(valueid), metadata));
+		}
+
+		// check for built-in
+		if let Some(id) = BUILT_INS_IDS.get(type_name).cloned() {
+			return Ok(TypeId::new(0, id, metadata));
+		}
+
+		// check for current file
+		if let Some(item) = ctx.file.get_by_name(type_name) {
+			return Ok(TypeId::new(ctx.file.id, item.typeid(), metadata));
+		}
+
+		// check for no-namespace imports
+		let mut files = ctx.no_ns_imports.iter();
+		if let Some((file, item)) = files.find_map(|f| f.get_by_name(type_name).map(|i| (f, i))) {
+			return Ok(TypeId::new(file.id, item.typeid(), metadata));
+		}
+
+		// namespaced items
+		if let Some(Token::Symbol('.', _)) = tokens.get(*ind) {
+			let ns = type_name;
+			*ind += 1; // skip '.'
+
+			let type_name = consume_ident(tokens, ind)?;
+
+			// get the file of the namespace
+			let file = ctx.ns_imports.get(ns);
+			if file.is_none() {
+				return Err(Error::TypeError(format!(
+					"undefined namespace \"{ns}\" {}",
+					$loc(ctx)
+				)));
+			};
+			let file = file.unwrap();
+
+			// get the item
+			let item = file.get_by_name(type_name);
+			if item.is_none() {
+				return Err(Error::TypeError(format!(
+					"undefined type \"{type_name}\" in namespace \"{ns}\" {}",
+					$loc(ctx)
+				)));
+			}
+
+			return Ok(TypeId::new(file.id, item.unwrap().typeid(), metadata));
+		}
+
+		Err(Error::TypeError(format!("undefined type \"{type_name}\" {}", $loc(ctx))))
+	}};
+}
+
+fn parse_typeid(
+	tokens: &[Token], ind: &mut usize, loc: &impl Fn(&DeclContext<'_>) -> String,
+	ctx: &mut DeclContext<'_>, options: &ParseOptions,
+) -> Result<TypeId, Error> {
+	let metadata = parse_metadata(tokens, ind, &|| loc(ctx), options)?;
 
 	let first_part = consume_ident(tokens, ind)?;
 
@@ -220,61 +281,11 @@ fn parse_typeid(
 		_ => (),
 	}
 
-	// namespaced items
-	if let Some(Token::Symbol('.', _)) = tokens.get(*ind) {
-		*ind += 1; // skip '.'
-
-		let type_name = consume_ident(tokens, ind)?;
-
-		// get the file of the namespace
-		let file = ctx.ns_imports.get(first_part);
-		if file.is_none() {
-			return Err(Error::TypeError(format!(
-				"undefined namespace \"{first_part}\" at field \"{field}\" in struct \"{struct_name}\" in declaration file \"{file_name}\""
-			)));
-		};
-		let file = file.unwrap();
-
-		// get the item
-		let item = file.get_by_name(type_name);
-		if item.is_none() {
-			return Err(Error::TypeError(format!(
-				"undefined type \"{type_name}\" in namespace \"{first_part}\" at field \"{field}\" in struct \"{struct_name}\" in declaration file \"{file_name}\""
-			)));
-		}
-
-		return Ok(TypeId::new(file.id, item.unwrap().typeid(), None, metadata));
-	}
-
-	// unnamespaced items
-	let type_name = first_part;
-
-	// check for built-in
-	if let Some(id) = BUILT_INS_DEC_FILE.get(type_name).cloned() {
-		return Ok(TypeId::new(0, id, None, metadata));
-	}
-
-	// check for current file
-	if let Some(item) = ctx.file.get_by_name(type_name) {
-		return Ok(TypeId::new(ctx.file.id, item.typeid(), None, metadata));
-	}
-
-	// check for no-namespace imports
-	let mut files = ctx.no_ns_imports.iter();
-	if let Some((file, item)) = files.find_map(|f| f.get_by_name(type_name).map(|i| (f, i))) {
-		return Ok(TypeId::new(file.id, item.typeid(), None, metadata));
-	}
-
-	Err(Error::TypeError(format!(
-		"undefined type \"{type_name}\" at field \"{field}\" in struct \"{struct_name}\" in declaration file \"{file_name}\""
-	)))
+	parse_typeid_general!((tokens, ind, first_part, loc, metadata, ctx, options), |ctx| loc(ctx))
 }
 
 fn parse_fields(
-	tokens: &[Token],
-	ind: &mut usize,
-	item: &str,
-	ctx: &mut DeclContext<'_>,
+	tokens: &[Token], ind: &mut usize, item: &str, ctx: &mut DeclContext<'_>,
 	options: &ParseOptions,
 ) -> Result<StructDef, Error> {
 	let mut def = StructDef::default();
@@ -285,7 +296,7 @@ fn parse_fields(
 
 	// loop through fields
 	loop {
-		if struct_like_start(tokens, ind, &mut watched_comma)? {
+		if struct_like_start(tokens, ind, &mut watched_comma, '}')? {
 			break;
 		}
 
@@ -312,7 +323,13 @@ fn parse_fields(
 
 		consume_symbol(':', tokens, ind)?;
 
-		let typeid = parse_typeid(tokens, ind, &name, item, ctx, options)?;
+		let loc = |ctx: &DeclContext| {
+			format!(
+				"at field \"{name}\" in struct \"{item}\" in declaration file \"{}\"",
+				ctx.file.name
+			)
+		};
+		let typeid = parse_typeid(tokens, ind, &loc, ctx, options)?;
 
 		_ = def.add_field(Field::new(name, tag, typeid, is_optional));
 
@@ -331,11 +348,7 @@ fn parse_fields(
 }
 
 fn parse_enum_body(
-	tokens: &[Token],
-	ind: &mut usize,
-	decl: &mut DeclItem,
-	name: &str,
-	ctx: &mut DeclContext<'_>,
+	tokens: &[Token], ind: &mut usize, decl: &mut DeclItem, name: &str, ctx: &mut DeclContext<'_>,
 	options: &ParseOptions,
 ) -> Result<(), Error> {
 	let mut watched_comma = true;
@@ -345,7 +358,7 @@ fn parse_enum_body(
 
 	// loop through variants
 	loop {
-		if struct_like_start(tokens, ind, &mut watched_comma)? {
+		if struct_like_start(tokens, ind, &mut watched_comma, '}')? {
 			break;
 		}
 
@@ -365,11 +378,7 @@ fn parse_enum_body(
 			_ => None,
 		};
 
-		_ = decl.add_variant(EnumVariant {
-			name: variant.to_string(),
-			tag: tag,
-			def: field_def,
-		});
+		_ = decl.add_variant(EnumVariant { name: variant.to_string(), tag, def: field_def });
 
 		struct_like_end(tokens, ind, &mut watched_comma);
 	}
@@ -388,9 +397,7 @@ fn parse_enum_body(
 }
 
 fn parse_item_common<'a>(
-	tokens: &'a [Token],
-	ind: &mut usize,
-	ctx: &mut DeclContext<'a>,
+	tokens: &'a [Token], ind: &mut usize, ctx: &mut DeclContext<'a>,
 ) -> Result<(&'a str, u16), Error> {
 	*ind += 1;
 
@@ -418,11 +425,8 @@ fn parse_item_common<'a>(
 }
 
 pub fn parse_declaration<'a>(
-	file: &'a mut DeclFile,
-	tokens: &'a [Token],
-	ind: &mut usize,
+	file: &'a mut DeclFile, tokens: &'a [Token], ind: &mut usize, provider: &'a dyn DeclProvider,
 	options: &ParseOptions,
-	provider: &'a dyn DeclProvider,
 ) -> Result<DeclContext<'a>, Error> {
 	let mut ctx = DeclContext::new(file);
 	let mut imports = Vec::<u64>::new();
@@ -435,11 +439,7 @@ pub fn parse_declaration<'a>(
 
 				let def = parse_fields(tokens, ind, name, &mut ctx, options)?;
 
-				_ = ctx.file.add_item(DeclItem::Struct {
-					name: name.to_string(),
-					typeid: id,
-					def,
-				});
+				_ = ctx.file.add_item(DeclItem::Struct { name: name.to_string(), typeid: id, def });
 			}
 			"enum" => {
 				let (name, id) = parse_item_common(tokens, ind, &mut ctx)?;

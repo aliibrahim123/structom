@@ -7,6 +7,9 @@ use crate::{
 pub fn get_char(str: &str, ind: usize) -> Option<char> {
 	str.as_bytes().get(ind).map(|b| *b as char)
 }
+pub fn is_hex(char: char) -> bool {
+	matches!(char, '0'..='9' | 'a'..='f' | 'A'..='F')
+}
 
 pub fn while_matching(source: &str, ind: usize, pred: fn(char) -> bool) -> usize {
 	source
@@ -15,6 +18,10 @@ pub fn while_matching(source: &str, ind: usize, pred: fn(char) -> bool) -> usize
 		.find(|c| !pred(c))
 		.map(|i| ind + i)
 		.unwrap_or(source.len())
+}
+
+pub fn all_matching(source: &str, pred: fn(char) -> bool) -> bool {
+	source.bytes().all(|c| pred(c as char))
 }
 
 pub fn consume_ident<'a>(tokens: &'a [Token], ind: &mut usize) -> Result<&'a str, Error> {
@@ -73,22 +80,19 @@ pub fn consume_float(tokens: &[Token], ind: &mut usize) -> Result<f64, Error> {
 
 // handle commas
 pub fn struct_like_start(
-	tokens: &[Token],
-	ind: &mut usize,
-	watched_comma: &mut bool,
+	tokens: &[Token], ind: &mut usize, watched_comma: &mut bool, end_delimiter: char,
 ) -> Result<bool, Error> {
 	// break on end
-	if let Some(Token::Symbol('}', _)) = tokens.get(*ind) {
+	if let Some(Token::Symbol(c, _)) = tokens.get(*ind)
+		&& *c == end_delimiter
+	{
 		*ind += 1;
 		return Ok(true);
 	}
 
 	// no comma
 	if *watched_comma == false {
-		return Err(unexpected_token(
-			tokens[*ind].to_string(),
-			tokens[*ind].ind(),
-		));
+		return Err(unexpected_token(&tokens[*ind], tokens[*ind].ind()));
 	}
 	*watched_comma = false;
 

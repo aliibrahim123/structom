@@ -19,10 +19,10 @@ to have an array of different types, use an enum or `any` as the array type.
 
 ### object notation
 ```
-array_id = typeid "[]" | "Array" "<" typeid ">"
+array_id = "arr" "<" typeid ">"
 array_value = [array_id] "[" ("" | value ("," value)* [","]) "]"
 ```
-array typeid is wriiten by the array item typeid followed by square brackets (`item_type[]`), or `Array<item_type>`.
+array typeid is wriiten by `arr<item_type>`.
 
 array values are written as a list of values separated by commas wrapped inside square brackets, optionally prefixed by the array typeid.
 
@@ -30,8 +30,7 @@ if the type is not inferable and the array has items of different types, it is a
 
 ```rust
 [1, 2, 3] // => varuint[]
-u32[] [1, 2, 3]
-Array<u32> [1, 2, 3]
+arr<u32> [1, 2, 3]
 [1, "a", true] // => any[]
 ```
 
@@ -62,17 +61,17 @@ in case an array is encoded in a field value, the count section is omitted and t
 ```
 maps are collections of keyed values of the same type.
 
-maps can have keys of types other than strings.
+maps can have keys of any non structure type.
 
 to have a map of different types, use an enum or `any` as the map value type.
 
 ### object notation
 ```
-map_id = "Map" "<" typeid "," typeid ">"
+map_id = "map" "<" typeid "," typeid ">"
 map_item = (identifier | str | "[" value "]") ":" value
 map_value = [map_id] "{" ("" | map_item ("," map_item)* [","]) "}"
 ```
-map typeid is wriiten by `Map<key_type, value_type>`.
+map typeid is wriiten by `map<key_type, value_type>`.
 
 map values are written as a list of key value pairs separated by commas wrapped inside curly brackets, optionally prefixed by the map typeid.
 
@@ -80,9 +79,9 @@ map key can be an identifier, a string, or a value wrapped inside square bracket
 
 if the type is not inferable and the map has items or keys of different types, it is assumed that these types is `any`.
 ```rust
-{ a: 1, "b": 2 } // => Map<str, varuint>
-Map<u32, str> { [0]: "a", [1]: "b" }
-{ [1]: 1, a: 2 } // => Map<any, varuint>
+{ a: 1, "b": 2 } // => map<str, varuint>
+map<u32, str> { [0]: "a", [1]: "b" }
+{ [1]: 1, a: 2 } // => map<any, varuint>
 ```
 
 ### binary encoding
