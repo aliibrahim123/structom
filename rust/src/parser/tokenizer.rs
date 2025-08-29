@@ -42,7 +42,7 @@ impl Display for Token<'_> {
 			Token::Str(str, _) => write!(f, "\"{}\"", str),
 			Token::Uint(nb, _) => write!(f, "nb({})", nb),
 			Token::Int(nb, _) => write!(f, "nb({})", nb),
-			Token::BigInt(nb, _) => write!(f, "nb({})", 0),
+			Token::BigInt(_, _) => write!(f, "nb({})", 0),
 			Token::Float(nb, _) => write!(f, "nb({})", nb),
 			Token::Symbol(symbol, _) => write!(f, "{}", symbol),
 			Token::EOF(_) => write!(f, "end_of_file"),

@@ -214,3 +214,59 @@ fn add_item<'a, T>(vec: &mut Vec<Option<T>>, id: usize, item: T) -> Result<(), (
 	vec.push(Some(item));
 	Ok(())
 }
+
+#[derive(Debug)]
+pub struct FixedSetProviderRef<'a> {
+	files: HashMap<u64, &'a DeclFile>,
+	files_by_name: HashMap<&'a str, &'a DeclFile>,
+}
+impl<'a> FixedSetProviderRef<'a> {
+	pub fn new(declarations: &[&'a DeclFile]) -> Self {
+		let mut files = HashMap::new();
+		let mut files_by_name = HashMap::new();
+
+		// add files
+		for &file in declarations {
+			files.insert(file.id, file);
+			files_by_name.insert(file.name.as_str(), file);
+		}
+
+		Self { files, files_by_name }
+	}
+}
+impl DeclProvider for FixedSetProviderRef<'_> {
+	fn get_by_id(&self, id: u64) -> &DeclFile {
+		self.files.get(&id).unwrap()
+	}
+	fn get_by_name<'a>(&'a self, name: &str) -> Option<&'a DeclFile> {
+		self.files_by_name.get(name).map(|v| *v)
+	}
+}
+
+#[derive(Debug)]
+pub struct FixedSetProvider {
+	files: HashMap<u64, DeclFile>,
+	files_by_name: HashMap<String, u64>,
+}
+impl FixedSetProvider {
+	pub fn new(declarations: Vec<DeclFile>) -> Self {
+		let mut files = HashMap::new();
+		let mut files_by_name = HashMap::new();
+
+		// add files
+		for file in declarations.into_iter() {
+			files_by_name.insert(file.name.clone(), file.id);
+			files.insert(file.id, file);
+		}
+
+		Self { files, files_by_name }
+	}
+}
+impl DeclProvider for FixedSetProvider {
+	fn get_by_id(&self, id: u64) -> &DeclFile {
+		self.files.get(&id).unwrap()
+	}
+	fn get_by_name<'a>(&'a self, name: &str) -> Option<&'a DeclFile> {
+		self.files_by_name.get(name).map(|ind| self.files.get(ind).unwrap())
+	}
+}

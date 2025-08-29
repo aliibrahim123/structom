@@ -8,6 +8,7 @@ use crate::{Key, Value};
 pub struct StringifyOptions<'a> {
 	pub metadata: bool,
 	pub ident: &'a str,
+	pub enums: bool,
 }
 
 pub fn stringify(value: &Value, options: &StringifyOptions) -> String {
@@ -71,6 +72,7 @@ fn add_indent(result: &mut String, depth: usize, options: &StringifyOptions) {
 
 static META_KEY: LazyLock<Key> = LazyLock::new(|| Key::Str("$has_meta".to_string()));
 static VALUE_KEY: LazyLock<Key> = LazyLock::new(|| Key::Str("value".to_string()));
+static ENUM_VARIANT_KEY: LazyLock<Key> = LazyLock::new(|| Key::Str("$enum_variant".to_string()));
 fn str_map(
 	map: &HashMap<Key, Value>, result: &mut String, depth: usize, options: &StringifyOptions,
 ) {
@@ -91,10 +93,20 @@ fn str_map(
 		return;
 	}
 
+	// case enums
+	if options.enums && map.contains_key(&ENUM_VARIANT_KEY) {
+		result.push_str(map.get(&ENUM_VARIANT_KEY).unwrap().as_str().unwrap());
+	}
+
 	result.push_str("{");
 
 	// loop through map
 	for (ind, (key, value)) in map.iter().enumerate() {
+		// skip $enum_variant
+		if key.as_str() == Some("$enum_variant") {
+			continue;
+		}
+
 		// comma
 		if ind != 0 {
 			result.push_str(",");
