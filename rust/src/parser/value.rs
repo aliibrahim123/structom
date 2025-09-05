@@ -6,7 +6,7 @@ use crate::{
 	declaration::{DeclItem, EnumVariant, StructDef, TypeId, resolve_typeid},
 	errors::{end_of_input, unexpected_token},
 	parser::{
-		declaration::{DeclContext, parse_metadata},
+		declaration::{DeclContext, parse_metadata, parse_typeid_general},
 		rich_types::{parse_dur, parse_inst, parse_uuid},
 		tokenizer::Token,
 		utils::{consume_ident, consume_str, consume_symbol, struct_like_end, struct_like_start},
@@ -52,7 +52,7 @@ fn parse_typeid(
 
 	let typename = consume_ident(tokens, ind)?;
 
-	crate::parse_typeid_general!((tokens, ind, typename, loc, metadata, ctx, options), |_| loc())
+	parse_typeid_general!((tokens, ind, typename, loc, metadata, ctx, options), |_| loc())
 }
 
 fn parse_arr(

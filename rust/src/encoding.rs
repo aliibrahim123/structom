@@ -6,11 +6,10 @@ mod rich;
 
 pub use any::*;
 pub use general::*;
-pub use item::*;
 pub use nb::*;
 pub use rich::*;
 
-use crate::{DeclProvider, Value};
+use crate::{DeclProvider, Value, encoding::item::decode_item};
 
 pub fn encode(value: &Value) -> Vec<u8> {
 	// make decl_path empty string, so type is any implicitly

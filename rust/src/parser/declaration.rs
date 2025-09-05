@@ -184,7 +184,6 @@ pub fn parse_metadata(
 
 // macro since it depend on a specific form of parse_typeid, one for
 // declarations and one for values
-#[macro_export]
 macro_rules! parse_typeid_general {
 	($args:expr, $loc:expr) => {{
 		let (tokens, ind, type_name, loc, metadata, ctx, options) = $args;
@@ -264,6 +263,7 @@ macro_rules! parse_typeid_general {
 		Err(Error::TypeError(format!("undefined type \"{type_name}\" {}", $loc(ctx))))
 	}};
 }
+pub(crate) use parse_typeid_general;
 
 fn parse_typeid(
 	tokens: &[Token], ind: &mut usize, loc: &impl Fn(&DeclContext<'_>) -> String,

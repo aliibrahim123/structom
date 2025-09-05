@@ -6,7 +6,8 @@ use crate::builtins::BUILT_INS_NAMES;
 pub struct DeclFile {
 	pub name: String,
 	pub id: u64,
-	pub(crate) items: HashMap<u16, DeclItem>,
+	#[doc(hidden)]
+	pub items: HashMap<u16, DeclItem>,
 	pub(crate) items_by_name: HashMap<String, u16>,
 }
 
@@ -221,6 +222,16 @@ fn add_item<'a, T>(vec: &mut Vec<Option<T>>, id: usize, item: T) -> Result<(), (
 	}
 	vec.push(Some(item));
 	Ok(())
+}
+
+pub struct VoidProvider {}
+impl DeclProvider for VoidProvider {
+	fn get_by_id(&self, _id: u64) -> &DeclFile {
+		panic!("how did we get here")
+	}
+	fn get_by_name<'a>(&'a self, _name: &str) -> Option<&'a DeclFile> {
+		None
+	}
 }
 
 #[derive(Debug)]
