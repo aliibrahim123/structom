@@ -1,9 +1,11 @@
 [package]
 name = "structom"
+description = "efficient data format for all needs"
 version = "0.1.0"
 edition = "2024"
 readme = "../readme.md"
 license = "MIT"
+repository = "https://github.com/aliibrahim123/structom"
 
 [dependencies]
 chrono = "0.4.41"
