@@ -141,8 +141,9 @@ the values of `mlen`:
 - `001`: value is 2 bytes.
 - `010`: value is 4 bytes.
 - `011`: value is 8 bytes.
-- `100`: value is sized by bytes according to `len` field after the header.
-- `101` - `111`: reserved.
+- `100`: value is varint, taking max 10 bytes.
+- `101`: value is sized by bytes according to `len` field after the header.
+- `110` - `111`: reserved.
 
 fields can be encoded in any order, and undefined tags are skipped.
 

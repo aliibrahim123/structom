@@ -84,13 +84,25 @@ if a number literal value in not inferable and with no suffix, it is assumed to 
 
 ### binary encoding
 ```
+vint / vuint
 +--------+  +--------+
 |   id   |  | value  |
 +--------+  +--------+
 |  0x1x  |  |  vint  |
 +--------+  +--------+
+
+bint        value
++--------+  +--------+--------+
+|   id   |  |  size  | value  |
++--------+  +--------+--------+
+|  0x1e  |  |  vint  | x size |
++--------+  +--------+--------+
 ```
-variable size integers are encoded in 2 complement in LEB128 encoding, taking as many bytes as needed, max 9 bytes for `vint` and `vuint`.
+`vint` / `vuint` are encoded in 2 complement in LEB128 encoding, taking as many bytes as needed, max 10 bytes.
+
+`bint` is encoded in 2 complement and in little endian encoded as an array of bytes.
+
+in case a `bint` is encoded in a field value, the size section is omitted and the length is infered from the `len` section in the field encoding.
 
 type  | id   |
 ----- | ---- |
@@ -135,9 +147,8 @@ floating point numbers are encoded in IEEE 754 encoding in little endian, in 2, 
 
 type  | id   | bytes |
 ----- | ---- | ----- |
-f16   | 0x18 | 2     |
-f32   | 0x19 | 4     |
-f64   | 0x1a | 8     |
+f32   | 0x18 | 4     |
+f64   | 0x19 | 8     |
 
 ## boolean
 ```rust

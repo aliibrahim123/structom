@@ -35,7 +35,6 @@ impl FSProvider {
 
 	pub fn load_file<'a>(&'a self, path: impl AsRef<Path>) -> Result<&'a DeclFile, LoadFileError> {
 		let path = Path::join(&self.root, path.as_ref());
-		println!("loading {:?}", path);
 		{
 			let cache = self.cache.borrow();
 			if let Some(id) = cache.files_by_name.get(&path) {
@@ -66,6 +65,6 @@ impl DeclProvider for FSProvider {
 		unsafe { &*(self.cache.borrow().files.get(&id).unwrap().as_ref() as *const DeclFile) }
 	}
 	fn get_by_name<'a>(&'a self, name: &str) -> Option<&'a DeclFile> {
-		self.load_file(name).inspect_err(|e| println!("{:?}", e)).ok()
+		self.load_file(name).ok()
 	}
 }

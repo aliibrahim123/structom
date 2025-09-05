@@ -83,7 +83,7 @@ fn parse_arr(
 		struct_like_end(tokens, ind, &mut watched_comma);
 	}
 
-	Ok(Value::Array(arr))
+	Ok(Value::Arr(arr))
 }
 fn parse_map(
 	tokens: &[Token], ind: &mut usize, typeid: &TypeId, ctx: &DeclContext,
@@ -207,10 +207,7 @@ fn parse_item(
 		CaseUnitVariant(variant) => return Ok(Value::from(variant)),
 	};
 
-	// count required fields
-	let fields = def.fields.iter();
-	let mut required =
-		fields.filter(|field| field.as_ref().is_some_and(|f| !f.is_optional)).count();
+	let mut required = def.required_fields;
 
 	consume_symbol('{', tokens, ind)?;
 	let mut watched_comma = true;
@@ -420,7 +417,7 @@ pub fn parse_value(
 					}
 					Value::Int(*nb as i64)
 				}
-				0x18..=0x1a => Value::Float(*nb as f64),
+				0x18..=0x19 => Value::Float(*nb as f64),
 				_ => return mismatch_types(&typeid.name(provider), "uint", *ind),
 			}
 		}
@@ -440,7 +437,7 @@ pub fn parse_value(
 					Value::Uint(*nb as u64)
 				}
 				0x17 | 0x1d | 1 => Value::Int(*nb),
-				0x18..=0x1a => Value::Float(*nb as f64),
+				0x18..=0x19 => Value::Float(*nb as f64),
 				_ => return mismatch_types(&typeid.name(provider), "int", *ind),
 			}
 		}
@@ -458,7 +455,7 @@ pub fn parse_value(
 			Value::Float(if *symbol == '+' { f64::INFINITY } else { f64::NEG_INFINITY })
 		}
 		Some(Token::Float(nb, _)) => {
-			if typeid.ns != 0 || !matches!(typeid.id, 1 | 0x10..=0x1f) {
+			if typeid.ns != 0 || !matches!(typeid.id, 1 | 0x18..=0x19) {
 				return mismatch_types(&typeid.name(provider), "f64", *ind);
 			}
 			Value::Float(*nb)

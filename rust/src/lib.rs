@@ -1,5 +1,6 @@
-mod builtins;
+pub(crate) mod builtins;
 mod declaration;
+pub mod encoding;
 mod errors;
 mod fs_decl_provider;
 mod parser;

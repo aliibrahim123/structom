@@ -4,7 +4,7 @@ use chrono::{DateTime, TimeDelta, Timelike, Utc};
 
 use crate::{Key, Value};
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct StringifyOptions<'a> {
 	pub metadata: bool,
 	pub ident: &'a str,
@@ -55,7 +55,7 @@ pub fn str_value(value: &Value, result: &mut String, depth: usize, options: &Str
 				result.push_str(nb.to_string().as_str())
 			}
 		}
-		Value::Array(arr) => str_arr(arr, result, depth, options),
+		Value::Arr(arr) => str_arr(arr, result, depth, options),
 		Value::Map(map) => str_map(map, result, depth, options),
 		_ => (),
 	}

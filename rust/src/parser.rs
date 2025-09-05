@@ -11,7 +11,7 @@ use crate::{
 	parser::{declaration::parse_declaration, tokenizer::tokenize},
 };
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ParseOptions {
 	pub metadata: bool,
 }

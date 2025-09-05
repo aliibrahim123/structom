@@ -25,26 +25,15 @@ enum MyEnum {
 define named types with thier fields, see [primitive structures](./primitive-structures.md).
 
 ## import declarations
-### object notation
 ```
 "import" str ["as" identifier]
 ```
 
-### binary encoding
-```
-+--------+---------+--------+
-|  tag   | idspace |  path  |
-+--------+---------+--------+
-|  0x01  |   u8    | string |
-+--------+---------+--------+
-```
 imports are used to link a declaration file into the scope.
 
 the path can be a relative path, or a url.
 
-in object notation, the content of the declaration file are placed under the specified namespace `ns` declared through `as ns`, else they are reference directly by name.
-
-in binary format, the content of the declaration file are placed under the specified idspace.
+the content of the declaration file are placed under the specified namespace `ns` declared through `as ns`, else they are reference directly by name.
 
 the imports only effect the current file.
 

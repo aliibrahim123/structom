@@ -30,6 +30,7 @@ pub struct Field {
 pub struct StructDef {
 	pub fields: Vec<Option<Field>>,
 	pub fields_by_name: HashMap<String, u32>,
+	pub required_fields: u32,
 }
 
 #[derive(Debug)]
@@ -59,9 +60,9 @@ pub trait DeclProvider {
 	fn get_by_name<'a>(&'a self, name: &str) -> Option<&'a DeclFile>;
 }
 
-static mut DECLARE_ID_COUNTER: u64 = 0;
 impl DeclFile {
-	pub fn new(name: String) -> Self {
+	pub(crate) fn new(name: String) -> Self {
+		static mut DECLARE_ID_COUNTER: u64 = 0;
 		let id = unsafe {
 			DECLARE_ID_COUNTER += 1;
 			DECLARE_ID_COUNTER
@@ -69,17 +70,23 @@ impl DeclFile {
 		DeclFile { name, id, items: HashMap::new(), items_by_name: HashMap::new() }
 	}
 
-	pub fn add_item(&mut self, item: DeclItem) {
+	pub(crate) fn add_item(&mut self, item: DeclItem) {
 		self.items_by_name.insert(item.name().to_string(), item.typeid());
 		self.items.insert(item.typeid(), item);
 	}
 
-	pub fn get_by_name(&self, name: &str) -> Option<&DeclItem> {
+	pub(crate) fn get_by_name(&self, name: &str) -> Option<&DeclItem> {
 		let id = self.items_by_name.get(name);
 		id.and_then(|id| self.get_by_id(*id))
 	}
-	pub fn get_by_id(&self, id: u16) -> Option<&DeclItem> {
+	pub(crate) fn get_by_id(&self, id: u16) -> Option<&DeclItem> {
 		self.items.get(&id)
+	}
+}
+
+impl PartialEq<DeclFile> for DeclFile {
+	fn eq(&self, other: &DeclFile) -> bool {
+		self.id == other.id
 	}
 }
 
@@ -128,6 +135,7 @@ impl DeclItem {
 
 impl StructDef {
 	pub fn add_field(&mut self, field: Field) -> Result<(), ()> {
+		self.required_fields += !field.is_optional as u32;
 		self.fields_by_name.insert(field.name.to_string(), field.tag);
 		add_item(&mut self.fields, field.tag as usize, field)
 	}

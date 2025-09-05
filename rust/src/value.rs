@@ -19,7 +19,7 @@ pub enum Value {
 	Inst(DateTime<Utc>),
 	Dur(TimeDelta),
 	UUID([u8; 16]),
-	Array(Vec<Value>),
+	Arr(Vec<Value>),
 	Map(HashMap<Key, Value>),
 }
 
@@ -44,6 +44,31 @@ impl Default for Key {
 	fn default() -> Self {
 		Key::Uint(0)
 	}
+}
+
+macro_rules! is_impl {
+	($enum:ident, $(($ty:ident, $met:ident)),+) => {
+		$(pub fn $met(&self) -> bool {
+			match self {
+				$enum::$ty(_) => true,
+				_ => false,
+			}
+		})+
+	};
+}
+
+impl Value {
+	is_impl!(Value, (Bool, is_bool), (Uint, is_uint), (Int, is_int), (Str, is_str));
+	is_impl!(Value, (BigInt, is_bigint), (Float, is_float), (Inst, is_inst), (Dur, is_dur));
+	is_impl!(Value, (UUID, is_uuid), (Arr, is_array), (Map, is_map));
+
+	pub fn into_key(self) -> Key {
+		self.try_into().unwrap()
+	}
+}
+impl Key {
+	is_impl!(Key, (Bool, is_bool), (Uint, is_uint), (Int, is_int), (Str, is_str));
+	is_impl!(Key, (BigInt, is_bigint), (Inst, is_inst), (Dur, is_dur), (UUID, is_uuid));
 }
 
 impl TryFrom<Value> for Key {
@@ -78,55 +103,34 @@ impl From<Key> for Value {
 }
 
 macro_rules! from_impl {
-	($ty:ty, $enum:ident, $var:ident) => {
-		impl From<$ty> for $enum {
+	($enum:ident, $(($ty:ty, $var:ident)),+) => {
+		$(impl From<$ty> for $enum {
 			fn from(v: $ty) -> Self {
 				$enum::$var(v)
 			}
-		}
+		})+
 	};
-	($ty:ident, $enum:ident, $var:ident, $as:ident) => {
-		impl From<$ty> for $enum {
+	($enum:ident, $var:ident, $as:ident, [$($ty:ident),+]) => {
+		$(impl From<$ty> for $enum {
 			fn from(v: $ty) -> Self {
 				$enum::$var(v as $as)
 			}
-		}
+		})+
 	};
 }
 
-from_impl!(bool, Value, Bool);
-from_impl!(i64, Value, Int);
-from_impl!(u64, Value, Uint);
-from_impl!(f64, Value, Float);
-from_impl!(String, Value, Str);
-from_impl!(DateTime<Utc>, Value, Inst);
-from_impl!(TimeDelta, Value, Dur);
+from_impl!(Value, (bool, Bool), (i64, Int), (u64, Uint), (f64, Float));
+from_impl!(Value, (String, Str), (DateTime<Utc>, Inst), (TimeDelta, Dur));
 
-from_impl!(u8, Value, Uint, u64);
-from_impl!(u16, Value, Uint, u64);
-from_impl!(u32, Value, Uint, u64);
-from_impl!(usize, Value, Uint, u64);
-from_impl!(i8, Value, Int, i64);
-from_impl!(i16, Value, Int, i64);
-from_impl!(i32, Value, Int, i64);
-from_impl!(isize, Value, Int, i64);
-from_impl!(f32, Value, Float, f64);
+from_impl!(Value, Uint, u64, [u8, u16, u32, usize]);
+from_impl!(Value, Int, i64, [i8, i16, i32, isize]);
+from_impl!(Value, Float, f64, [f32]);
 
-from_impl!(bool, Key, Bool);
-from_impl!(i64, Key, Int);
-from_impl!(u64, Key, Uint);
-from_impl!(String, Key, Str);
-from_impl!(DateTime<Utc>, Key, Inst);
-from_impl!(TimeDelta, Key, Dur);
+from_impl!(Key, (bool, Bool), (i64, Int), (u64, Uint), (String, Str));
+from_impl!(Key, (DateTime<Utc>, Inst), (TimeDelta, Dur));
 
-from_impl!(u8, Key, Uint, u64);
-from_impl!(u16, Key, Uint, u64);
-from_impl!(u32, Key, Uint, u64);
-from_impl!(usize, Key, Uint, u64);
-from_impl!(i8, Key, Int, i64);
-from_impl!(i16, Key, Int, i64);
-from_impl!(i32, Key, Int, i64);
-from_impl!(isize, Key, Int, i64);
+from_impl!(Key, Uint, u64, [u8, u16, u32, usize]);
+from_impl!(Key, Int, i64, [i8, i16, i32, isize]);
 
 impl From<&str> for Value {
 	fn from(s: &str) -> Self {
@@ -141,7 +145,7 @@ impl From<&str> for Key {
 
 impl<T: Into<Value>> From<Vec<T>> for Value {
 	fn from(v: Vec<T>) -> Self {
-		Value::Array(v.into_iter().map(|v| v.into()).collect())
+		Value::Arr(v.into_iter().map(|v| v.into()).collect())
 	}
 }
 impl<K: Into<Key>, V: Into<Value>> From<HashMap<K, V>> for Value {
@@ -151,8 +155,8 @@ impl<K: Into<Key>, V: Into<Value>> From<HashMap<K, V>> for Value {
 }
 
 macro_rules! try_into_impl {
-	($ty:ty, $enum:ident, $var:ident) => {
-		impl TryInto<$ty> for $enum {
+	($enum:ident, $(($ty:ty, $var:ident)),+) => {
+		$(impl TryInto<$ty> for $enum {
 			type Error = ();
 			fn try_into(self) -> Result<$ty, Self::Error> {
 				match self {
@@ -160,12 +164,12 @@ macro_rules! try_into_impl {
 					_ => Err(()),
 				}
 			}
-		}
+		})+
 	};
 }
 macro_rules! try_into_int_impl {
-	($ty:ty, $enum:ident) => {
-		impl TryInto<$ty> for $enum {
+	($enum:ident, [$($ty:ty),+]) => {
+		$(impl TryInto<$ty> for $enum {
 			type Error = ();
 			fn try_into(self) -> Result<$ty, Self::Error> {
 				match self {
@@ -174,42 +178,17 @@ macro_rules! try_into_int_impl {
 					_ => Err(()),
 				}
 			}
-		}
+		})+
 	};
 }
-try_into_impl!(bool, Value, Bool);
-try_into_impl!(u64, Value, Uint);
-try_into_impl!(i64, Value, Int);
-try_into_impl!(f64, Value, Float);
-try_into_impl!(String, Value, Str);
-try_into_impl!(DateTime<Utc>, Value, Inst);
-try_into_impl!(TimeDelta, Value, Dur);
+try_into_impl!(Value, (bool, Bool), (u64, Uint), (i64, Int), (f64, Float), (f32, Float));
+try_into_impl!(Value, (String, Str), (DateTime<Utc>, Inst), (TimeDelta, Dur));
 
-try_into_int_impl!(u8, Value);
-try_into_int_impl!(u16, Value);
-try_into_int_impl!(u32, Value);
-try_into_int_impl!(usize, Value);
-try_into_int_impl!(i8, Value);
-try_into_int_impl!(i16, Value);
-try_into_int_impl!(i32, Value);
-try_into_int_impl!(isize, Value);
-try_into_impl!(f32, Value, Float);
+try_into_int_impl!(Value, [u8, u16, u32, usize, i8, i16, i32, isize]);
 
-try_into_impl!(bool, Key, Bool);
-try_into_impl!(u64, Key, Uint);
-try_into_impl!(i64, Key, Int);
-try_into_impl!(String, Key, Str);
-try_into_impl!(DateTime<Utc>, Key, Inst);
-try_into_impl!(TimeDelta, Key, Dur);
-
-try_into_int_impl!(u8, Key);
-try_into_int_impl!(u16, Key);
-try_into_int_impl!(u32, Key);
-try_into_int_impl!(usize, Key);
-try_into_int_impl!(i8, Key);
-try_into_int_impl!(i16, Key);
-try_into_int_impl!(i32, Key);
-try_into_int_impl!(isize, Key);
+try_into_impl!(Key, (bool, Bool), (u64, Uint), (i64, Int), (String, Str));
+try_into_impl!(Key, (DateTime<Utc>, Inst), (TimeDelta, Dur));
+try_into_int_impl!(Key, [u8, u16, u32, usize, i8, i16, i32, isize]);
 
 impl<T> TryInto<Vec<T>> for Value
 where
@@ -218,7 +197,7 @@ where
 	type Error = ();
 	fn try_into(self) -> Result<Vec<T>, Self::Error> {
 		match self {
-			Value::Array(v) => {
+			Value::Arr(v) => {
 				let mut vec = Vec::<T>::with_capacity(v.len());
 				for item in v {
 					match item.try_into() {
@@ -257,63 +236,50 @@ where
 }
 
 macro_rules! as_impl {
-	($ty:ty, $met:ident, $enum:ident, $var:ident) => {
-		impl $enum {
-			pub fn $met(&self) -> Option<$ty> {
-				match self {
-					$enum::$var(v) => Some(*v),
-					_ => None,
-				}
+	($enum:ident, $(($ty:ty, $met:ident, $var:ident)),+) => {
+		$(pub fn $met(&self) -> Option<$ty> {
+			match self {
+				$enum::$var(v) => Some(*v),
+				_ => None,
 			}
-		}
+		})+
 	};
 }
 macro_rules! as_ref_impl {
-	($ty:ty, $met:ident, $enum:ident, $var:ident) => {
-		impl $enum {
-			pub fn $met(&self) -> Option<&$ty> {
-				match self {
-					$enum::$var(v) => Some(v),
-					_ => None,
-				}
+	($enum:ident, $(($ty:ty, $met:ident, $var:ident)),+) => {
+		$(pub fn $met(&self) -> Option<&$ty> {
+			match self {
+				$enum::$var(v) => Some(v),
+				_ => None,
 			}
-		}
+		})+
 	};
 }
 macro_rules! as_mut_impl {
-	($ty:ty, $met:ident, $enum:ident, $var:ident) => {
-		impl $enum {
-			pub fn $met(&mut self) -> Option<&mut $ty> {
-				match self {
-					$enum::$var(v) => Some(v),
-					_ => None,
-				}
+	($enum:ident, $(($ty:ty, $met:ident, $var:ident)),+) => {
+		$(pub fn $met(&mut self) -> Option<&mut $ty> {
+			match self {
+				$enum::$var(v) => Some(v),
+				_ => None,
 			}
-		}
+		})+
 	};
 }
-as_impl!(bool, as_bool, Value, Bool);
-as_impl!(i64, as_int, Value, Int);
-as_impl!(u64, as_uint, Value, Uint);
-as_impl!(f64, as_float, Value, Float);
-as_impl!(DateTime<Utc>, as_inst, Value, Inst);
-as_impl!(TimeDelta, as_dur, Value, Dur);
-as_ref_impl!(str, as_str, Value, Str);
-as_ref_impl!([Value], as_slice, Value, Array);
-as_mut_impl!(Vec<Value>, as_vec, Value, Array);
-as_ref_impl!(HashMap<Key, Value>, as_map, Value, Map);
-as_mut_impl!(HashMap<Key, Value>, as_map_mut, Value, Map);
-as_impl!([u8; 16], as_uuid, Value, UUID);
-as_ref_impl!([u8], as_bigint, Value, BigInt);
 
-as_impl!(bool, as_bool, Key, Bool);
-as_impl!(i64, as_int, Key, Int);
-as_impl!(u64, as_uint, Key, Uint);
-as_impl!(DateTime<Utc>, as_inst, Key, Inst);
-as_impl!(TimeDelta, as_dur, Key, Dur);
-as_ref_impl!(str, as_str, Key, Str);
-as_impl!([u8; 16], as_uuid, Key, UUID);
-as_ref_impl!([u8], as_bigint, Key, BigInt);
+impl Value {
+	as_impl!(Value, (bool, as_bool, Bool), (i64, as_int, Int), (u64, as_uint, Uint));
+	as_impl!(Value, (f64, as_float, Float), (DateTime<Utc>, as_inst, Inst));
+	as_impl!(Value, (TimeDelta, as_dur, Dur), ([u8; 16], as_uuid, UUID));
+	as_ref_impl!(Value, (str, as_str, Str), ([Value], as_slice, Arr));
+	as_ref_impl!(Value, ([u8], as_bigint, BigInt), (HashMap<Key, Value>, as_map, Map));
+	as_mut_impl!(Value, (Vec<Value>, as_vec_mut, Arr), (HashMap<Key, Value>, as_map_mut, Map));
+}
+
+impl Key {
+	as_impl!(Key, (bool, as_bool, Bool), (i64, as_int, Int), (DateTime<Utc>, as_inst, Inst));
+	as_impl!(Key, (TimeDelta, as_dur, Dur), (u64, as_uint, Uint), ([u8; 16], as_uuid, UUID));
+	as_ref_impl!(Key, (str, as_str, Str), ([u8], as_bigint, BigInt));
+}
 
 impl PartialEq<Key> for Value {
 	fn eq(&self, other: &Key) -> bool {
@@ -332,20 +298,20 @@ impl PartialEq<Key> for Value {
 }
 
 macro_rules! eq_impl {
-	($ty:ty, $enum:ident, $var:ident) => {
-		impl PartialEq<$ty> for $enum {
+	($enum:ident, $(($ty:ty, $var:ident)),+) => {
+		$(impl PartialEq<$ty> for $enum {
 			fn eq(&self, other: &$ty) -> bool {
 				match self {
 					$enum::$var(v) => v == other,
 					_ => false,
 				}
 			}
-		}
+		})+
 	};
 }
 macro_rules! eq_int_impl {
-	($ty:ty, $enum:ident) => {
-		impl PartialEq<$ty> for $enum {
+	($enum:ident, [$($ty:ty),+]) => {
+		$(impl PartialEq<$ty> for $enum {
 			fn eq(&self, other: &$ty) -> bool {
 				match self {
 					$enum::Uint(v) => *v as $ty == *other,
@@ -362,44 +328,20 @@ macro_rules! eq_int_impl {
 					_ => false,
 				}
 			}
-		}
+		})+
 	};
 }
 
-eq_impl!(bool, Value, Bool);
-eq_impl!(String, Value, Str);
-eq_impl!(DateTime<Utc>, Value, Inst);
-eq_impl!(TimeDelta, Value, Dur);
-eq_impl!(f64, Value, Float);
-eq_impl!(&str, Value, Str);
+eq_impl!(Value, (bool, Bool), (DateTime<Utc>, Inst), (TimeDelta, Dur), (f64, Float));
+eq_impl!(Value, (&str, Str), (String, Str));
 
-eq_int_impl!(u64, Value);
-eq_int_impl!(u32, Value);
-eq_int_impl!(u16, Value);
-eq_int_impl!(u8, Value);
-eq_int_impl!(usize, Value);
-eq_int_impl!(i64, Value);
-eq_int_impl!(i32, Value);
-eq_int_impl!(i16, Value);
-eq_int_impl!(i8, Value);
-eq_int_impl!(isize, Value);
+eq_int_impl!(Value, [u8, u16, u32, u64, usize]);
+eq_int_impl!(Value, [i8, i16, i32, i64, isize]);
 
-eq_impl!(bool, Key, Bool);
-eq_impl!(String, Key, Str);
-eq_impl!(DateTime<Utc>, Key, Inst);
-eq_impl!(TimeDelta, Key, Dur);
-eq_impl!(&str, Key, Str);
+eq_impl!(Key, (bool, Bool), (DateTime<Utc>, Inst), (TimeDelta, Dur), (String, Str), (&str, Str));
 
-eq_int_impl!(u64, Key);
-eq_int_impl!(u32, Key);
-eq_int_impl!(u16, Key);
-eq_int_impl!(u8, Key);
-eq_int_impl!(usize, Key);
-eq_int_impl!(i64, Key);
-eq_int_impl!(i32, Key);
-eq_int_impl!(i16, Key);
-eq_int_impl!(i8, Key);
-eq_int_impl!(isize, Key);
+eq_int_impl!(Key, [u8, u16, u32, u64, usize]);
+eq_int_impl!(Key, [i8, i16, i32, i64, isize]);
 
 impl<T> PartialEq<Vec<T>> for Value
 where
@@ -407,7 +349,7 @@ where
 {
 	fn eq(&self, other: &Vec<T>) -> bool {
 		match self {
-			Value::Array(a) => a == other,
+			Value::Arr(a) => a == other,
 			_ => false,
 		}
 	}
@@ -417,7 +359,7 @@ impl<I: SliceIndex<[Value]>> Index<I> for Value {
 	type Output = <I as SliceIndex<[Value]>>::Output;
 	fn index(&self, index: I) -> &Self::Output {
 		match self {
-			Value::Array(a) => &a[index],
+			Value::Arr(a) => &a[index],
 			_ => panic!(),
 		}
 	}
@@ -425,7 +367,7 @@ impl<I: SliceIndex<[Value]>> Index<I> for Value {
 impl<I: SliceIndex<[Value]>> IndexMut<I> for Value {
 	fn index_mut(&mut self, index: I) -> &mut Self::Output {
 		match self {
-			Value::Array(a) => &mut a[index],
+			Value::Arr(a) => &mut a[index],
 			_ => panic!(),
 		}
 	}
@@ -455,7 +397,7 @@ impl Value {
 		&self, index: I,
 	) -> Option<&<I as SliceIndex<[Value]>>::Output> {
 		match self {
-			Value::Array(a) => a.get(index),
+			Value::Arr(a) => a.get(index),
 			_ => None,
 		}
 	}
@@ -463,7 +405,7 @@ impl Value {
 		&mut self, index: I,
 	) -> Option<&mut <I as SliceIndex<[Value]>>::Output> {
 		match self {
-			Value::Array(a) => a.get_mut(index),
+			Value::Arr(a) => a.get_mut(index),
 			_ => None,
 		}
 	}
@@ -482,7 +424,7 @@ impl Value {
 
 	pub fn into_iter(&self) -> Option<impl Iterator<Item = &Value>> {
 		match self {
-			Value::Array(a) => Some(a.iter()),
+			Value::Arr(a) => Some(a.iter()),
 			_ => None,
 		}
 	}

@@ -7,15 +7,21 @@ binary files are encoded in little endian.
 
 ## base encoding
 ```
-+------------+--------+-----------+--------+
-| decl_count | decls  | root_type | value  |
-+------------+--------+-----------+--------+
-|    u8      |   N    |  typeid   |   N    |
-+------------+--------+-----------+--------+
-```
-the data starts with the number of declarations, followed by the declarations (if there), and finally the root typeid then its value.
++-----------+--------+--------+
+| decl_path |   id   | value  |
++-----------+--------+--------+
+|    str    | vuint  |   N    |
++-----------+--------+--------+
 
-type value is separated from its id, as the typeid can be infered from declarations.
++--------+----------+
+|    0   |   value  |
++--------+----------+
+|   u8   | any_type |
++--------+----------+
+```
+the data starts with a string encoding a declaration file path, followed by a varuint encoding the root value typeid decleared in that file, followed by the root value.
+
+if `decl_path` is an empty string, the root value is of type any.
 
 ## fixed size numbers
 numbers are encoded in little endian, they can be unsigned or signed encoded in twos complement.
@@ -32,7 +38,9 @@ bits | bytes | signed | unsigned
 ## varint and varuint
 varints are numbers of variable size encoded in [Little Endian Base 128 (LEB128)](https://en.wikipedia.org/wiki/LEB128), they are signed and unsigned variants. 
 
-each byte encode 7 bit section of the number, from least significant to most significant, with the most significant bit specify if there is another byte to follow
+each byte encode 7 bit section of the number, from least significant to most significant, with the most significant bit specify if there is another byte to follow.
+
+varints takes 1 to 10 bytes, with values being at most 64 bits.
 
 ```
 MSB ---------------------------- LSB
@@ -54,22 +62,7 @@ builtin types
 +-+------+
 |0|  u7  |
 +-+------+
-
-user defined types
-+-+---------+---------+
-| | idspace | |  id   |
-+-+---------+---------+
-|1|   u7    |0|  u7   |
-+-+---------+---------+
-
-+-+---------+---------+
-| | idspace | |  id   |
-+-+---------+---------+
-|1|   u7    |1|  u15  |
-+-+---------+---------+
 ```
 typeids are identifiers used to identify types.
 
-typeids for builtin types are encoded in 7 bit id.
-
-typeids for user defined types are encoded in 7 bit idspace defined by the import declaration, and a u7 or u15 id to the type as defined in the declaration file.
+typeids for builtin types are encoded in 7 bit id, with the most significant bit set to 0.
