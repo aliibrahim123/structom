@@ -1,3 +1,5 @@
+use std::cmp::max;
+
 #[inline]
 pub fn encode_u8(data: &mut Vec<u8>, value: u8) {
 	data.push(value);
@@ -105,7 +107,10 @@ pub fn decode_f64(data: &[u8], ind: &mut usize) -> Option<f64> {
 }
 
 pub fn encode_vuint(data: &mut Vec<u8>, mut value: u64) {
+	let mut buf = [0u8; 10];
 	let mut cond = true;
+	let mut ind = 0;
+
 	// while there is input
 	while cond {
 		// extract least significant 7 bits
@@ -113,12 +118,54 @@ pub fn encode_vuint(data: &mut Vec<u8>, mut value: u64) {
 		// shift to next section
 		value >>= 7;
 		// add continuation bit (0 = end byte)
-		data.push(if value == 0 { byte } else { byte | 0b1000_0000 });
+		buf[ind] = if value == 0 { byte } else { byte | 0b1000_0000 };
 
 		cond = value != 0;
+		ind += 1;
 	}
+
+	// append to data
+	data.extend_from_slice(&buf[0..ind]);
+}
+pub fn encode_vuint_pre_aloc(
+	data: &mut Vec<u8>, mut value: u64, start_ind: usize, pre_aloc: usize,
+) {
+	let mut buf = [0u8; 10];
+	let mut size = 0;
+	let mut cond = true;
+
+	while cond {
+		// extract least significant 7 bits
+		let byte = value as u8 & 0b0111_1111;
+		// shift to next section
+		value >>= 7;
+		// add continuation bit (0 = end byte)
+		buf[size] = if value == 0 { byte } else { byte | 0b1000_0000 };
+
+		cond = value != 0;
+		size += 1;
+	}
+
+	// case size is larger than pre allocated space, expand to fit
+	if size > pre_aloc {
+		let len = data.len();
+		data.resize(len + size - pre_aloc, 0);
+		data.copy_within(start_ind + pre_aloc..len, start_ind + size);
+	}
+
+	// set continuation bits in all pre allocated area, even if not used, making it padding
+	if size < pre_aloc {
+		for i in size - 1..pre_aloc - 1 {
+			buf[i] |= 0b1000_0000
+		}
+		size = pre_aloc;
+	}
+
+	data[start_ind..start_ind + size].copy_from_slice(&buf[..size]);
 }
 pub fn encode_vint(data: &mut Vec<u8>, mut value: i64) {
+	let mut buf = [0u8; 10];
+	let mut ind = 0;
 	let mut cond = true;
 	// while there is input
 	while cond {
@@ -134,8 +181,12 @@ pub fn encode_vint(data: &mut Vec<u8>, mut value: i64) {
 			// add continuation bit (0 = end byte)
 			byte |= 0b1000_0000;
 		}
-		data.push(byte);
+		buf[ind] = byte;
+		ind += 1;
 	}
+
+	// append to data
+	data.extend_from_slice(&buf[0..ind]);
 }
 
 pub fn decode_vuint(data: &[u8], ind: &mut usize) -> Option<u64> {

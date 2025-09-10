@@ -10,7 +10,7 @@ mod value;
 pub use declaration::{
 	DeclFile, DeclProvider, FixedSetProvider, FixedSetProviderRef, VoidProvider,
 };
-pub use encoding::{decode, encode};
+pub use encoding::{Serialized, decode, encode};
 pub use errors::Error;
 pub use fs_decl_provider::{FSProvider, LoadFileError};
 pub use parser::{ParseOptions, parse, parse_declaration_file};

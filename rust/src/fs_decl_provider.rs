@@ -3,7 +3,7 @@ use std::{
 	collections::HashMap,
 	fs::{canonicalize, read_to_string},
 	io,
-	path::{Path, PathBuf},
+	path::{Path, PathBuf, absolute},
 };
 
 use crate::{DeclFile, DeclProvider, Error, ParseOptions, parse_declaration_file};
@@ -34,7 +34,7 @@ impl FSProvider {
 	}
 
 	pub fn load_file<'a>(&'a self, path: impl AsRef<Path>) -> Result<&'a DeclFile, LoadFileError> {
-		let path = Path::join(&self.root, path.as_ref());
+		let path = absolute(Path::join(&self.root, path.as_ref())).map_err(LoadFileError::IO)?;
 		{
 			let cache = self.cache.borrow();
 			if let Some(id) = cache.files_by_name.get(&path) {

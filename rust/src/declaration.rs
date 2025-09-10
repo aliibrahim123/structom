@@ -76,11 +76,13 @@ impl DeclFile {
 		self.items.insert(item.typeid(), item);
 	}
 
-	pub(crate) fn get_by_name(&self, name: &str) -> Option<&DeclItem> {
+	#[doc(hidden)]
+	pub fn get_by_name(&self, name: &str) -> Option<&DeclItem> {
 		let id = self.items_by_name.get(name);
 		id.and_then(|id| self.get_by_id(*id))
 	}
-	pub(crate) fn get_by_id(&self, id: u16) -> Option<&DeclItem> {
+	#[doc(hidden)]
+	pub fn get_by_id(&self, id: u16) -> Option<&DeclItem> {
 		self.items.get(&id)
 	}
 }

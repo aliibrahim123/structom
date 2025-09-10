@@ -6,6 +6,7 @@ mod rich;
 
 pub use any::*;
 pub use general::*;
+pub use item::skip_field;
 pub use nb::*;
 pub use rich::*;
 
@@ -38,4 +39,16 @@ pub fn decode(data: &[u8], provider: &dyn DeclProvider) -> Option<Value> {
 		return None;
 	}
 	Some(value)
+}
+
+pub trait Serialized
+where
+	Self: Sized,
+{
+	fn encode(&self) -> Vec<u8>;
+	fn encode_inline(&self, data: &mut Vec<u8>);
+
+	fn decode(data: &[u8]) -> Option<Self>;
+	fn decode_headless(data: &[u8]) -> Option<Self>;
+	fn decode_inline(data: &[u8], ind: &mut usize) -> Option<Self>;
 }

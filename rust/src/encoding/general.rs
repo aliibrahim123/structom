@@ -15,10 +15,8 @@ pub fn decode_bool(data: &[u8], ind: &mut usize) -> Option<bool> {
 }
 
 #[inline]
-pub fn encode_u8_arr(data: &mut Vec<u8>, value: &[u8], in_field: bool) {
-	if !in_field {
-		encode_vuint(data, value.len() as u64)
-	}
+pub fn encode_u8_arr(data: &mut Vec<u8>, value: &[u8]) {
+	encode_vuint(data, value.len() as u64);
 	data.extend_from_slice(value);
 }
 #[inline]
@@ -30,8 +28,8 @@ pub fn decode_u8_arr(data: &[u8], ind: &mut usize) -> Option<Vec<u8>> {
 }
 
 #[inline]
-pub fn encode_str(data: &mut Vec<u8>, value: &str, in_field: bool) {
-	encode_u8_arr(data, value.as_bytes(), in_field);
+pub fn encode_str(data: &mut Vec<u8>, value: &str) {
+	encode_u8_arr(data, value.as_bytes());
 }
 #[inline]
 pub fn decode_str(data: &[u8], ind: &mut usize) -> Option<String> {

@@ -4,6 +4,7 @@ use std::{
 	hash::Hash,
 	ops::{Index, IndexMut},
 	slice::SliceIndex,
+	sync::LazyLock,
 };
 
 use chrono::{DateTime, TimeDelta, Utc};
@@ -57,6 +58,7 @@ macro_rules! is_impl {
 	};
 }
 
+static ENUM_VARIANT_KEY: LazyLock<Key> = LazyLock::new(|| Key::Str("$enum_variant".to_string()));
 impl Value {
 	is_impl!(Value, (Bool, is_bool), (Uint, is_uint), (Int, is_int), (Str, is_str));
 	is_impl!(Value, (BigInt, is_bigint), (Float, is_float), (Inst, is_inst), (Dur, is_dur));
@@ -64,6 +66,12 @@ impl Value {
 
 	pub fn into_key(self) -> Key {
 		self.try_into().unwrap()
+	}
+	pub fn enum_variant(&self) -> Option<&str> {
+		match self {
+			Value::Map(map) => map.get(&ENUM_VARIANT_KEY).and_then(|v| v.as_str()),
+			_ => None,
+		}
 	}
 }
 impl Key {
@@ -121,13 +129,14 @@ macro_rules! from_impl {
 
 from_impl!(Value, (bool, Bool), (i64, Int), (u64, Uint), (f64, Float));
 from_impl!(Value, (String, Str), (DateTime<Utc>, Inst), (TimeDelta, Dur));
+from_impl!(Value, ([u8; 16], UUID));
 
 from_impl!(Value, Uint, u64, [u8, u16, u32, usize]);
 from_impl!(Value, Int, i64, [i8, i16, i32, isize]);
 from_impl!(Value, Float, f64, [f32]);
 
 from_impl!(Key, (bool, Bool), (i64, Int), (u64, Uint), (String, Str));
-from_impl!(Key, (DateTime<Utc>, Inst), (TimeDelta, Dur));
+from_impl!(Key, (DateTime<Utc>, Inst), (TimeDelta, Dur), ([u8; 16], UUID));
 
 from_impl!(Key, Uint, u64, [u8, u16, u32, usize]);
 from_impl!(Key, Int, i64, [i8, i16, i32, isize]);
@@ -183,11 +192,12 @@ macro_rules! try_into_int_impl {
 }
 try_into_impl!(Value, (bool, Bool), (u64, Uint), (i64, Int), (f64, Float), (f32, Float));
 try_into_impl!(Value, (String, Str), (DateTime<Utc>, Inst), (TimeDelta, Dur));
+try_into_impl!(Value, ([u8; 16], UUID));
 
 try_into_int_impl!(Value, [u8, u16, u32, usize, i8, i16, i32, isize]);
 
 try_into_impl!(Key, (bool, Bool), (u64, Uint), (i64, Int), (String, Str));
-try_into_impl!(Key, (DateTime<Utc>, Inst), (TimeDelta, Dur));
+try_into_impl!(Key, (DateTime<Utc>, Inst), (TimeDelta, Dur), ([u8; 16], UUID));
 try_into_int_impl!(Key, [u8, u16, u32, usize, i8, i16, i32, isize]);
 
 impl<T> TryInto<Vec<T>> for Value
