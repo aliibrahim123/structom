@@ -1,5 +1,3 @@
-use std::cmp::max;
-
 #[inline]
 pub fn encode_u8(data: &mut Vec<u8>, value: u8) {
 	data.push(value);

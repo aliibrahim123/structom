@@ -5,7 +5,7 @@ mod utils;
 mod value;
 
 use crate::{
-	DeclProvider, Error, Value,
+	DeclProvider, ParserError, Value,
 	declaration::{DeclFile, TypeId},
 	errors::unexpected_token,
 	parser::{declaration::parse_declaration, tokenizer::tokenize},
@@ -24,7 +24,7 @@ impl Default for ParseOptions {
 
 pub fn parse_declaration_file(
 	source: &str, name: String, options: &ParseOptions, provider: &dyn DeclProvider,
-) -> Result<DeclFile, Error> {
+) -> Result<DeclFile, ParserError> {
 	let tokens = tokenize(source)?;
 	let mut ind = 0;
 
@@ -35,14 +35,14 @@ pub fn parse_declaration_file(
 		return Err(unexpected_token(&tokens[ind], tokens[ind].ind()));
 	}
 	if file.items.len() == 0 {
-		return Err(Error::TypeError(format!("no declaration in file \"{}\"", file.name)));
+		return Err(ParserError::TypeError(format!("no declaration in file \"{}\"", file.name)));
 	}
 
 	Ok(file)
 }
 pub fn parse(
 	source: &str, options: &ParseOptions, provider: &dyn DeclProvider,
-) -> Result<Value, Error> {
+) -> Result<Value, ParserError> {
 	let tokens = tokenize(source)?;
 	let mut ind = 0;
 

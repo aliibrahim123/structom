@@ -1,4 +1,4 @@
-use crate::{Entry, rust::PathMap};
+use crate::Entry;
 use std::fmt::Write;
 
 /// generate root mod

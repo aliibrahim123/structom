@@ -1,7 +1,7 @@
 use std::fmt::Display;
 
 use crate::{
-	errors::{Error, end_of_input, unexpected_token},
+	errors::{ParserError, end_of_input, unexpected_token},
 	parser::utils::{get_char, while_matching},
 };
 
@@ -56,7 +56,7 @@ enum NbValueType {
 	BigInt,
 }
 
-fn parse_dashes_in_nb(nb: &str, start_ind: usize) -> Result<String, Error> {
+fn parse_dashes_in_nb(nb: &str, start_ind: usize) -> Result<String, ParserError> {
 	// loop through dashes
 	let mut cur_ind = 0;
 	if nb.starts_with("_") {
@@ -78,12 +78,12 @@ fn parse_dashes_in_nb(nb: &str, start_ind: usize) -> Result<String, Error> {
 	Ok(nb.replace('_', ""))
 }
 
-fn parse_escape_sequences(source: &str, start_ind: usize) -> Result<String, Error> {
+fn parse_escape_sequences(source: &str, start_ind: usize) -> Result<String, ParserError> {
 	let mut res = String::new();
 	let mut last_ind = 0;
 
 	let invalid_seq = |seq: &str, ind| {
-		Error::SyntaxError(format!("invalid escape sequence `{seq}` at {}", start_ind + ind))
+		ParserError::SyntaxError(format!("invalid escape sequence `{seq}` at {}", start_ind + ind))
 	};
 
 	while let Some(i) = source[last_ind..].find('\\') {
@@ -140,7 +140,7 @@ fn parse_escape_sequences(source: &str, start_ind: usize) -> Result<String, Erro
 	return Ok(res);
 }
 
-fn parse_float(source: &str, mut ind: usize) -> Result<(Token, usize), Error> {
+fn parse_float(source: &str, mut ind: usize) -> Result<(Token, usize), ParserError> {
 	let start_ind = ind;
 	// sign
 	if let Some('-' | '+') = get_char(source, ind) {
@@ -181,12 +181,12 @@ fn parse_float(source: &str, mut ind: usize) -> Result<(Token, usize), Error> {
 	// create token
 	let value = nb_source.parse::<f64>();
 	if value.is_err() {
-		return Err(Error::SyntaxError(format!("invalid number {nb_source} at {start_ind}")));
+		return Err(ParserError::SyntaxError(format!("invalid number {nb_source} at {start_ind}")));
 	}
 	Ok((Token::Float(value.unwrap(), start_ind), ind))
 }
 
-fn parse_nb(source: &str, mut ind: usize) -> Result<(Token, usize), Error> {
+fn parse_nb(source: &str, mut ind: usize) -> Result<(Token, usize), ParserError> {
 	let sign_ind = ind;
 
 	// sign
@@ -248,7 +248,7 @@ fn parse_nb(source: &str, mut ind: usize) -> Result<(Token, usize), Error> {
 			false => NbValueType::Uint,
 		},
 		_ => {
-			return Err(Error::SyntaxError(format!(
+			return Err(ParserError::SyntaxError(format!(
 				"unsupported suffix \"{suffix}\" at {sign_ind}",
 			)));
 		}
@@ -259,7 +259,7 @@ fn parse_nb(source: &str, mut ind: usize) -> Result<(Token, usize), Error> {
 		NbValueType::Uint => {
 			// disallow negative sign
 			if neg {
-				return Err(Error::SyntaxError(format!(
+				return Err(ParserError::SyntaxError(format!(
 					"negative sign in unsigned number at {sign_ind}",
 				)));
 			};
@@ -267,7 +267,7 @@ fn parse_nb(source: &str, mut ind: usize) -> Result<(Token, usize), Error> {
 			// parse
 			let value = u64::from_str_radix(&nb_source, base);
 			if value.is_err() {
-				return Err(Error::SyntaxError(format!(
+				return Err(ParserError::SyntaxError(format!(
 					"unsigned number ({nb_source}) out of range at {sign_ind}",
 				)));
 			}
@@ -277,7 +277,7 @@ fn parse_nb(source: &str, mut ind: usize) -> Result<(Token, usize), Error> {
 			// parse
 			let value = i64::from_str_radix(&nb_source, base);
 			if value.is_err() {
-				return Err(Error::SyntaxError(format!(
+				return Err(ParserError::SyntaxError(format!(
 					"signed number ({nb_source}) out of range at {sign_ind}",
 				)));
 			}
@@ -292,7 +292,7 @@ fn parse_nb(source: &str, mut ind: usize) -> Result<(Token, usize), Error> {
 	}
 }
 
-pub fn tokenize(source: &str) -> Result<Vec<Token>, Error> {
+pub fn tokenize(source: &str) -> Result<Vec<Token>, ParserError> {
 	let mut tokens = Vec::<Token>::new();
 	let mut ind: usize = 0;
 

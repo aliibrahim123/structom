@@ -1,4 +1,4 @@
-use crate::{rust::Ctx, utils::add_ident};
+use crate::rust::Ctx;
 use std::fmt::Write;
 
 use structom::{DeclProvider, internal::*};

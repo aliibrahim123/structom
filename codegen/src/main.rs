@@ -6,7 +6,7 @@ use std::{fs::read_dir, path::Path};
 
 use clap::{Parser, ValueEnum};
 use structom::FSProvider;
-use structom::{DeclFile, LoadFileError, internal::DeclItem};
+use structom::{DeclFile, LoadFileError};
 
 use crate::rust::to_rust;
 

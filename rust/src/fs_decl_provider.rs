@@ -6,13 +6,41 @@ use std::{
 	path::{Path, PathBuf, absolute},
 };
 
-use crate::{DeclFile, DeclProvider, Error, ParseOptions, parse_declaration_file};
+use crate::{DeclFile, DeclProvider, ParseOptions, ParserError, parse_declaration_file};
 
+/// errors that occurs during loading of a file.
 #[derive(Debug)]
 pub enum LoadFileError {
+	/// errors occured while reading the file.
 	IO(io::Error),
-	Parse(Error),
+	/// errors returned by the parser.
+	Parse(ParserError),
 }
+
+/// provider that loads declerations from the file system.
+///
+/// this provider syncronously loads decleration files from the file system, and caches them for future use.
+///
+/// this provider works only in a specifed root directory, and loads files of any extension.
+///
+/// it can fails safely when loading, and it only reads the file one time on requrest.
+///
+/// ## example
+/// ```
+/// let provider = FSProvider::new("/path/to/decls").unwrap();
+///
+/// // cache common files
+/// provider.load_file("commons.stomd").unwrap();
+///
+/// // loads other.stomd, commons.stomd is cached
+/// parse(
+/// 	"import \"commons.stomd\" import \"other.stomd\" ... ",
+/// 	&ParseOptions::default(), &provider
+/// ).unwrap();
+///
+/// // fails in loading not_found.stomd
+/// assert!(parse("import \"not_found.stomd\" ... ", &ParseOptions::default(), &provider).is_err() == true);
+/// ```
 #[derive(Debug)]
 pub struct FSProvider {
 	root: PathBuf,
@@ -26,13 +54,18 @@ struct ProviderCache {
 }
 
 impl FSProvider {
-	pub fn new(path: impl Into<PathBuf>) -> io::Result<Self> {
-		FSProvider::with_options(path, ParseOptions::default())
+	/// creates a `FSProvider` working on a given root directory with default options.
+	pub fn new(root: impl Into<PathBuf>) -> io::Result<Self> {
+		FSProvider::with_options(root, ParseOptions::default())
 	}
-	pub fn with_options(path: impl Into<PathBuf>, parse_options: ParseOptions) -> io::Result<Self> {
-		Ok(Self { root: canonicalize(path.into())?, parse_options, cache: Default::default() })
+	/// creates a `FSProvider` working on a given root directory with given options.
+	pub fn with_options(root: impl Into<PathBuf>, parse_options: ParseOptions) -> io::Result<Self> {
+		Ok(Self { root: canonicalize(root.into())?, parse_options, cache: Default::default() })
 	}
 
+	/// load a declaration file at a given path.
+	///
+	/// returns a reference to the cached file if used before, else load it and returns `LoadFileError` if an error occurs.
 	pub fn load_file<'a>(&'a self, path: impl AsRef<Path>) -> Result<&'a DeclFile, LoadFileError> {
 		let path = absolute(Path::join(&self.root, path.as_ref())).map_err(LoadFileError::IO)?;
 		{
@@ -64,6 +97,9 @@ impl DeclProvider for FSProvider {
 	fn get_by_id(&self, id: u64) -> &DeclFile {
 		unsafe { &*(self.cache.borrow().files.get(&id).unwrap().as_ref() as *const DeclFile) }
 	}
+	/// gets a decleration file with a given name.
+	///
+	/// load it if not loaded before, returns `None` if not found or can not be parsed.
 	fn get_by_name<'a>(&'a self, name: &str) -> Option<&'a DeclFile> {
 		self.load_file(name).ok()
 	}

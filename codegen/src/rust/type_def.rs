@@ -1,10 +1,6 @@
-use std::{any::Any, fmt::Write};
+use std::fmt::Write;
 
-use structom::{
-	DeclProvider,
-	encoding::{decode_vuint, encode_vuint},
-	internal::*,
-};
+use structom::{DeclProvider, internal::*};
 
 use crate::{
 	rust::Ctx,

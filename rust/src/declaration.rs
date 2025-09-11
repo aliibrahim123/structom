@@ -2,9 +2,14 @@ use std::collections::HashMap;
 
 use crate::builtins::BUILT_INS_NAMES;
 
+/// encapsulate the content of a decleration file.
+///
+/// can only be created through [`parse_declaration_file`](crate::parse_declaration_file).
 #[derive(Debug)]
 pub struct DeclFile {
+	/// name of the file, passed though name argument in [`parse_declaration_file`](crate::parse_declaration_file)
 	pub name: String,
+	/// a globally unique identifier for the file
 	pub id: u64,
 	#[doc(hidden)]
 	pub items: HashMap<u16, DeclItem>,
@@ -56,8 +61,20 @@ pub enum DeclItem {
 	},
 }
 
+/// trait for types providing decleration files.
+///
+/// decleration providers are used by functions that need access to decleration files.
+///
+/// decleration providers can provide decleration files from any source, guaranteed to be valid and the same for every access.
 pub trait DeclProvider {
+	/// get a decleration file by its id.
+	///
+	/// this method can not fail, it is used for decleration files that were created before.
 	fn get_by_id<'a>(&'a self, name: u64) -> &'a DeclFile;
+
+	/// get a decleration file by its name.
+	///   
+	/// this method return `None` on fail, when the requested decleration file can not be found or it cant be parsed.
 	fn get_by_name<'a>(&'a self, name: &str) -> Option<&'a DeclFile>;
 }
 
@@ -226,22 +243,48 @@ fn add_item<'a, T>(vec: &mut Vec<Option<T>>, id: usize, item: T) -> Result<(), (
 	Ok(())
 }
 
+/// decleration provider with no decleration files.
+///
+/// a decleration provider for cases where no decleration files are needed.
+///
+/// ## example
+/// ```
+/// parse("{ only_builtin_used: true }", &ParseOptions::default(), &VoidProvider{});
+/// ```
+#[derive(Debug, Default)]
 pub struct VoidProvider {}
 impl DeclProvider for VoidProvider {
+	/// panic.
 	fn get_by_id(&self, _id: u64) -> &DeclFile {
 		panic!("how did we get here")
 	}
+	/// always return `None`
 	fn get_by_name<'a>(&'a self, _name: &str) -> Option<&'a DeclFile> {
 		None
 	}
 }
-
-#[derive(Debug)]
+/// decleration provider with fixed set of decleration files.
+///
+/// a decleration provider for cases where only a fixed set of decleration files are available.
+///
+/// this provider is same as [`FixedSetProvider`], but it take references to the declaration files, not owning them. so it can redirect declarations from other provider.
+///
+/// ## example
+/// ```
+/// let provider = FixedSetProviderRef::new(&[
+/// 	some_provider.get_by_name("file1").unwrap(),
+/// 	other_provider.get_by_name("file2").unwrap(),
+/// ]);
+/// provider.get_by_name("file2"); // => Some(DeclFile { name: "file2" })
+/// provider.get_by_name("doesnt exist"); // => None
+/// ```
+#[derive(Debug, Clone)]
 pub struct FixedSetProviderRef<'a> {
 	files: HashMap<u64, &'a DeclFile>,
 	files_by_name: HashMap<&'a str, &'a DeclFile>,
 }
 impl<'a> FixedSetProviderRef<'a> {
+	/// create a new `FixedSetProviderRef` with the passed decleration files.
 	pub fn new(declarations: &[&'a DeclFile]) -> Self {
 		let mut files = HashMap::new();
 		let mut files_by_name = HashMap::new();
@@ -264,12 +307,26 @@ impl DeclProvider for FixedSetProviderRef<'_> {
 	}
 }
 
+/// decleration provider with fixed set of decleration files.
+///
+/// a decleration provider for cases where only a fixed set of decleration files are available.
+///
+/// ## example
+/// ```
+/// let provider = FixedSetProvider::new(vec![
+/// 	parse_declaration_file(/* ... */, "file1", &ParseOptions::default(), &VoidProvider{}).unwrap(),
+/// 	parse_declaration_file(/* ... */, "file2", &ParseOptions::default(), &VoidProvider{}).unwrap(),
+/// ]);
+/// provider.get_by_name("file2"); // => Some(DeclFile { name: "file2" })
+/// provider.get_by_name("doesnt exist"); // => None
+/// ```
 #[derive(Debug)]
 pub struct FixedSetProvider {
 	files: HashMap<u64, DeclFile>,
 	files_by_name: HashMap<String, u64>,
 }
 impl FixedSetProvider {
+	/// create a new `FixedSetProvider` with the passed decleration files.
 	pub fn new(declarations: Vec<DeclFile>) -> Self {
 		let mut files = HashMap::new();
 		let mut files_by_name = HashMap::new();

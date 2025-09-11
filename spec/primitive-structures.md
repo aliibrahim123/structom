@@ -202,7 +202,7 @@ enum MyEnum {
 
 ### value notation
 ```
-[typeid "."] identifier [fields_value | tuple_value]
+[typeid "."] identifier [fields_value]
 ```
 enums values are written by their variants name followed by their fields if defined in struct format.
 

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::{
-	DeclProvider, Error, Key, ParseOptions, Value,
+	DeclProvider, ParserError, Key, ParseOptions, Value,
 	builtins::BUILT_INS_IDS,
 	declaration::{DeclItem, EnumVariant, StructDef, TypeId, resolve_typeid},
 	errors::{end_of_input, unexpected_token},
@@ -13,10 +13,10 @@ use crate::{
 	},
 };
 
-fn mismatch_types<T>(expected: &str, found: &str, ind: usize) -> Result<T, Error> {
-	Err(Error::TypeError(format!("expected type {expected}, found {found} at {ind}",)))
+fn mismatch_types<T>(expected: &str, found: &str, ind: usize) -> Result<T, ParserError> {
+	Err(ParserError::TypeError(format!("expected type {expected}, found {found} at {ind}",)))
 }
-fn check_range_nb(nb: i64, signed: bool, bits: u8, ind: usize) -> Result<i64, Error> {
+fn check_range_nb(nb: i64, signed: bool, bits: u8, ind: usize) -> Result<i64, ParserError> {
 	// compute range
 	let (min, max) = match signed {
 		false => (0, (1 << bits) - 1),
@@ -24,7 +24,7 @@ fn check_range_nb(nb: i64, signed: bool, bits: u8, ind: usize) -> Result<i64, Er
 	};
 	// check range
 	if nb < min || nb > max {
-		return Err(Error::TypeError(format!(
+		return Err(ParserError::TypeError(format!(
 			"number ({nb}) is out of range for {}{bits} number at {ind}",
 			if signed { "i" } else { "u" }
 		)));
@@ -32,7 +32,7 @@ fn check_range_nb(nb: i64, signed: bool, bits: u8, ind: usize) -> Result<i64, Er
 	Ok(nb)
 }
 
-fn parse_small_ints(nb: i64, typeid: &TypeId, ind: usize) -> Result<Value, Error> {
+fn parse_small_ints(nb: i64, typeid: &TypeId, ind: usize) -> Result<Value, ParserError> {
 	Ok(match typeid.id {
 		0x10 => Value::Uint(check_range_nb(nb, false, 8, ind)? as u64),
 		0x11 => Value::Uint(check_range_nb(nb, false, 16, ind)? as u64),
@@ -47,7 +47,7 @@ fn parse_small_ints(nb: i64, typeid: &TypeId, ind: usize) -> Result<Value, Error
 fn parse_typeid(
 	tokens: &[Token], ind: &mut usize, loc: &impl Fn() -> String, ctx: &DeclContext<'_>,
 	options: &ParseOptions,
-) -> Result<TypeId, Error> {
+) -> Result<TypeId, ParserError> {
 	let metadata = parse_metadata(tokens, ind, loc, options)?;
 
 	let typename = consume_ident(tokens, ind)?;
@@ -58,7 +58,7 @@ fn parse_typeid(
 fn parse_arr(
 	tokens: &[Token], ind: &mut usize, typeid: &TypeId, ctx: &DeclContext,
 	provider: &dyn DeclProvider, options: &ParseOptions,
-) -> Result<Value, Error> {
+) -> Result<Value, ParserError> {
 	consume_symbol('[', tokens, ind)?;
 
 	// replace any typeid with arr<any>
@@ -88,7 +88,7 @@ fn parse_arr(
 fn parse_map(
 	tokens: &[Token], ind: &mut usize, typeid: &TypeId, ctx: &DeclContext,
 	provider: &dyn DeclProvider, options: &ParseOptions,
-) -> Result<Value, Error> {
+) -> Result<Value, ParserError> {
 	consume_symbol('{', tokens, ind)?;
 
 	// replace any typeid with map<any, any>
@@ -120,7 +120,7 @@ fn parse_map(
 				consume_symbol(']', tokens, ind)?;
 				// Value => Key
 				key.try_into().map_err(|_| {
-					Error::TypeError(format!("map key can only be a primitive at {key_ind}"))
+					ParserError::TypeError(format!("map key can only be a primitive at {key_ind}"))
 				})?
 			}
 			_ => return Err(unexpected_token(tokens[*ind - 1].to_string(), key_ind)),
@@ -134,7 +134,7 @@ fn parse_map(
 
 		// check for collision
 		if map.contains_key(&key) {
-			return Err(Error::TypeError(format!("duplicated map key {key:?} at {key_ind}",)));
+			return Err(ParserError::TypeError(format!("duplicated map key {key:?} at {key_ind}",)));
 		}
 
 		consume_symbol(':', tokens, ind)?;
@@ -156,7 +156,7 @@ enum ResolveDefResult<'a> {
 fn resolve_item_def<'a>(
 	tokens: &[Token], ind: &mut usize, map: &mut HashMap<Key, Value>, item: &'a DeclItem,
 	variant: Option<&'a EnumVariant>, start_ind: usize,
-) -> Result<ResolveDefResult<'a>, Error> {
+) -> Result<ResolveDefResult<'a>, ParserError> {
 	use ResolveDefResult::*;
 
 	if let DeclItem::Enum { .. } = item {
@@ -168,7 +168,7 @@ fn resolve_item_def<'a>(
 				consume_symbol('.', tokens, ind)?;
 				let variant = consume_ident(tokens, ind)?;
 				item.get_variant_by_name(variant).ok_or_else(|| {
-					Error::TypeError(format!(
+					ParserError::TypeError(format!(
 						"variant \"{variant}\" not found in enum \"{}\" at {start_ind}",
 						item.name()
 					))
@@ -195,7 +195,7 @@ fn resolve_item_def<'a>(
 fn parse_item(
 	tokens: &[Token], ind: &mut usize, typeid: &TypeId, variant: Option<&EnumVariant>,
 	start_ind: usize, ctx: &DeclContext, provider: &dyn DeclProvider, options: &ParseOptions,
-) -> Result<Value, Error> {
+) -> Result<Value, ParserError> {
 	let item = resolve_typeid(typeid, provider);
 	let mut map = HashMap::new();
 
@@ -226,7 +226,7 @@ fn parse_item(
 
 		// check for existence
 		let field = &def.get_field_by_name(name).ok_or_else(|| {
-			Error::TypeError(format!(
+			ParserError::TypeError(format!(
 				"struct {}{} doesnt contain field \"{name}\" at {ind}",
 				typeid.name(provider),
 				if variant.is_empty() { "".to_string() } else { format!(".{variant}") }
@@ -236,7 +236,7 @@ fn parse_item(
 		// check for collision
 		let key = Key::from(name);
 		if map.contains_key(&key) {
-			return Err(Error::TypeError(format!(
+			return Err(ParserError::TypeError(format!(
 				"duplicated field \"{name}\" at {}",
 				tokens[*ind].ind()
 			)));
@@ -257,7 +257,7 @@ fn parse_item(
 
 	// case of missing required fields
 	if required != 0 {
-		return Err(Error::TypeError(format!(
+		return Err(ParserError::TypeError(format!(
 			"struct {}{} is missing required fields at {start_ind}",
 			typeid.name(provider),
 			if variant.is_empty() { "".to_string() } else { format!(".{variant}") }
@@ -270,7 +270,7 @@ fn parse_item(
 fn parse_ident(
 	ident: &str, tokens: &[Token], ind: &mut usize, typeid: &TypeId, provider: &dyn DeclProvider,
 	ctx: &DeclContext<'_>, options: &ParseOptions,
-) -> Result<Value, Error> {
+) -> Result<Value, ParserError> {
 	let start_ind = tokens[*ind - 1].ind();
 
 	match ident {
@@ -371,7 +371,7 @@ fn parse_ident(
 pub fn parse_value(
 	tokens: &[Token], ind: &mut usize, typeid: &TypeId, ctx: &DeclContext<'_>,
 	provider: &dyn DeclProvider, options: &ParseOptions,
-) -> Result<Value, Error> {
+) -> Result<Value, ParserError> {
 	let start_ind = *ind;
 
 	let metadata = parse_metadata(tokens, ind, &|| format!("at index {start_ind}"), options)?;
@@ -411,7 +411,7 @@ pub fn parse_value(
 				// signed int types with unsigned nb literial
 				0x17 | 0x1d => {
 					if *nb > 1 << 63 {
-						return Err(Error::TypeError(format!(
+						return Err(ParserError::TypeError(format!(
 							"number ({nb}) is out of range for i64 nb at {ind}",
 						)));
 					}
@@ -430,7 +430,7 @@ pub fn parse_value(
 				0x13 | 0x1c => {
 					// unsigned int types with signed nb literial
 					if *nb < 0 {
-						return Err(Error::TypeError(format!(
+						return Err(ParserError::TypeError(format!(
 							"number ({nb}) is out of range for u64 nb at {ind}",
 						)));
 					}

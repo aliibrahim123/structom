@@ -1,5 +1,5 @@
 use crate::{
-	Error,
+	ParserError,
 	errors::{end_of_input, unexpected_token},
 	parser::tokenizer::Token,
 };
@@ -24,28 +24,28 @@ pub fn all_matching(source: &str, pred: fn(char) -> bool) -> bool {
 	source.bytes().all(|c| pred(c as char))
 }
 
-pub fn consume_ident<'a>(tokens: &'a [Token], ind: &mut usize) -> Result<&'a str, Error> {
+pub fn consume_ident<'a>(tokens: &'a [Token], ind: &mut usize) -> Result<&'a str, ParserError> {
 	match tokens.get(*ind) {
 		Some(Token::Identifier(ident, _)) => (Ok(*ident), *ind += 1).0,
 		Some(Token::EOF(_)) | None => Err(end_of_input(tokens[*ind].ind())),
 		Some(token) => Err(unexpected_token(token, token.ind())),
 	}
 }
-pub fn consume_str<'a>(tokens: &'a [Token], ind: &mut usize) -> Result<&'a str, Error> {
+pub fn consume_str<'a>(tokens: &'a [Token], ind: &mut usize) -> Result<&'a str, ParserError> {
 	match tokens.get(*ind) {
 		Some(Token::Str(str, _)) => (Ok(&str[..]), *ind += 1).0,
 		Some(Token::EOF(_)) | None => Err(end_of_input(tokens[*ind].ind())),
 		Some(token) => Err(unexpected_token(token, token.ind())),
 	}
 }
-pub fn consume_symbol(token: char, tokens: &[Token], ind: &mut usize) -> Result<bool, Error> {
+pub fn consume_symbol(token: char, tokens: &[Token], ind: &mut usize) -> Result<bool, ParserError> {
 	match tokens.get(*ind) {
 		Some(Token::Symbol(sym, _)) if *sym == token => (Ok(true), *ind += 1).0,
 		Some(Token::EOF(_)) | None => Err(end_of_input(tokens[*ind].ind())),
 		Some(token) => Err(unexpected_token(token, token.ind())),
 	}
 }
-pub fn consume_int(tokens: &[Token], ind: &mut usize) -> Result<i64, Error> {
+pub fn consume_int(tokens: &[Token], ind: &mut usize) -> Result<i64, ParserError> {
 	match tokens.get(*ind) {
 		Some(Token::Uint(nb, _)) => (Ok(*nb as i64), *ind += 1).0,
 		Some(Token::Int(nb, _)) => (Ok(*nb), *ind += 1).0,
@@ -53,7 +53,7 @@ pub fn consume_int(tokens: &[Token], ind: &mut usize) -> Result<i64, Error> {
 		Some(token) => Err(unexpected_token(token, token.ind())),
 	}
 }
-pub fn consume_uint(tokens: &[Token], ind: &mut usize) -> Result<u64, Error> {
+pub fn consume_uint(tokens: &[Token], ind: &mut usize) -> Result<u64, ParserError> {
 	match tokens.get(*ind) {
 		Some(Token::Uint(nb, _)) => (Ok(*nb), *ind += 1).0,
 		Some(Token::Int(nb, _)) if (*nb >= 0) => (Ok(*nb as u64), *ind += 1).0,
@@ -61,14 +61,14 @@ pub fn consume_uint(tokens: &[Token], ind: &mut usize) -> Result<u64, Error> {
 		Some(token) => Err(unexpected_token(token, token.ind())),
 	}
 }
-pub fn consume_bigint<'a>(tokens: &'a [Token], ind: &mut usize) -> Result<&'a [u8], Error> {
+pub fn consume_bigint<'a>(tokens: &'a [Token], ind: &mut usize) -> Result<&'a [u8], ParserError> {
 	match tokens.get(*ind) {
 		Some(Token::BigInt(nb, _)) => (Ok(&nb[..]), *ind += 1).0,
 		Some(Token::EOF(_)) | None => Err(end_of_input(tokens[*ind].ind())),
 		Some(token) => Err(unexpected_token(token, token.ind())),
 	}
 }
-pub fn consume_float(tokens: &[Token], ind: &mut usize) -> Result<f64, Error> {
+pub fn consume_float(tokens: &[Token], ind: &mut usize) -> Result<f64, ParserError> {
 	match tokens.get(*ind) {
 		Some(Token::Float(nb, _)) => (Ok(*nb), *ind += 1).0,
 		Some(Token::Int(nb, _)) => (Ok(*nb as f64), *ind += 1).0,
@@ -81,7 +81,7 @@ pub fn consume_float(tokens: &[Token], ind: &mut usize) -> Result<f64, Error> {
 // handle commas
 pub fn struct_like_start(
 	tokens: &[Token], ind: &mut usize, watched_comma: &mut bool, end_delimiter: char,
-) -> Result<bool, Error> {
+) -> Result<bool, ParserError> {
 	// break on end
 	if let Some(Token::Symbol(c, _)) = tokens.get(*ind)
 		&& *c == end_delimiter
