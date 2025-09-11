@@ -96,8 +96,10 @@ pub fn walk_fs<'a>(
 				Err(LoadFileError::IO(_)) => {
 					return Err(format!("unable to read file \"{}\"", entry.display()));
 				}
-				Err(LoadFileError::Parse(structom::Error::TypeError(err))) => return Err(err),
-				Err(LoadFileError::Parse(structom::Error::SyntaxError(err))) => {
+				Err(LoadFileError::Parse(structom::ParserError::TypeError(err))) => {
+					return Err(err);
+				}
+				Err(LoadFileError::Parse(structom::ParserError::SyntaxError(err))) => {
 					return Err(format!("{err} at decleration file \"{}\"", entry.display()));
 				}
 			};
