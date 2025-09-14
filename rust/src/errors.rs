@@ -1,4 +1,4 @@
-/// error produced by the parsing functions
+/// error encountered during parsing.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ParserError {
 	/// errors related to syntax (unexpected tokens, invalid literials...).

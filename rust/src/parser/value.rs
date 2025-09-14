@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::{
-	DeclProvider, ParserError, Key, ParseOptions, Value,
+	DeclProvider, Key, ParseOptions, ParserError, Value,
 	builtins::BUILT_INS_IDS,
 	declaration::{DeclItem, EnumVariant, StructDef, TypeId, resolve_typeid},
 	errors::{end_of_input, unexpected_token},
@@ -134,7 +134,9 @@ fn parse_map(
 
 		// check for collision
 		if map.contains_key(&key) {
-			return Err(ParserError::TypeError(format!("duplicated map key {key:?} at {key_ind}",)));
+			return Err(ParserError::TypeError(
+				format!("duplicated map key {key:?} at {key_ind}",),
+			));
 		}
 
 		consume_symbol(':', tokens, ind)?;

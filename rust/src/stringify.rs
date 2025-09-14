@@ -4,13 +4,30 @@ use chrono::{DateTime, TimeDelta, Timelike, Utc};
 
 use crate::{Key, Value};
 
-#[derive(Debug, Default, Clone)]
+/// options for [`stringify`]
+#[derive(Debug, Clone)]
 pub struct StringifyOptions<'a> {
+	/// whether to stringify metadata, default: `false`.
 	pub metadata: bool,
+	/// sequence of characters used as 1 depth of indentation, default: `""`.
 	pub ident: &'a str,
+	/// whether to stringify enums, default: `false`.
 	pub enums: bool,
 }
 
+impl Default for StringifyOptions<'static> {
+	fn default() -> Self {
+		Self { metadata: false, ident: "", enums: false }
+	}
+}
+
+/// stringify a [`Value`].
+///
+/// ## example
+/// ```
+/// let value = Value::from(vec![1, 2, 3]);
+/// stringify(value, &StringifyOptions::default()) // => "[1, 2, 3]"
+/// ```
 pub fn stringify(value: &Value, options: &StringifyOptions) -> String {
 	let mut result = "".to_string();
 

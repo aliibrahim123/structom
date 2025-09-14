@@ -5,6 +5,9 @@ use crate::{
 	parser::utils::{get_char, while_matching},
 };
 
+/// a well defined part of the source
+///
+/// has a value and a start index
 #[derive(Debug)]
 pub enum Token<'s> {
 	Identifier(&'s str, usize),
@@ -56,6 +59,7 @@ enum NbValueType {
 	BigInt,
 }
 
+/// remove dashes "_" in number
 fn parse_dashes_in_nb(nb: &str, start_ind: usize) -> Result<String, ParserError> {
 	// loop through dashes
 	let mut cur_ind = 0;
@@ -78,6 +82,7 @@ fn parse_dashes_in_nb(nb: &str, start_ind: usize) -> Result<String, ParserError>
 	Ok(nb.replace('_', ""))
 }
 
+/// resolve all escape sequences in a string
 fn parse_escape_sequences(source: &str, start_ind: usize) -> Result<String, ParserError> {
 	let mut res = String::new();
 	let mut last_ind = 0;
@@ -86,6 +91,7 @@ fn parse_escape_sequences(source: &str, start_ind: usize) -> Result<String, Pars
 		ParserError::SyntaxError(format!("invalid escape sequence `{seq}` at {}", start_ind + ind))
 	};
 
+	// loop through escape sequences
 	while let Some(i) = source[last_ind..].find('\\') {
 		let ind = last_ind + i;
 		// push before escape
@@ -140,6 +146,7 @@ fn parse_escape_sequences(source: &str, start_ind: usize) -> Result<String, Pars
 	return Ok(res);
 }
 
+/// parse float literal
 fn parse_float(source: &str, mut ind: usize) -> Result<(Token, usize), ParserError> {
 	let start_ind = ind;
 	// sign
@@ -186,6 +193,7 @@ fn parse_float(source: &str, mut ind: usize) -> Result<(Token, usize), ParserErr
 	Ok((Token::Float(value.unwrap(), start_ind), ind))
 }
 
+/// parse integer literals
 fn parse_nb(source: &str, mut ind: usize) -> Result<(Token, usize), ParserError> {
 	let sign_ind = ind;
 
@@ -292,6 +300,7 @@ fn parse_nb(source: &str, mut ind: usize) -> Result<(Token, usize), ParserError>
 	}
 }
 
+/// simplify the source into sequence of tokens
 pub fn tokenize(source: &str) -> Result<Vec<Token>, ParserError> {
 	let mut tokens = Vec::<Token>::new();
 	let mut ind: usize = 0;

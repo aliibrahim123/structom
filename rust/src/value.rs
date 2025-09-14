@@ -9,31 +9,120 @@ use std::{
 
 use chrono::{DateTime, TimeDelta, Utc};
 
+/// type that represent a structom value.
+///
+/// `Value`s are wrappers that represent any structom value, builtin or user defined.
+///
+/// they can be created manually or from source or binary, manipulated or converted to native types, and stringified or serialized.
+///
+/// ## api
+/// `Value` can be created through different forms
+/// ```
+/// // manually
+/// Value::from(1) // => Uint(1)
+///
+/// // from source
+/// parse("1", &ParseOptions::default(), &VoidProvider{}); // => Uint(1)
+///
+/// // from binary
+/// decode(&[0, 16, 1], &VoidProvider{}); // => Uint(1)
+/// ```
+///
+/// `Value` has different methods for manipulation its value.
+/// ```
+/// let value = Value::Uint(1);
+///
+/// // test type
+/// value.is_uint(); // => true
+///
+/// // get ref to inner value
+/// value.as_uint(); // => Some(1)
+///
+/// // compare inner value
+/// value == 1; // => true
+///
+/// // index for array and map
+/// Value::from(vec![1, 2, 3])[1] // => Uint(2)
+/// ```
+///
+/// `Value` can be transformed into other forms.
+/// ```
+/// let value = Value::Uint(1);
+///
+/// // convert to native type
+///	value.cast<u64>(); // => Ok(1)
+///
+/// // stringify the value
+/// stringify(value, &StringifyOptions::default()); // => "1"
+///
+/// // encode into binary
+/// encode(value); // => [0, 16, 1]
+/// ```
+///
+/// ## representation
+/// builtin types are represented through their respective variant.
+///
+/// structs are represented through the `Map` variant where it contains the struct fields.
+///
+/// enums are represented by the `Str` variant representing the variant name case it is unit one.       
+/// else they are represented by a `Map` variant containing the fields, with a special key `$enum_variant` representing the variant name.
+///
+/// for metadata wrapped types, they are represented by a `Map` variant containing the metadata with their values, with a special keys: `$has_meta` of value true and `value` containing the wrapped value.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value {
+	/// boolean value, types: `bool`.
 	Bool(bool),
+	/// signed integer value, types: `i8`, `i16`, `i32`, `i64` `vint`.
 	Int(i64),
+	/// unsigned integer value, types: `u8`, `u16`, `u32`, `u64` `vuint`.
 	Uint(u64),
+	/// big integer value, types: `bint`.
 	BigInt(Vec<u8>),
+	/// floating point value, types: `f32`, `f64`
 	Float(f64),
+	/// string value, types: `str`, unit enums.
 	Str(String),
+	/// instance value, types: `inst`, `instN`.
 	Inst(DateTime<Utc>),
+	/// duration value, types: `dur`.
 	Dur(TimeDelta),
+	/// uuid value, types: `uuid`.
 	UUID([u8; 16]),
+	/// array value, types: `arr`.
 	Arr(Vec<Value>),
+	/// map value, types: `map`, structs, enums with fields.
 	Map(HashMap<Key, Value>),
 }
 
+/// a type used as [`Value::Map`] key.
+///
+/// `Key` is a subset of [`Value`] for types that can be used a keys for `Value::Map`.
+///
+/// it supports all the api supported by its underlaying variants, and can be converted from and into `Value`.
+///
+/// ## example
+/// ```
+/// let map = Value::Map(HashMap::new())
+/// 	.insert(Key::from("some_key"), Value::Uint(1)); // => {"some_key": 1}
+/// ```
 #[derive(Debug, Clone, PartialEq, Hash, Eq)]
 pub enum Key {
+	/// boolean value, types: `bool`.
 	Bool(bool),
+	/// signed integer value, types: `i8`, `i16`, `i32`, `i64` `vint`.
 	Int(i64),
+	/// unsigned integer value, types: `u8`, `u16`, `u32`, `u64` `vuint`.
 	Uint(u64),
+	/// big integer value, types: `bint`.
 	BigInt(Vec<u8>),
-	Inst(DateTime<Utc>),
-	Dur(TimeDelta),
-	UUID([u8; 16]),
+	/// string value, types: `str`.
 	Str(String),
+	/// instance value, types: `inst`, `instN`.
+	Inst(DateTime<Utc>),
+	/// duration value, types: `dur`.
+	Dur(TimeDelta),
+	/// uuid value, types: `uuid`.
+	UUID([u8; 16]),
 }
 
 impl Default for Value {
@@ -59,14 +148,17 @@ macro_rules! is_impl {
 }
 
 static ENUM_VARIANT_KEY: LazyLock<Key> = LazyLock::new(|| Key::Str("$enum_variant".to_string()));
+/// `is_T() -> bool`: whether the inner value is of type `T`.
 impl Value {
 	is_impl!(Value, (Bool, is_bool), (Uint, is_uint), (Int, is_int), (Str, is_str));
 	is_impl!(Value, (BigInt, is_bigint), (Float, is_float), (Inst, is_inst), (Dur, is_dur));
 	is_impl!(Value, (UUID, is_uuid), (Arr, is_array), (Map, is_map));
 
+	/// convert `Value` into [`Key`]
 	pub fn into_key(self) -> Key {
 		self.try_into().unwrap()
 	}
+	/// get name of the wrapped enum variant, if not enum return `None`.
 	pub fn enum_variant(&self) -> Option<&str> {
 		match self {
 			Value::Map(map) => map.get(&ENUM_VARIANT_KEY).and_then(|v| v.as_str()),
@@ -74,6 +166,7 @@ impl Value {
 		}
 	}
 }
+/// `is_T() -> bool`: whether the inner value is of type `T`.
 impl Key {
 	is_impl!(Key, (Bool, is_bool), (Uint, is_uint), (Int, is_int), (Str, is_str));
 	is_impl!(Key, (BigInt, is_bigint), (Inst, is_inst), (Dur, is_dur), (UUID, is_uuid));
@@ -245,6 +338,25 @@ where
 	}
 }
 
+impl Value {
+	/// cast value into `T`
+	pub fn cast<T>(self) -> Option<T>
+	where
+		Value: TryInto<T>,
+	{
+		TryInto::try_into(self).ok()
+	}
+}
+impl Key {
+	/// cast key into `T`
+	pub fn cast<T>(self) -> Option<T>
+	where
+		Key: TryInto<T>,
+	{
+		TryInto::try_into(self).ok()
+	}
+}
+
 macro_rules! as_impl {
 	($enum:ident, $(($ty:ty, $met:ident, $var:ident)),+) => {
 		$(pub fn $met(&self) -> Option<$ty> {
@@ -276,6 +388,11 @@ macro_rules! as_mut_impl {
 	};
 }
 
+/// `as_T() -> Option<T>`: get copy of the inner value if it is of type `T`, else `None`.
+///
+/// `as_ref_T() -> Option<T>`: get reference to the inner value if it is of type `T`, else `None`.
+///
+/// `as_mut_T() -> Option<T>`: get mutable reference to the inner value if it is of type `T`, else `None`.
 impl Value {
 	as_impl!(Value, (bool, as_bool, Bool), (i64, as_int, Int), (u64, as_uint, Uint));
 	as_impl!(Value, (f64, as_float, Float), (DateTime<Utc>, as_inst, Inst));
@@ -285,6 +402,9 @@ impl Value {
 	as_mut_impl!(Value, (Vec<Value>, as_vec_mut, Arr), (HashMap<Key, Value>, as_map_mut, Map));
 }
 
+/// `as_T() -> Option<T>`: get copy of the inner value if it is of type `T`, else `None`.
+///
+/// `as_ref_T() -> Option<T>`: get reference to the inner value if it is of type `T`, else `None`.
 impl Key {
 	as_impl!(Key, (bool, as_bool, Bool), (i64, as_int, Int), (DateTime<Utc>, as_inst, Inst));
 	as_impl!(Key, (TimeDelta, as_dur, Dur), (u64, as_uint, Uint), ([u8; 16], as_uuid, UUID));
@@ -403,6 +523,7 @@ impl IndexMut<&Key> for Value {
 	}
 }
 impl Value {
+	/// get an item in value by index if it is an array, else return `None`.
 	pub fn get_by_index<I: SliceIndex<[Value]>>(
 		&self, index: I,
 	) -> Option<&<I as SliceIndex<[Value]>>::Output> {
@@ -411,6 +532,7 @@ impl Value {
 			_ => None,
 		}
 	}
+	/// get a mutable reference to an item in value by index if it is an array, else return `None`.
 	pub fn get_by_index_mut<I: SliceIndex<[Value]>>(
 		&mut self, index: I,
 	) -> Option<&mut <I as SliceIndex<[Value]>>::Output> {
@@ -419,12 +541,14 @@ impl Value {
 			_ => None,
 		}
 	}
+	/// get an item in value by key if it is a map, else return `None`.
 	pub fn get_by_key(&self, key: &Key) -> Option<&Value> {
 		match self {
 			Value::Map(m) => m.get(key),
 			_ => None,
 		}
 	}
+	/// get a mutable reference to an item in value by key if it is a map, else return `None`.
 	pub fn get_by_key_mut(&mut self, key: &Key) -> Option<&mut Value> {
 		match self {
 			Value::Map(m) => m.get_mut(key),
@@ -432,6 +556,7 @@ impl Value {
 		}
 	}
 
+	/// get an iterator over the items in value if it is an array, else return `None`.
 	pub fn into_iter(&self) -> Option<impl Iterator<Item = &Value>> {
 		match self {
 			Value::Arr(a) => Some(a.iter()),
