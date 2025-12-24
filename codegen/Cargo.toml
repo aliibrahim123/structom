@@ -1,11 +1,11 @@
 [package]
 name = "structom-codegen"
 description = "codegen for structom serialization"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2024"
 license = "MIT"
 repository = "https://github.com/aliibrahim123/structom"
 
 [dependencies]
 clap = { version = "4.5.47", features = ["derive"] }
-structom = "0.1.2"
+structom = "0.1.4"

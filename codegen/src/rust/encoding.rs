@@ -332,16 +332,11 @@ fn decode_struct(source: &mut String, def: &StructDef, name: &str, ctx: &Ctx) {
 	source.push_str(" else { skip_field(data, ind, header)? }\n");
 	source.push_str("\t}\n");
 
-	for field in fields.iter().filter(|f| !f.is_optional) {
-		let Field { name, .. } = field;
-		write!(source, "\tlet Some(f_{name}) = f_{name} else {{ return None; }};\n").unwrap();
-	}
-
 	write!(source, "\tSome({name} {{\n").unwrap();
 	for chunk in fields.chunks(4) {
 		source.push_str("\t\t");
 		for Field { name, .. } in chunk {
-			write!(source, "{name}: f_{name}, ").unwrap();
+			write!(source, "{name}: f_{name}?, ").unwrap();
 		}
 		source.push('\n');
 	}

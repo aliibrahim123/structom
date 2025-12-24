@@ -93,7 +93,7 @@ fn from_struct(source: &mut String, item: &DeclItem) {
 		}
 	}
 
-	source.push_str("\t\tValue::Map(map)\n\t}\n}\n");
+	source.push_str("\t\tValue::Map(Box::new(map))\n\t}\n}\n");
 }
 
 /// generate code for converting value to enum
@@ -111,7 +111,7 @@ fn to_enum(source: &mut String, item: &DeclItem) {
 
 	// fieldless variants, written as strings
 	if fieldless_vars.len() > 0 {
-		source.push_str("\t\tif let Value::Str(v) = value {\n");
+		source.push_str("\t\tif let Value::UnitVar(v) = value {\n");
 		// match based on variant
 		source.push_str("\t\t\treturn match v.as_str() {\n");
 		for EnumVariant { name: var_name, .. } in fieldless_vars {
@@ -203,7 +203,11 @@ fn from_enum(source: &mut String, item: &DeclItem) {
 			write!(source, "{name}_{var_name}_to_value(self),\n").unwrap();
 		// fieldless variants
 		} else {
-			write!(source, "\t\t\t{name}::{var_name} => Value::from(\"{var_name}\"),\n").unwrap();
+			write!(
+				source,
+				"\t\t\t{name}::{var_name} => Value::UnitVar(\"{var_name}\".to_string()),\n"
+			)
+			.unwrap();
 		}
 	}
 
@@ -241,6 +245,6 @@ fn from_enum(source: &mut String, item: &DeclItem) {
 			}
 		}
 
-		source.push_str("\tValue::Map(map)\n}\n");
+		source.push_str("\tValue::Map(Box::new(map))\n}\n");
 	}
 }
