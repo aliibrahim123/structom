@@ -4,8 +4,8 @@ structom (StructuredAtoms) is a lightweight general data exchange format designe
 ## docs
 ### [specification](./spec/index.md)
 ### languages
-- [**rust**](./...)
-- [**javascript**](./...)
+- [**rust**](https://crates.io/crates/structom)
+- [**javascript**](./js/readme.md)
 
 ## supported languages
 language | object notation | binary format | serialized structs
