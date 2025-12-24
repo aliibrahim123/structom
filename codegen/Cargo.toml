@@ -1,7 +1,7 @@
 [package]
 name = "structom-codegen"
 description = "codegen for structom serialization"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2024"
 license = "MIT"
 repository = "https://github.com/aliibrahim123/structom"
