@@ -15,12 +15,12 @@ pub fn decode_item(
 			// case has fields
 			if let Some(def) = &variant.def {
 				let mut value = decode_struct(data, ind, def, provider)?;
-				value.as_map_mut()?.insert("$enum_variant".into(), variant.name.clone().into());
+				value.as_map_mut()?.insert(Key::enum_variant_key().clone(), variant.name.clone().into());
 				return Some(value);
 			};
 
 			// case unit enum variant
-			Some(Value::Str(variant.name.clone()))
+			Some(Value::UnitVar(variant.name.clone()))
 		}
 	}
 }
@@ -45,13 +45,11 @@ fn decode_field_value(
 		let keyid = typeid.variant as u8;
 		let itemid = typeid.item.as_ref()?.as_ref();
 
-		Value::Map(decode_map(
-			data,
-			ind,
-			in_field,
+		Value::Map(Box::new(decode_map(
+			data, ind, in_field,
 			|data, ind| decode_key(data, ind, keyid),
 			|data, ind| decode_field_value(data, ind, itemid, false, provider),
-		)?)
+		)?))
 
 	// case builtins
 	} else {
@@ -100,7 +98,7 @@ pub fn decode_struct(
 		return None;
 	}
 
-	Some(Value::Map(map))
+	Some(Value::Map(Box::new(map)))
 }
 pub fn skip_field(data: &[u8], ind: &mut usize, header: u64) -> Option<()> {
 	match header & 0b111 {

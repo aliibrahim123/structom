@@ -64,10 +64,10 @@ use chrono::{DateTime, TimeDelta, Utc};
 ///
 /// structs are represented through the `Map` variant where it contains the struct fields.
 ///
-/// enums are represented by the `Str` variant representing the variant name case it is unit one.       
+/// enums are represented by the `UnitVar` case it is unit variant.       
 /// else they are represented by a `Map` variant containing the fields, with a special key `$enum_variant` representing the variant name.
 ///
-/// for metadata wrapped types, they are represented by a `Map` variant containing the metadata with their values, with a special keys: `$has_meta` of value true and `value` containing the wrapped value.
+/// for metadata wrapped types, they are represented by a `Map` variant containing the metadata with their values, with a special keys: `$has_meta` of value `true` and `value` containing the wrapped value.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value {
 	/// boolean value, types: `bool`.
@@ -91,7 +91,9 @@ pub enum Value {
 	/// array value, types: `arr`.
 	Arr(Vec<Value>),
 	/// map value, types: `map`, structs, enums with fields.
-	Map(HashMap<Key, Value>),
+	Map(Box<HashMap<Key, Value>>),
+	/// unit variant enum, types: `enum`.
+	UnitVar(String),
 }
 
 /// a type used as [`Value::Map`] key.
@@ -136,6 +138,25 @@ impl Default for Key {
 	}
 }
 
+pub static ENUM_VARIANT_KEY: LazyLock<Key> =
+	LazyLock::new(|| Key::Str("$enum_variant".to_string()));
+pub static HAS_META_KEY: LazyLock<Key> = LazyLock::new(|| Key::Str("$has_meta".to_string()));
+pub static INNER_KEY: LazyLock<Key> = LazyLock::new(|| Key::Str("value".to_string()));
+impl Key {
+	/// the enum variant key in an enum map
+	pub fn enum_variant_key() -> &'static Key {
+		&ENUM_VARIANT_KEY
+	}
+	/// the has metadata key in a metadata wrapped type
+	pub fn has_meta_key() -> &'static Key {
+		&HAS_META_KEY
+	}
+	/// the inner value key of a metadata wrapped type
+	pub fn inner_key() -> &'static Key {
+		&INNER_KEY
+	}
+}
+
 macro_rules! is_impl {
 	($enum:ident, $(($ty:ident, $met:ident)),+) => {
 		$(pub fn $met(&self) -> bool {
@@ -147,13 +168,36 @@ macro_rules! is_impl {
 	};
 }
 
-static ENUM_VARIANT_KEY: LazyLock<Key> = LazyLock::new(|| Key::Str("$enum_variant".to_string()));
 /// `is_T() -> bool`: whether the inner value is of type `T`.
 impl Value {
 	is_impl!(Value, (Bool, is_bool), (Uint, is_uint), (Int, is_int), (Str, is_str));
 	is_impl!(Value, (BigInt, is_bigint), (Float, is_float), (Inst, is_inst), (Dur, is_dur));
-	is_impl!(Value, (UUID, is_uuid), (Arr, is_array), (Map, is_map));
+	is_impl!(Value, (UUID, is_uuid), (Arr, is_array), (Map, is_map), (UnitVar, is_unit_variant));
 
+	/// whether the inner value is an enum
+	pub fn is_enum(&self) -> bool {
+		match self {
+			Value::UnitVar(_) => true,
+			Value::Map(map) => map.contains_key(&ENUM_VARIANT_KEY),
+			_ => false,
+		}
+	}
+	/// whether the inner value is a metadata wrapped type
+	pub fn has_meta(&self) -> bool {
+		match self {
+			Value::Map(map) => map.contains_key(&HAS_META_KEY),
+			_ => false,
+		}
+	}
+}
+
+/// `is_T() -> bool`: whether the inner value is of type `T`.
+impl Key {
+	is_impl!(Key, (Bool, is_bool), (Uint, is_uint), (Int, is_int), (Str, is_str));
+	is_impl!(Key, (BigInt, is_bigint), (Inst, is_inst), (Dur, is_dur), (UUID, is_uuid));
+}
+
+impl Value {
 	/// convert `Value` into [`Key`]
 	pub fn into_key(self) -> Key {
 		self.try_into().unwrap()
@@ -161,15 +205,37 @@ impl Value {
 	/// get name of the wrapped enum variant, if not enum return `None`.
 	pub fn enum_variant(&self) -> Option<&str> {
 		match self {
-			Value::Map(map) => map.get(&ENUM_VARIANT_KEY).and_then(|v| v.as_str()),
+			Value::UnitVar(str) => Some(str),
+			Value::Map(map) => map.get(&ENUM_VARIANT_KEY)?.as_str(),
 			_ => None,
 		}
 	}
-}
-/// `is_T() -> bool`: whether the inner value is of type `T`.
-impl Key {
-	is_impl!(Key, (Bool, is_bool), (Uint, is_uint), (Int, is_int), (Str, is_str));
-	is_impl!(Key, (BigInt, is_bigint), (Inst, is_inst), (Dur, is_dur), (UUID, is_uuid));
+	/// get the inner value of a metadata wrapped type, else return self.
+	pub fn inner(&self) -> &Value {
+		match &self {
+			Value::Map(map) if map.contains_key(&HAS_META_KEY) => &map[&INNER_KEY],
+			_ => &self,
+		}
+	}
+	/// get mut ref to the inner value of a metadata wrapped type, else return self.
+	pub fn inner_mut(&mut self) -> &mut Value {
+		if let Value::Map(map) = self {
+			if map.contains_key(&HAS_META_KEY) {
+				return map.get_mut(&INNER_KEY).unwrap();
+			}
+			unreachable!()
+		}
+		self
+	}
+	/// unwrap the inner value of a metadata wrapped type, else return self.
+	pub fn into_inner(self) -> Value {
+		match self {
+			Value::Map(mut map) if map.contains_key(&HAS_META_KEY) => {
+				map.remove(&INNER_KEY).unwrap()
+			}
+			_ => self,
+		}
+	}
 }
 
 impl TryFrom<Value> for Key {
@@ -252,7 +318,7 @@ impl<T: Into<Value>> From<Vec<T>> for Value {
 }
 impl<K: Into<Key>, V: Into<Value>> From<HashMap<K, V>> for Value {
 	fn from(m: HashMap<K, V>) -> Self {
-		Value::Map(m.into_iter().map(|(k, v)| (k.into(), v.into())).collect())
+		Value::Map(Box::new(m.into_iter().map(|(k, v)| (k.into(), v.into())).collect()))
 	}
 }
 
@@ -303,10 +369,7 @@ where
 			Value::Arr(v) => {
 				let mut vec = Vec::<T>::with_capacity(v.len());
 				for item in v {
-					match item.try_into() {
-						Ok(v) => vec.push(v),
-						Err(_) => return Err(()),
-					}
+					vec.push(item.try_into().map_err(|_| ())?);
 				}
 				Ok(vec)
 			}
@@ -325,11 +388,8 @@ where
 		match self {
 			Value::Map(m) => {
 				let mut map = HashMap::<K, V>::with_capacity(m.len());
-				for (k, v) in m {
-					match (k.try_into(), v.try_into()) {
-						(Ok(k), Ok(v)) => _ = map.insert(k, v),
-						_ => return Err(()),
-					}
+				for (k, v) in *m {
+					map.insert(k.try_into().map_err(|_| ())?, v.try_into().map_err(|_| ())?);
 				}
 				Ok(map)
 			}
@@ -552,14 +612,6 @@ impl Value {
 	pub fn get_by_key_mut(&mut self, key: &Key) -> Option<&mut Value> {
 		match self {
 			Value::Map(m) => m.get_mut(key),
-			_ => None,
-		}
-	}
-
-	/// get an iterator over the items in value if it is an array, else return `None`.
-	pub fn into_iter(&self) -> Option<impl Iterator<Item = &Value>> {
-		match self {
-			Value::Arr(a) => Some(a.iter()),
 			_ => None,
 		}
 	}

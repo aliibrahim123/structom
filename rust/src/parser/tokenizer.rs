@@ -15,7 +15,7 @@ pub enum Token<'s> {
 
 	Uint(u64, usize),
 	Int(i64, usize),
-	BigInt(Vec<u8>, usize),
+	BigInt((), usize),
 	Float(f64, usize),
 
 	Symbol(char, usize),
@@ -147,7 +147,7 @@ fn parse_escape_sequences(source: &str, start_ind: usize) -> Result<String, Pars
 }
 
 /// parse float literal
-fn parse_float(source: &str, mut ind: usize) -> Result<(Token, usize), ParserError> {
+fn parse_float(source: &str, mut ind: usize) -> Result<(Token<'_>, usize), ParserError> {
 	let start_ind = ind;
 	// sign
 	if let Some('-' | '+') = get_char(source, ind) {
@@ -194,7 +194,7 @@ fn parse_float(source: &str, mut ind: usize) -> Result<(Token, usize), ParserErr
 }
 
 /// parse integer literals
-fn parse_nb(source: &str, mut ind: usize) -> Result<(Token, usize), ParserError> {
+fn parse_nb(source: &str, mut ind: usize) -> Result<(Token<'_>, usize), ParserError> {
 	let sign_ind = ind;
 
 	// sign
@@ -292,16 +292,15 @@ fn parse_nb(source: &str, mut ind: usize) -> Result<(Token, usize), ParserError>
 			Ok((Token::Int(value.unwrap() * if neg { -1 } else { 1 }, sign_ind), ind))
 		}
 		NbValueType::BigInt => {
-			let value = Vec::<u8>::new();
 			// todo
 
-			Ok((Token::BigInt(value, sign_ind), ind))
+			Ok((Token::BigInt((), sign_ind), ind))
 		}
 	}
 }
 
 /// simplify the source into sequence of tokens
-pub fn tokenize(source: &str) -> Result<Vec<Token>, ParserError> {
+pub fn tokenize(source: &str) -> Result<Vec<Token<'_>>, ParserError> {
 	let mut tokens = Vec::<Token>::new();
 	let mut ind: usize = 0;
 

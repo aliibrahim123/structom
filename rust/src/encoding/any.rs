@@ -175,13 +175,13 @@ pub fn decode_value(data: &[u8], ind: &mut usize, id: u8) -> Option<Value> {
 			let keyid = *data.get(*ind)?;
 			let valueid = *data.get(*ind + 1)?;
 			*ind += 2;
-			Some(Value::Map(decode_map(
+			Some(Value::Map(Box::new(decode_map(
 				data,
 				ind,
 				false,
 				|data, ind| decode_key(data, ind, keyid),
 				|data, ind| decode_value(data, ind, valueid),
-			)?))
+			)?)))
 		}
 
 		_ => decode_value_commons!(Value, id, data, ind, decode_any),

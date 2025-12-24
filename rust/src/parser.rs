@@ -8,7 +8,10 @@ use crate::{
 	DeclProvider, ParserError, Value,
 	declaration::{DeclFile, TypeId},
 	errors::unexpected_token,
-	parser::{declaration::parse_declaration, tokenizer::tokenize},
+	parser::{
+		declaration::{DeclContext, parse_declaration},
+		tokenizer::tokenize,
+	},
 };
 
 /// parsing options.
@@ -54,6 +57,21 @@ pub fn parse_declaration_file(
 
 	Ok(file)
 }
+
+struct MiddleProvider<'a> {
+	provider: &'a dyn DeclProvider,
+	ctx: &'a DeclContext<'a>,
+}
+
+impl DeclProvider for MiddleProvider<'_> {
+	fn get_by_id<'a>(&'a self, id: u64) -> &'a DeclFile {
+		if id == self.ctx.file.id { self.ctx.file } else { self.provider.get_by_id(id) }
+	}
+	fn get_by_name<'a>(&'a self, name: &str) -> Option<&'a DeclFile> {
+		self.provider.get_by_name(name)
+	}
+}
+
 /// parse a structom file into a [`Value`].
 ///
 /// the source is made up of optional declerations at top, followed by a root value.
@@ -77,7 +95,8 @@ pub fn parse(
 	let mut root_file = DeclFile::new("root".to_string());
 	let ctx = parse_declaration(&mut root_file, &tokens, &mut ind, provider, options)?;
 
-	let value = value::parse_value(&tokens, &mut ind, &TypeId::ANY, &ctx, provider, options)?;
+	let _provider = MiddleProvider { provider, ctx: &ctx };
+	let value = value::parse_value(&tokens, &mut ind, &TypeId::ANY, &ctx, &_provider, options)?;
 	// ensure all tokens have been consumed
 	if tokens.len() - 1 != ind {
 		return Err(unexpected_token(&tokens[ind], tokens[ind].ind()));

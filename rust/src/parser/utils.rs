@@ -51,38 +51,11 @@ pub fn consume_symbol(token: char, tokens: &[Token], ind: &mut usize) -> Result<
 		Some(token) => Err(unexpected_token(token, token.ind())),
 	}
 }
-/// safely consume an int
-pub fn consume_int(tokens: &[Token], ind: &mut usize) -> Result<i64, ParserError> {
-	match tokens.get(*ind) {
-		Some(Token::Uint(nb, _)) => (Ok(*nb as i64), *ind += 1).0,
-		Some(Token::Int(nb, _)) => (Ok(*nb), *ind += 1).0,
-		Some(Token::EOF(_)) | None => Err(end_of_input(tokens[*ind].ind())),
-		Some(token) => Err(unexpected_token(token, token.ind())),
-	}
-}
 /// safely consume an uint
 pub fn consume_uint(tokens: &[Token], ind: &mut usize) -> Result<u64, ParserError> {
 	match tokens.get(*ind) {
 		Some(Token::Uint(nb, _)) => (Ok(*nb), *ind += 1).0,
 		Some(Token::Int(nb, _)) if (*nb >= 0) => (Ok(*nb as u64), *ind += 1).0,
-		Some(Token::EOF(_)) | None => Err(end_of_input(tokens[*ind].ind())),
-		Some(token) => Err(unexpected_token(token, token.ind())),
-	}
-}
-/// safely consume a bigint
-pub fn consume_bigint<'a>(tokens: &'a [Token], ind: &mut usize) -> Result<&'a [u8], ParserError> {
-	match tokens.get(*ind) {
-		Some(Token::BigInt(nb, _)) => (Ok(&nb[..]), *ind += 1).0,
-		Some(Token::EOF(_)) | None => Err(end_of_input(tokens[*ind].ind())),
-		Some(token) => Err(unexpected_token(token, token.ind())),
-	}
-}
-/// safely consume a float
-pub fn consume_float(tokens: &[Token], ind: &mut usize) -> Result<f64, ParserError> {
-	match tokens.get(*ind) {
-		Some(Token::Float(nb, _)) => (Ok(*nb), *ind += 1).0,
-		Some(Token::Int(nb, _)) => (Ok(*nb as f64), *ind += 1).0,
-		Some(Token::Uint(nb, _)) => (Ok(*nb as f64), *ind += 1).0,
 		Some(Token::EOF(_)) | None => Err(end_of_input(tokens[*ind].ind())),
 		Some(token) => Err(unexpected_token(token, token.ind())),
 	}

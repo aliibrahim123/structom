@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fmt::Write, sync::LazyLock};
+use std::{collections::HashMap, fmt::Write};
 
 use chrono::{DateTime, TimeDelta, Timelike, Utc};
 
@@ -74,6 +74,7 @@ pub fn str_value(value: &Value, result: &mut String, depth: usize, options: &Str
 		}
 		Value::Arr(arr) => str_arr(arr, result, depth, options),
 		Value::Map(map) => str_map(map, result, depth, options),
+		Value::UnitVar(var) => result.push_str(var),
 		_ => (),
 	}
 }
@@ -87,14 +88,11 @@ fn add_indent(result: &mut String, depth: usize, options: &StringifyOptions) {
 	}
 }
 
-static META_KEY: LazyLock<Key> = LazyLock::new(|| Key::Str("$has_meta".to_string()));
-static VALUE_KEY: LazyLock<Key> = LazyLock::new(|| Key::Str("value".to_string()));
-static ENUM_VARIANT_KEY: LazyLock<Key> = LazyLock::new(|| Key::Str("$enum_variant".to_string()));
 fn str_map(
 	map: &HashMap<Key, Value>, result: &mut String, depth: usize, options: &StringifyOptions,
 ) {
 	// case metadata
-	if options.metadata && map.contains_key(&META_KEY) {
+	if options.metadata && map.contains_key(Key::has_meta_key()) {
 		// stringify metadata
 		for (key, value) in map.iter() {
 			if !matches!(key.as_str(), Some("$has_meta" | "value")) {
@@ -106,13 +104,13 @@ fn str_map(
 			}
 		}
 		// stringify value
-		str_value(&map[&VALUE_KEY], result, depth, options);
+		str_value(&map[Key::inner_key()], result, depth, options);
 		return;
 	}
 
 	// case enums
-	if options.enums && map.contains_key(&ENUM_VARIANT_KEY) {
-		result.push_str(map.get(&ENUM_VARIANT_KEY).unwrap().as_str().unwrap());
+	if options.enums && map.contains_key(Key::enum_variant_key()) {
+		result.push_str(map.get(Key::enum_variant_key()).unwrap().as_str().unwrap());
 	}
 
 	result.push_str("{");

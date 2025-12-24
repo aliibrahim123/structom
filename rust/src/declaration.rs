@@ -70,7 +70,7 @@ pub trait DeclProvider {
 	/// get a decleration file by its id.
 	///
 	/// this method can not fail, it is used for decleration files that were created before.
-	fn get_by_id<'a>(&'a self, name: u64) -> &'a DeclFile;
+	fn get_by_id<'a>(&'a self, id: u64) -> &'a DeclFile;
 
 	/// get a decleration file by its name.
 	///   

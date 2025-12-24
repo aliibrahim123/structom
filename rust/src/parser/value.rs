@@ -13,7 +13,7 @@ use crate::{
 	},
 };
 
-fn mismatch_types<T>(expected: &str, found: &str, ind: usize) -> Result<T, ParserError> {
+pub fn mismatch_types<T>(expected: &str, found: &str, ind: usize) -> Result<T, ParserError> {
 	Err(ParserError::TypeError(format!("expected type {expected}, found {found} at {ind}",)))
 }
 fn check_range_nb(nb: i64, signed: bool, bits: u8, ind: usize) -> Result<i64, ParserError> {
@@ -126,7 +126,7 @@ fn parse_map(
 			_ => return Err(unexpected_token(tokens[*ind - 1].to_string(), key_ind)),
 		};
 
-		if let Key::Str(key) = &key
+		if let Key::Str(_) = &key
 			&& !matches!(keyid.id, 1 | 0x20)
 		{
 			mismatch_types(&keyid.name(provider), "str", key_ind)?
@@ -147,7 +147,7 @@ fn parse_map(
 		struct_like_end(tokens, ind, &mut watched_comma);
 	}
 
-	Ok(Value::Map(map))
+	Ok(Value::Map(Box::new(map)))
 }
 
 // parse structs / enums
@@ -183,9 +183,9 @@ fn resolve_item_def<'a>(
 			return Ok(CaseUnitVariant(&variant.name));
 		}
 		// variant with fields is parsed into a map with its fields
-		map.insert("$enum_variant".into(), variant.name.clone().into());
+		map.insert(Key::enum_variant_key().clone(), variant.name.clone().into());
 
-		Ok(Norm(variant.def.as_ref().unwrap(), variant.name.as_str()))
+		Ok(Norm(variant.def.as_ref().unwrap(), &variant.name))
 
 	// it is struct
 	} else if let DeclItem::Struct { def, .. } = item {
@@ -205,8 +205,7 @@ fn parse_item(
 	use ResolveDefResult::*;
 	let (def, variant) = match resolve_item_def(tokens, ind, &mut map, item, variant, start_ind)? {
 		Norm(def, variant) => (def, variant),
-		// for unit enum variants, it is parsed as a str
-		CaseUnitVariant(variant) => return Ok(Value::from(variant)),
+		CaseUnitVariant(variant) => return Ok(Value::UnitVar(variant.to_string())),
 	};
 
 	let mut required = def.required_fields;
@@ -266,7 +265,7 @@ fn parse_item(
 		)));
 	}
 
-	Ok(Value::Map(map))
+	Ok(Value::Map(Box::new(map)))
 }
 
 fn parse_ident(
@@ -481,7 +480,7 @@ pub fn parse_value(
 	// add metadata wrapper around the value
 	if options.metadata && (metadata.is_some() || typeid.metadata.is_some()) {
 		let mut wrapper = HashMap::new();
-		wrapper.insert("$has_meta".into(), Value::Bool(true));
+		wrapper.insert(Key::has_meta_key().clone(), Value::Bool(true));
 
 		// declared metadata in declerations
 		if let Some(metadata) = typeid.metadata.as_ref() {
@@ -496,8 +495,8 @@ pub fn parse_value(
 			}
 		}
 
-		wrapper.insert("value".into(), value);
-		Ok(Value::Map(wrapper))
+		wrapper.insert(Key::inner_key().clone(), value);
+		Ok(Value::Map(Box::new(wrapper)))
 	} else {
 		Ok(value)
 	}
