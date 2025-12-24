@@ -1,8 +1,8 @@
-import { decode_i16, decode_i32, decode_i64, decode_i8, decode_u16, decode_u32, decode_u64, decode_u8, type Buffer, type Cursor } from "./buf.ts";
-import { decode_bool, decode_str, decode_arr, decode_map } from "./general.ts";
+import { decode_i16, decode_i32, decode_i64, decode_i8, decode_u16, decode_u32, decode_u64, decode_u8, encode_u8, type Buffer, type Cursor } from "./buf.ts";
+import { decode_bool, decode_str, decode_arr, decode_map, encode_bool, encode_str, encode_arr, encode_map } from "./general.ts";
 import type { Value } from "./index.ts";
-import { decode_f32, decode_f64, decode_vint, decode_vuint } from "./number.ts";
-import { decode_dur, decode_inst, decode_instN, decode_uuid } from "./rich.ts";
+import { decode_f32, decode_f64, decode_vint, decode_vuint, encode_f64, encode_vint, encode_vuint } from "./number.ts";
+import { decode_dur, decode_inst, decode_instN, decode_uuid, encode_dur, encode_inst, encode_uuid } from "./rich.ts";
 
 const any_typeid = 0x01;
 const bool_typeid = 0x08;
@@ -73,3 +73,73 @@ export function decode_any (buf: Buffer, cur: Cursor): Value {
 	return decode_value(buf, decode_u8(buf, cur), cur);
 }
 
+function resolve_typeid(value: Value): number {
+	switch (typeof(value)) {
+		case 'boolean': return bool_typeid;
+		case 'number': return Number.isInteger(value) ? vint_typeid : f64_typeid
+		case 'bigint': return vint_typeid;
+		case 'string': return str_typeid
+	}
+
+	if (value instanceof Date) return inst_typeid;
+	if ('type' in value) switch (value.type) {
+		case 'dur': return dur_typeid;
+		case 'uuid': return uuid_typeid;
+	}
+
+	if (Array.isArray(value)) return arr_typeid;
+	return map_typeid
+}
+function encode_value(buf: Buffer, value: Value, typeid: number): void {
+	switch (typeid) {
+		case any_typeid: return encode_any(buf, value);
+		case bool_typeid: return encode_bool(buf, value as any);
+		case vint_typeid: return encode_vint(buf, value as any);
+		case f64_typeid: return encode_f64(buf, value as any);
+		case str_typeid: return encode_str(buf, value as any);
+		case inst_typeid: return encode_inst(buf, value as any);
+		case dur_typeid: return encode_dur(buf, value as any);
+		case uuid_typeid: return encode_uuid(buf, value as any);
+	}
+}
+export function encode_any (buf: Buffer, value: Value): void {
+	let typeid = resolve_typeid(value);
+	encode_u8(buf, typeid);
+
+	if (typeid !== arr_typeid && typeid !== map_typeid) 
+		return encode_value(buf, value, typeid);
+	
+	if (Array.isArray(value)) {
+		let item_id = value.length === 0 ? any_typeid : resolve_typeid(value[0]);
+		for (let v of value) if (resolve_typeid(v) !== item_id) {
+			item_id = any_typeid;
+			break
+		}
+		if (item_id === arr_typeid || item_id === map_typeid) item_id = any_typeid;
+		encode_u8(buf, item_id);
+		return encode_arr(buf, value, (buf, v) => encode_value(buf, v, item_id));
+	}
+
+	if (value instanceof Map) {
+		let entry = value.entries().next().value;
+		let key_id = entry === undefined ? any_typeid : resolve_typeid(entry?.[0] as any);
+		let value_id = entry === undefined ? any_typeid : resolve_typeid(entry?.[1] as any);
+
+		for (let [k, _] of value) if (resolve_typeid(k) !== key_id) {
+			key_id = any_typeid;
+			break
+		}
+		for (let [_, v] of value) if (resolve_typeid(v) !== value_id) {
+			value_id = any_typeid;
+			break
+		}
+		if (value_id === arr_typeid || value_id === map_typeid) value_id = any_typeid;
+
+		encode_u8(buf, key_id);
+		encode_u8(buf, value_id);
+		return encode_map(buf, value, 
+			(buf, k) => encode_value(buf, k, key_id), 
+			(buf, v) => encode_value(buf, v, value_id)
+		)
+	}
+}

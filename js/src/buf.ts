@@ -12,9 +12,9 @@ export function reserve(buf: Buffer, add_size: number) {
 	let old_size = buf.buf.length 
 	if (buf.pos + add_size > old_size) {
 		let new_size = old_size > 2 ** 20 ? old_size + 2 ** 10 : old_size * 2;
-		if (new_size < buf.pos + add_size) new_size = buf.pos + add_size
-		let new_buf = new Uint8Array(buf.buf.length * 2)
-		new_buf.set(buf.buf)
+		if (new_size < buf.pos + add_size) new_size = buf.pos + add_size;
+		let new_buf = new Uint8Array(new_size);
+		new_buf.set(buf.buf);
 		buf.buf = new_buf;
 		buf.view = new DataView(new_buf.buffer)
 	}

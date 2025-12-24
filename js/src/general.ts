@@ -50,7 +50,7 @@ export function encode_map<K, V> (
 	buf: Buffer, value: Map<K, V>, key_fn: Encoder<K>, val_fn: Encoder<V>, 
 	in_field = false
 ) {
-	if (in_field) 
+	if (!in_field) 
 		encode_vuint(buf, value.size);
 	for (let [k, v] of value) {
 		key_fn(buf, k);
@@ -70,8 +70,21 @@ export function decode_map<K, V> (
 		return map
 	} else {
 		let map = new Map<K, V>();
-		for (let i = 0; i < len; i++) 
-			map.set(key_fn(buf, cur), val_fn(buf, cur));
+		for (let i = 0; i < len; i++) {
+			map.set(key_fn(buf, cur), val_fn(buf, cur));}
 		return map
+	}
+}
+
+export function skip_field (buf: Buffer, cur: Cursor, header: number) {
+	switch (header & 0b111) {
+		case 0b000: cur.pos += 1; break;
+		case 0b001: cur.pos += 2; break;
+		case 0b010: cur.pos += 4; break;
+		case 0b011: cur.pos += 8; break;
+		// decode vuint and ignore
+		case 0b100: decode_vuint(buf, cur); break;
+		// len field is encoded
+		case 0b101: cur.pos += decode_vuint(buf, cur) as number;
 	}
 }
