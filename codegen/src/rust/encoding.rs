@@ -274,6 +274,7 @@ fn encode_field(source: &mut String, field: &Field, ctx: &Ctx) {
 	}
 }
 
+/// generate decoding function for enum
 fn decode_enum(source: &mut String, item: &DeclItem, ctx: &Ctx) {
 	let DeclItem::Enum { name, variants, .. } = item else { unreachable!() };
 
@@ -302,6 +303,7 @@ fn decode_enum(source: &mut String, item: &DeclItem, ctx: &Ctx) {
 	source.push('\n');
 }
 
+/// generate decoding function for struct
 fn decode_struct(source: &mut String, def: &StructDef, name: &str, ctx: &Ctx) {
 	let fields = def.fields.iter().filter_map(|f| f.as_ref()).collect::<Vec<_>>();
 	for chunk in fields.chunks(4) {

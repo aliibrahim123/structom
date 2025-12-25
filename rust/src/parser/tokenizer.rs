@@ -311,7 +311,6 @@ pub fn tokenize(source: &str) -> Result<Vec<Token<'_>>, ParserError> {
 
 	while source.len() > ind {
 		let cur_char = get_char(source, ind).unwrap();
-
 		match cur_char {
 			' ' | '\t' | '\n' | '\r' => {}
 
@@ -397,12 +396,15 @@ pub fn tokenize(source: &str) -> Result<Vec<Token<'_>>, ParserError> {
 				let next_char = get_char(source, ind + 1);
 				match next_char {
 					// single line
-					Some('/') => ind = source[ind..].find("\n").unwrap_or(source.len()) + 1,
+					Some('/') => {
+						ind = source[ind..].find("\n").map(|i| ind + i).unwrap_or(source.len())
+					}
 					// multi line
 					Some('*') => ind = next("*/", ind)? + 2,
 					Some(char) => return Err(unexpected_token(char, ind)),
 					None => return Err(end_of_input(source.len())),
 				}
+
 				continue;
 			}
 
@@ -414,6 +416,5 @@ pub fn tokenize(source: &str) -> Result<Vec<Token<'_>>, ParserError> {
 		ind += 1;
 	}
 	tokens.push(Token::EOF(source.len()));
-
 	Ok(tokens)
 }

@@ -8,4 +8,4 @@ repository = "https://github.com/aliibrahim123/structom"
 
 [dependencies]
 clap = { version = "4.5.47", features = ["derive"] }
-structom = "0.1.4"
+structom = "0.1.5"

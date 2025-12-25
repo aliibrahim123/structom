@@ -4,7 +4,7 @@ use structom::{DeclProvider, internal::*};
 
 use crate::{
 	rust::Ctx,
-	utils::{add_ident, vuint_to_bytes},
+	utils::{add_ident, encode_header},
 };
 
 /// generate type definition for a decleration file
@@ -186,15 +186,7 @@ fn write_serialized_trait(source: &mut String, item: &DeclItem, file: &str) {
 	source.push_str("\t\tlet mut data = Vec::new();\n");
 	// header
 	source.push_str("\t\tdata.extend_from_slice(&[\n\t\t\t");
-	for byte in vuint_to_bytes(file.len() as u64) {
-		write!(source, "0x{byte:02x}, ").unwrap();
-	}
-	for byte in file.as_bytes() {
-		write!(source, "0x{byte:02x}, ").unwrap();
-	}
-	for byte in vuint_to_bytes(item.typeid() as u64) {
-		write!(source, "0x{byte:02x}, ").unwrap();
-	}
+	encode_header(source, file, item.typeid() as u64);
 	source.push_str("\n\t\t]);\n");
 	// encode item
 	write!(source, "\t\tencode_{name}(&mut data, self);\n").unwrap();

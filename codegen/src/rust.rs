@@ -15,6 +15,7 @@ use structom::{DeclFile, FSProvider};
 use crate::{
 	Entry,
 	rust::{encoding::gen_encoding, root::gen_root, type_def::gen_type_def, value::gen_value_conv},
+	utils::errors,
 };
 
 /// DeclFile.id => mod path
@@ -52,14 +53,13 @@ pub fn to_rust(
 		gen_value_conv(&mut source, &ctx);
 
 		let output = absolute(out_dir.join(resolved_path).with_extension("rs")).unwrap();
-		write(&output, source)
-			.map_err(|_| format!("unable to write file \"{}\"", output.display()))?;
+		write(&output, source).map_err(errors::write_file(&output.display()))?;
 	}
 
 	// generate root mod
 	let root_path = absolute(out_dir.join("mod.rs")).unwrap();
 	write(&root_path, gen_root(inputs, in_dir))
-		.map_err(|_| format!("unable to write file \"{}\"", root_path.display()))?;
+		.map_err(errors::write_file(&root_path.display()))?;
 
 	Ok(())
 }

@@ -1,3 +1,4 @@
+mod js;
 mod rust;
 pub mod utils;
 
@@ -8,11 +9,14 @@ use clap::{Parser, ValueEnum};
 use structom::FSProvider;
 use structom::{DeclFile, LoadFileError};
 
+use crate::js::to_js;
 use crate::rust::to_rust;
+use crate::utils::errors;
 
 #[derive(ValueEnum, Clone, Copy, Debug)]
 enum Lang {
 	Rust,
+	JS,
 }
 
 /// generate serialization code for structom declerations
@@ -36,15 +40,13 @@ fn main() -> Result<(), String> {
 	let Args { input, output, lang } = Args::parse();
 
 	// prepare output directory
-	create_dir_all(&output).map_err(|_| format!("unable to create directory \"{output}\""))?;
-	let out_path =
-		canonicalize(&output).map_err(|_| format!("unable to read directory \"{output}\""))?;
-	remove_dir_all(&out_path).map_err(|_| format!("unable to remove directory \"{output}\""))?;
-	create_dir(&out_path).map_err(|_| format!("unable to create directory \"{output}\""))?;
+	create_dir_all(&output).map_err(errors::create_dir(&output))?;
+	let out_path = canonicalize(&output).map_err(errors::read_dir(&output))?;
+	remove_dir_all(&out_path).map_err(errors::remove_dir(&output))?;
+	create_dir(&out_path).map_err(errors::create_dir(&output))?;
 
 	// read declerations
-	let input =
-		canonicalize(&input).map_err(|_| format!("unable to read directory \"{input}\""))?;
+	let input = canonicalize(&input).map_err(errors::read_dir(&input))?;
 	let provider = FSProvider::new(&input).unwrap();
 	let mut inputs = Vec::new();
 	walk_fs(&mut inputs, &input, "".to_string(), &provider)?;
@@ -52,6 +54,7 @@ fn main() -> Result<(), String> {
 	// generate code
 	match lang {
 		Lang::Rust => to_rust(&inputs, input.to_str().unwrap(), &out_path, &provider)?,
+		Lang::JS => to_js(&inputs, input.to_str().unwrap(), &out_path, &provider)?,
 	}
 
 	Ok(())
@@ -72,8 +75,8 @@ pub fn walk_fs<'a>(
 	inputs: &mut Vec<Entry<'a>>, path: &Path, rel_path: String, provider: &'a FSProvider,
 ) -> Result<(), String> {
 	// every entry in the directory
-	for entry in read_dir(path).map_err(|_| format!("unable to read directory \"{path:?}\""))? {
-		let entry = entry.map_err(|_| format!("unable to read directory \"{path:?}\""))?.path();
+	for entry in read_dir(path).map_err(errors::read_dir(&path.display()))? {
+		let entry = entry.map_err(errors::read_dir(&path.display()))?.path();
 		// resolve relative path
 		let file_name = entry.file_name().unwrap().to_str().unwrap();
 		let rel_path =
@@ -91,15 +94,13 @@ pub fn walk_fs<'a>(
 			resolved_path.truncate(rel_path.len() - 6);
 
 			// parse file and redirect errors
+			use LoadFileError::*;
+			use structom::ParserError::*;
 			match provider.load_file(&entry) {
 				Ok(decl) => inputs.push(Entry { resolved_path, rel_path, decl }),
-				Err(LoadFileError::IO(_)) => {
-					return Err(format!("unable to read file \"{}\"", entry.display()));
-				}
-				Err(LoadFileError::Parse(structom::ParserError::TypeError(err))) => {
-					return Err(err);
-				}
-				Err(LoadFileError::Parse(structom::ParserError::SyntaxError(err))) => {
+				Err(IO(_)) => return Err(errors::read_file(&entry.display())(())),
+				Err(Parse(TypeError(err))) => return Err(err),
+				Err(Parse(SyntaxError(err))) => {
 					return Err(format!("{err} at decleration file \"{}\"", entry.display()));
 				}
 			};

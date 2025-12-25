@@ -36,5 +36,5 @@ export * from './rich.ts';
 export { 
 	decode_i8, decode_i16, decode_i32, decode_i64, decode_u8, decode_u16, decode_u32, decode_u64, 
 	decode_u8_arr, encode_i8, encode_i16, encode_i32, encode_i64, encode_u8, encode_u16, encode_u32, 
-	encode_u64, encode_u8_arr 
+	encode_u64, encode_u8_arr, type Buffer, type Cursor
 } from './buf.ts';

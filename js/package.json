@@ -1,9 +1,10 @@
 {
 	"name": "structom",
-	"version": "0.0.1",
+	"version": "0.0.2",
 	"description": "new generation of reactivity and speed",
 	"author": "aliibrahim123",
 	"type": "module",
+	"main": "./src/index.ts",
 	"homepage": "https://aliibrahim123.github.io/structom/",
 	"bugs": {
 		"url": "https://github.com/aliibrahim123/structom/issues"
