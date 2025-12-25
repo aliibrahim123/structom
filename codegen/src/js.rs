@@ -3,7 +3,7 @@ mod root;
 mod type_def;
 
 use std::{
-	collections::HashMap,
+	collections::{HashMap, HashSet},
 	fmt::Write,
 	fs::write,
 	path::{Path, absolute},
@@ -44,7 +44,7 @@ pub fn to_js(
 		source.push_str("import * as enc from \"structom\";\n");
 
 		// gen type def
-		let mut used_files = Vec::new();
+		let mut used_files = HashSet::new();
 		let mut type_def_source = String::new();
 		gen_type_def(&mut type_def_source, &mut used_files, &ctx);
 

@@ -1,9 +1,9 @@
 use crate::js::Ctx;
-use std::fmt::Write;
+use std::{collections::HashSet, fmt::Write};
 use structom::{DeclProvider, internal::*};
 
 /// generate type definition for a decleration file
-pub fn gen_type_def(source: &mut String, used_files: &mut Vec<u64>, ctx: &Ctx) {
+pub fn gen_type_def(source: &mut String, used_files: &mut HashSet<u64>, ctx: &Ctx) {
 	let Ctx { file, .. } = ctx;
 
 	for (_, item) in &file.items {
@@ -21,7 +21,7 @@ pub fn gen_type_def(source: &mut String, used_files: &mut Vec<u64>, ctx: &Ctx) {
 }
 
 /// write enum definition
-fn write_enum(source: &mut String, item: &DeclItem, used_files: &mut Vec<u64>, ctx: &Ctx) {
+fn write_enum(source: &mut String, item: &DeclItem, used_files: &mut HashSet<u64>, ctx: &Ctx) {
 	let DeclItem::Enum { name, variants, .. } = item else { unreachable!() };
 
 	write!(source, "export type {name} = ").unwrap();
@@ -52,7 +52,7 @@ fn write_enum(source: &mut String, item: &DeclItem, used_files: &mut Vec<u64>, c
 }
 
 /// write struct definition
-fn write_struct(source: &mut String, def: &StructDef, used_files: &mut Vec<u64>, ctx: &Ctx) {
+fn write_struct(source: &mut String, def: &StructDef, used_files: &mut HashSet<u64>, ctx: &Ctx) {
 	// write every fields
 	for field in def.fields.iter().flat_map(|f| f.as_ref()) {
 		write!(source, "\t{}{}: ", field.name, if field.is_optional { "?" } else { "" }).unwrap();
@@ -82,7 +82,7 @@ fn resolve_built_in_type(typeid: u8) -> &'static str {
 }
 /// convert a typeid to a js type
 fn write_type(
-	source: &mut String, typeid: &TypeId, used_files: &mut Vec<u64>, ctx: &Ctx,
+	source: &mut String, typeid: &TypeId, used_files: &mut HashSet<u64>, ctx: &Ctx,
 ) -> Option<()> {
 	// built-ins
 	Some(if typeid.ns == 0 {
@@ -113,7 +113,7 @@ fn write_type(
 		// other file
 		} else {
 			// write ns.type_name
-			used_files.push(typeid.ns);
+			used_files.insert(typeid.ns);
 			let file = provider.get_by_id(typeid.ns);
 			source.push_str("ns_");
 			source.push_str(path_map.get(&file.id)?);
