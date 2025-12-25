@@ -11,3 +11,4 @@ structom (StructuredAtoms) is a lightweight general data exchange format designe
 language | object notation | binary format | serialized structs
 -------- | --------------- | ------------- | ------------------
 **rust** | [*] | [*] | [*]
+**javascript** | [] | [*] | [*]
