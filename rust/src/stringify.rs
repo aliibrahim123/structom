@@ -11,13 +11,11 @@ pub struct StringifyOptions<'a> {
 	pub metadata: bool,
 	/// sequence of characters used as 1 depth of indentation, default: `""`.
 	pub ident: &'a str,
-	/// whether to stringify enums, default: `false`.
-	pub enums: bool,
 }
 
 impl Default for StringifyOptions<'static> {
 	fn default() -> Self {
-		Self { metadata: false, ident: "", enums: false }
+		Self { metadata: false, ident: "" }
 	}
 }
 
@@ -109,7 +107,7 @@ fn str_map(
 	}
 
 	// case enums
-	if options.enums && map.contains_key(Key::enum_variant_key()) {
+	if map.contains_key(Key::enum_variant_key()) {
 		result.push_str(map.get(Key::enum_variant_key()).unwrap().as_str().unwrap());
 	}
 

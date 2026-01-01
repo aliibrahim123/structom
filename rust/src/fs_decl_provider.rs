@@ -23,7 +23,7 @@ pub enum LoadFileError {
 ///
 /// this provider works only in a specifed root directory, and loads files of any extension.
 ///
-/// it can fails safely when loading, and it only reads the file one time on requrest.
+/// it can fails safely when loading.
 ///
 /// ## example
 /// ```

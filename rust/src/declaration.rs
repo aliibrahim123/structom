@@ -245,8 +245,6 @@ fn add_item<'a, T>(vec: &mut Vec<Option<T>>, id: usize, item: T) -> Result<(), (
 
 /// decleration provider with no decleration files.
 ///
-/// a decleration provider for cases where no decleration files are needed.
-///
 /// ## example
 /// ```
 /// parse("{ only_builtin_used: true }", &ParseOptions::default(), &VoidProvider{});
@@ -264,8 +262,6 @@ impl DeclProvider for VoidProvider {
 	}
 }
 /// decleration provider with fixed set of decleration files.
-///
-/// a decleration provider for cases where only a fixed set of decleration files are available.
 ///
 /// this provider is same as [`FixedSetProvider`], but it take references to the declaration files, not owning them. so it can redirect declarations from other provider.
 ///
@@ -308,8 +304,6 @@ impl DeclProvider for FixedSetProviderRef<'_> {
 }
 
 /// decleration provider with fixed set of decleration files.
-///
-/// a decleration provider for cases where only a fixed set of decleration files are available.
 ///
 /// ## example
 /// ```

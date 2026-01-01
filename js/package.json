@@ -1,7 +1,7 @@
 {
 	"name": "structom",
-	"version": "0.0.3",
-	"description": "new generation of reactivity and speed",
+	"version": "0.0.4",
+	"description": "efficient data format for all needs",
 	"author": "aliibrahim123",
 	"type": "module",
 	"main": "./src/index.ts",
