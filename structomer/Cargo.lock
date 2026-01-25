@@ -331,16 +331,16 @@ checksum = "7da8b5736845d9f2fcb837ea5d9e2628564b3b043a70948a3f0b778838c5fb4f"
 
 [[package]]
 name = "structom"
-version = "0.1.9"
+version = "0.1.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "02ac7cbc171434bf3fd167d5626d5e5dac0e3d773e1f2932c439849d539c41ca"
+checksum = "13108d590eb49a6e4fb3004a9f5073e1bf163591e9b86131cadc20e982074b83"
 dependencies = [
  "chrono",
 ]
 
 [[package]]
 name = "structomer"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "clap",
  "serde",
