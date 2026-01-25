@@ -167,14 +167,17 @@ fn str_arr(arr: &Vec<Value>, result: &mut String, depth: usize, options: &String
 	result.push_str("]");
 }
 
-fn str_uuid(uuid: &[u8; 16], result: &mut String) {
-	result.push_str("uuid \"");
-
+pub(crate) fn str_uuid_val(uuid: &[u8; 16], result: &mut String) {
 	result.write_fmt(format_args!(
 		"{:02x}{:02x}{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
 		uuid[0], uuid[1], uuid[2], uuid[3], uuid[4], uuid[5], uuid[6], uuid[7], uuid[8],
 		uuid[9], uuid[10], uuid[11], uuid[12], uuid[13], uuid[14], uuid[15])
 	).unwrap();
+}
+fn str_uuid(uuid: &[u8; 16], result: &mut String) {
+	result.push_str("uuid \"");
+
+	str_uuid_val(uuid, result);
 
 	result.push('"');
 }
@@ -199,11 +202,15 @@ fn str_dur_part(value: i64, result: &mut String, unit: &str, range: i64, mutl: i
 	result.push_str(unit);
 }
 fn str_dur(value: &TimeDelta, result: &mut String) {
-	let mut value = value.num_nanoseconds().unwrap();
 	result.push_str("dur \"");
+	str_dur_val(value, result);
+	result.push('"');
+}
+pub(crate) fn str_dur_val(value: &TimeDelta, result: &mut String) {
+	let mut value = value.num_nanoseconds().unwrap();
 
 	if value == 0 {
-		result.push_str("0s\"");
+		result.push_str("0s");
 		return;
 	}
 	// neg
@@ -227,6 +234,4 @@ fn str_dur(value: &TimeDelta, result: &mut String) {
 	str_dur_part(value, result, "ms ", 1000, 1000000);
 	str_dur_part(value, result, "us ", 1000, 1000);
 	str_dur_part(value, result, "ns", 1000, 1);
-
-	result.push('"');
 }

@@ -1,3 +1,6 @@
+use core::fmt;
+use std::fmt::{Display, Formatter};
+
 /// error encountered during parsing.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ParserError {
@@ -5,6 +8,15 @@ pub enum ParserError {
 	SyntaxError(String),
 	/// errors related to types (undefined types, undefined fields, ...).
 	TypeError(String),
+}
+
+impl Display for ParserError {
+	fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+		match self {
+			ParserError::SyntaxError(msg) => write!(f, "Syntax Error: {}", msg),
+			ParserError::TypeError(msg) => write!(f, "Type Error: {}", msg),
+		}
+	}
 }
 
 pub fn end_of_input(_len: usize) -> ParserError {

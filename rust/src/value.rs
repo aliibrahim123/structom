@@ -1,13 +1,15 @@
-use core::hash;
 use std::{
 	collections::HashMap,
-	hash::Hash,
+	fmt::{self, Display, Formatter, Write},
+	hash::{self, Hash},
 	ops::{Index, IndexMut},
 	slice::SliceIndex,
 	sync::LazyLock,
 };
 
 use chrono::{DateTime, TimeDelta, Utc};
+
+use crate::stringify::{str_dur_val, str_uuid_val};
 
 /// type that represent a structom value.
 ///
@@ -614,5 +616,69 @@ impl Value {
 			Value::Map(m) => m.get_mut(key),
 			_ => None,
 		}
+	}
+}
+
+macro_rules! impl_display_commons {
+	($self:ident, $enum:ident, $f:ident) => {
+		let mut res = String::new();
+		match $self {
+			$enum::Bool(bool) => return write!($f, "{bool}"),
+			$enum::Int(nb) => return write!($f, "{nb}"),
+			$enum::Uint(nb) => return write!($f, "{nb}"),
+			$enum::Str(str) => return write!($f, "\"{}\"", str.replace('"', "\\\"")),
+			$enum::Inst(inst) => return write!($f, "{}", inst.to_rfc3339()),
+			$enum::Dur(dur) => {
+				str_dur_val(dur, &mut res);
+				return write!($f, "{res}");
+			}
+			$enum::UUID(uuid) => {
+				str_uuid_val(uuid, &mut res);
+				return write!($f, "{res}");
+			}
+			$enum::BigInt(_) => return write!($f, "not supported"),
+			_ => (),
+		}
+	};
+}
+
+impl Display for Value {
+	fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+		impl_display_commons!(self, Value, f);
+		match self {
+			Value::Float(nb) => write!(f, "{nb}"),
+			Value::UnitVar(var) => write!(f, "{var}"),
+			Value::Arr(arr) => {
+				f.write_char('[')?;
+				for (ind, value) in arr.iter().enumerate() {
+					if ind != 0 {
+						f.write_str(", ")?
+					}
+					write!(f, "{value}")?
+				}
+				f.write_char(']')
+			}
+			Value::Map(map) => {
+				if let Some(name) = map.get(&Key::enum_variant_key()) {
+					write!(f, "{}", name.as_str().unwrap())?
+				}
+				f.write_char('{')?;
+				for (ind, (key, value)) in map.iter().enumerate() {
+					if ind != 0 {
+						f.write_str(", ")?
+					}
+					write!(f, "{key}: {value}")?
+				}
+				f.write_char('}')
+			}
+			_ => unreachable!(),
+		}
+	}
+}
+
+impl Display for Key {
+	fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+		impl_display_commons!(self, Key, f);
+		unreachable!()
 	}
 }
