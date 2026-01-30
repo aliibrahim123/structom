@@ -109,10 +109,10 @@ fn parse_map(
 			break;
 		}
 
-		let key_ind = tokens[*ind].ind();
+		let key_ind = tokens[*ind].pos();
 		*ind += 1; // skip key
 		let key = match tokens.get(*ind - 1) {
-			Some(Token::Identifier(key, _)) => Key::from(*key),
+			Some(Token::Ident(key, _)) => Key::from(*key),
 			Some(Token::Str(key, _)) => Key::Str(key.clone()),
 			// [key]
 			Some(Token::Symbol('[', _)) => {
@@ -220,9 +220,9 @@ fn parse_item(
 		}
 
 		let name = match tokens.get(*ind) {
-			Some(Token::Identifier(key, _)) => *key,
+			Some(Token::Ident(key, _)) => *key,
 			Some(Token::Str(key, _)) => key,
-			_ => return Err(unexpected_token(tokens[*ind].to_string(), tokens[*ind].ind())),
+			_ => return Err(unexpected_token(tokens[*ind].to_string(), tokens[*ind].pos())),
 		};
 
 		// check for existence
@@ -239,7 +239,7 @@ fn parse_item(
 		if map.contains_key(&key) {
 			return Err(ParserError::TypeError(format!(
 				"duplicated field \"{name}\" at {}",
-				tokens[*ind].ind()
+				tokens[*ind].pos()
 			)));
 		}
 		*ind += 1;
@@ -272,7 +272,7 @@ fn parse_ident(
 	ident: &str, tokens: &[Token], ind: &mut usize, typeid: &TypeId, provider: &dyn DeclProvider,
 	ctx: &DeclContext<'_>, options: &ParseOptions,
 ) -> Result<Value, ParserError> {
-	let start_ind = tokens[*ind - 1].ind();
+	let start_ind = tokens[*ind - 1].pos();
 
 	match ident {
 		// bool
@@ -320,7 +320,7 @@ fn parse_ident(
 			if typeid.ns != 0 || !matches!(typeid.id, 1 | 0x32) {
 				mismatch_types(&typeid.name(provider), "dur", *ind)?;
 			}
-			parse_dur(consume_str(tokens, ind)?, start_ind, tokens[*ind - 1].ind())
+			parse_dur(consume_str(tokens, ind)?, start_ind, tokens[*ind - 1].pos())
 		}
 
 		// maps, arrs, structs and enums
@@ -378,7 +378,7 @@ pub fn parse_value(
 	let metadata = parse_metadata(tokens, ind, &|| format!("at index {start_ind}"), options)?;
 	*ind += 1;
 	let value = match tokens.get(*ind - 1) {
-		Some(Token::Identifier(ident, _)) => {
+		Some(Token::Ident(ident, _)) => {
 			parse_ident(ident, tokens, ind, typeid, provider, ctx, options)?
 		}
 		// ananonymous arrays

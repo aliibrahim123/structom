@@ -7,7 +7,7 @@ mod value;
 use crate::{
 	DeclProvider, ParserError, Value,
 	declaration::{DeclFile, TypeId},
-	errors::unexpected_token,
+	errors::{ImportError, unexpected_token},
 	parser::{
 		declaration::{DeclContext, parse_declaration},
 		tokenizer::tokenize,
@@ -19,11 +19,13 @@ use crate::{
 pub struct ParseOptions {
 	/// whether to keep metadata in result, default: `false`.
 	pub metadata: bool,
+
+	pub relative_paths: bool,
 }
 
 impl Default for ParseOptions {
 	fn default() -> Self {
-		Self { metadata: false }
+		Self { metadata: false, relative_paths: true }
 	}
 }
 
@@ -48,7 +50,7 @@ pub fn parse_declaration_file(
 
 	// ensure all tokens have been consumed
 	if ind != tokens.len() - 1 {
-		return Err(unexpected_token(&tokens[ind], tokens[ind].ind()));
+		return Err(unexpected_token(&tokens[ind], tokens[ind].pos()));
 	}
 	// ensure file is not empty
 	if file.items.len() == 0 {
@@ -64,11 +66,11 @@ struct MiddleProvider<'a> {
 }
 
 impl DeclProvider for MiddleProvider<'_> {
-	fn get_by_id<'a>(&'a self, id: u64) -> &'a DeclFile {
-		if id == self.ctx.file.id { self.ctx.file } else { self.provider.get_by_id(id) }
+	fn get<'a>(&'a self, id: u64) -> &'a DeclFile {
+		if id == self.ctx.file.id { self.ctx.file } else { self.provider.get(id) }
 	}
-	fn get_by_name<'a>(&'a self, name: &str) -> Option<&'a DeclFile> {
-		self.provider.get_by_name(name)
+	fn load<'a>(&'a self, name: &str) -> Result<&'a DeclFile, ImportError> {
+		self.provider.load(name)
 	}
 }
 
@@ -99,7 +101,7 @@ pub fn parse(
 	let value = value::parse_value(&tokens, &mut ind, &TypeId::ANY, &ctx, &_provider, options)?;
 	// ensure all tokens have been consumed
 	if tokens.len() - 1 != ind {
-		return Err(unexpected_token(&tokens[ind], tokens[ind].ind()));
+		return Err(unexpected_token(&tokens[ind], tokens[ind].pos()));
 	}
 
 	Ok(value)

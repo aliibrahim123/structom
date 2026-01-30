@@ -50,7 +50,7 @@ pub fn decode(data: &[u8], provider: &dyn DeclProvider) -> Option<Value> {
 	// else explicit type is required
 	} else {
 		let rootid = decode_vuint(data, &mut ind)? as u16;
-		let item = provider.get_by_name(&decl_path)?.get_by_id(rootid)?;
+		let item = provider.load(&decl_path).ok()?.get_by_id(rootid)?;
 		decode_item(data, &mut ind, item, provider)?
 	};
 

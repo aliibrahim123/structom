@@ -6,16 +6,9 @@ use std::{
 	path::{Path, PathBuf, absolute},
 };
 
-use crate::{DeclFile, DeclProvider, ParseOptions, ParserError, parse_declaration_file};
-
-/// errors that occurs during loading of a file.
-#[derive(Debug)]
-pub enum LoadFileError {
-	/// errors occured while reading the file.
-	IO(io::Error),
-	/// errors returned by the parser.
-	Parse(ParserError),
-}
+use crate::{
+	DeclFile, DeclProvider, ParseOptions, ParserError, errors::ImportError, parse_declaration_file,
+};
 
 /// provider that loads declerations from the file system.
 ///
@@ -66,8 +59,9 @@ impl FSProvider {
 	/// load a declaration file at a given path.
 	///
 	/// returns a reference to the cached file if used before, else load it and returns `LoadFileError` if an error occurs.
-	pub fn load_file<'a>(&'a self, path: impl AsRef<Path>) -> Result<&'a DeclFile, LoadFileError> {
-		let path = absolute(Path::join(&self.root, path.as_ref())).map_err(LoadFileError::IO)?;
+	pub fn load_file<'a>(&'a self, path: impl AsRef<Path>) -> Result<&'a DeclFile, ImportError> {
+		let path = absolute(Path::join(&self.root, path.as_ref()))
+			.map_err(|e| ImportError::Other(e.to_string()))?;
 		{
 			let cache = self.cache.borrow();
 			if let Some(id) = cache.files_by_name.get(&path) {
@@ -78,12 +72,15 @@ impl FSProvider {
 		}
 
 		if !path.starts_with(&self.root) {
-			return Err(LoadFileError::IO(io::Error::from(io::ErrorKind::NotFound)));
+			return Err(ImportError::Other(format!(
+				"importing outside root \"{}\"",
+				path.display()
+			)));
 		}
-		let source = read_to_string(&path).map_err(LoadFileError::IO)?;
+		let source = read_to_string(&path).map_err(|e| ImportError::Other(e.to_string()))?;
 		let file_name = path.to_str().unwrap().to_string();
 		let file = parse_declaration_file(&source, file_name, &self.parse_options, self)
-			.map_err(LoadFileError::Parse)?;
+			.map_err(ImportError::Parse)?;
 
 		let mut cache = self.cache.borrow_mut();
 		let id = file.id;
@@ -94,13 +91,13 @@ impl FSProvider {
 	}
 }
 impl DeclProvider for FSProvider {
-	fn get_by_id(&self, id: u64) -> &DeclFile {
+	fn get(&self, id: u64) -> &DeclFile {
 		unsafe { &*(self.cache.borrow().files.get(&id).unwrap().as_ref() as *const DeclFile) }
 	}
 	/// gets a decleration file with a given name.
 	///
 	/// load it if not loaded before, returns `None` if not found or can not be parsed.
-	fn get_by_name<'a>(&'a self, name: &str) -> Option<&'a DeclFile> {
-		self.load_file(name).ok()
+	fn load<'a>(&'a self, name: &str) -> Result<&'a DeclFile, ImportError> {
+		self.load_file(name)
 	}
 }

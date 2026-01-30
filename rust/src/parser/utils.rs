@@ -12,6 +12,27 @@ pub fn is_hex(char: char) -> bool {
 	matches!(char, '0'..='9' | 'a'..='f' | 'A'..='F')
 }
 
+pub fn count_prefix(source: &str, search: &str) -> usize {
+	let mut count = 0;
+	let mut ind = 0;
+	while source.get(ind..ind + search.len()) == Some(search) {
+		count += 1;
+		ind += search.len();
+	}
+	count
+}
+
+pub fn remove_n_suffix<'a>(source: &'a str, search: &str, count: usize) -> &'a str {
+	let mut ind = source.len();
+	for _ in 0..count {
+		match source[..ind].rfind(search) {
+			Some(i) => ind = i,
+			None => return "",
+		}
+	}
+	&source[..ind]
+}
+
 /// return the index after the last char matching the predicate after index
 pub fn while_matching(source: &str, ind: usize, pred: fn(char) -> bool) -> usize {
 	source
@@ -30,25 +51,25 @@ pub fn all_matching(source: &str, pred: fn(char) -> bool) -> bool {
 /// safely consume an identifier
 pub fn consume_ident<'a>(tokens: &'a [Token], ind: &mut usize) -> Result<&'a str, ParserError> {
 	match tokens.get(*ind) {
-		Some(Token::Identifier(ident, _)) => (Ok(*ident), *ind += 1).0,
-		Some(Token::EOF(_)) | None => Err(end_of_input(tokens[*ind].ind())),
-		Some(token) => Err(unexpected_token(token, token.ind())),
+		Some(Token::Ident(ident, _)) => (Ok(*ident), *ind += 1).0,
+		Some(Token::EOF(_)) | None => Err(end_of_input(tokens[*ind].pos())),
+		Some(token) => Err(unexpected_token(token, token.pos())),
 	}
 }
 /// safely consume a string
 pub fn consume_str<'a>(tokens: &'a [Token], ind: &mut usize) -> Result<&'a str, ParserError> {
 	match tokens.get(*ind) {
 		Some(Token::Str(str, _)) => (Ok(&str[..]), *ind += 1).0,
-		Some(Token::EOF(_)) | None => Err(end_of_input(tokens[*ind].ind())),
-		Some(token) => Err(unexpected_token(token, token.ind())),
+		Some(Token::EOF(_)) | None => Err(end_of_input(tokens[*ind].pos())),
+		Some(token) => Err(unexpected_token(token, token.pos())),
 	}
 }
 /// safely consume a symbol
 pub fn consume_symbol(token: char, tokens: &[Token], ind: &mut usize) -> Result<bool, ParserError> {
 	match tokens.get(*ind) {
 		Some(Token::Symbol(sym, _)) if *sym == token => (Ok(true), *ind += 1).0,
-		Some(Token::EOF(_)) | None => Err(end_of_input(tokens[*ind].ind())),
-		Some(token) => Err(unexpected_token(token, token.ind())),
+		Some(Token::EOF(_)) | None => Err(end_of_input(tokens[*ind].pos())),
+		Some(token) => Err(unexpected_token(token, token.pos())),
 	}
 }
 /// safely consume an uint
@@ -56,8 +77,8 @@ pub fn consume_uint(tokens: &[Token], ind: &mut usize) -> Result<u64, ParserErro
 	match tokens.get(*ind) {
 		Some(Token::Uint(nb, _)) => (Ok(*nb), *ind += 1).0,
 		Some(Token::Int(nb, _)) if (*nb >= 0) => (Ok(*nb as u64), *ind += 1).0,
-		Some(Token::EOF(_)) | None => Err(end_of_input(tokens[*ind].ind())),
-		Some(token) => Err(unexpected_token(token, token.ind())),
+		Some(Token::EOF(_)) | None => Err(end_of_input(tokens[*ind].pos())),
+		Some(token) => Err(unexpected_token(token, token.pos())),
 	}
 }
 
@@ -75,7 +96,7 @@ pub fn struct_like_start(
 
 	// no comma
 	if *watched_comma == false {
-		return Err(unexpected_token(&tokens[*ind], tokens[*ind].ind()));
+		return Err(unexpected_token(&tokens[*ind], tokens[*ind].pos()));
 	}
 	*watched_comma = false;
 

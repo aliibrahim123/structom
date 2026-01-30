@@ -5,28 +5,40 @@ use crate::{
 	parser::utils::{get_char, while_matching},
 };
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Pos {
+	pub line: u32,
+	pub col: u32,
+}
+
+impl Display for Pos {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		write!(f, "{}:{}", self.line, self.col)
+	}
+}
+
 /// a well defined part of the source
 ///
 /// has a value and a start index
 #[derive(Debug)]
 pub enum Token<'s> {
-	Identifier(&'s str, usize),
-	Str(String, usize),
+	Ident(&'s str, Pos),
+	Str(String, Pos),
 
-	Uint(u64, usize),
-	Int(i64, usize),
-	BigInt((), usize),
-	Float(f64, usize),
+	Uint(u64, Pos),
+	Int(i64, Pos),
+	BigInt((), Pos),
+	Float(f64, Pos),
 
-	Symbol(char, usize),
+	Symbol(char, Pos),
 
-	EOF(usize),
+	EOF(Pos),
 }
 
 impl Token<'_> {
-	pub fn ind(&self) -> usize {
+	pub fn pos(&self) -> Pos {
 		match self {
-			Token::Identifier(_, ind) => *ind,
+			Token::Ident(_, ind) => *ind,
 			Token::Str(_, ind) => *ind,
 			Token::Uint(_, ind) => *ind,
 			Token::Int(_, ind) => *ind,
@@ -41,13 +53,13 @@ impl Token<'_> {
 impl Display for Token<'_> {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		match self {
-			Token::Identifier(ident, _) => write!(f, "{}", ident),
-			Token::Str(str, _) => write!(f, "\"{}\"", str),
-			Token::Uint(nb, _) => write!(f, "nb({})", nb),
-			Token::Int(nb, _) => write!(f, "nb({})", nb),
-			Token::BigInt(_, _) => write!(f, "nb({})", 0),
-			Token::Float(nb, _) => write!(f, "nb({})", nb),
-			Token::Symbol(symbol, _) => write!(f, "{}", symbol),
+			Token::Ident(ident, _) => write!(f, "{ident}"),
+			Token::Str(str, _) => write!(f, "\"{str}\""),
+			Token::Uint(nb, _) => write!(f, "{nb}"),
+			Token::Int(nb, _) => write!(f, "{nb}"),
+			Token::BigInt(_, _) => write!(f, "{}", 0),
+			Token::Float(nb, _) => write!(f, "{nb}"),
+			Token::Symbol(symbol, _) => write!(f, "{symbol}"),
 			Token::EOF(_) => write!(f, "end_of_file"),
 		}
 	}
@@ -60,7 +72,7 @@ enum NbValueType {
 }
 
 /// remove dashes "_" in number
-fn parse_dashes_in_nb(nb: &str, start_ind: usize) -> Result<String, ParserError> {
+fn strip_dashes_in_nb(nb: &str, start_ind: usize) -> Result<String, ParserError> {
 	// loop through dashes
 	let mut cur_ind = 0;
 	if nb.starts_with("_") {
@@ -127,7 +139,7 @@ fn parse_escape_sequences(source: &str, start_ind: usize) -> Result<String, Pars
 
 				// code to char
 				let code_u32 =
-					u32::from_str_radix(&parse_dashes_in_nb(code_str, ind + start_ind)?, 16)
+					u32::from_str_radix(&strip_dashes_in_nb(code_str, ind + start_ind)?, 16)
 						.map_err(|_| invalid_seq(&source[ind..end_ind + 1], ind))?;
 				let code = char::from_u32(code_u32)
 					.ok_or_else(|| invalid_seq(&source[ind..end_ind + 1], ind))?;
@@ -183,7 +195,7 @@ fn parse_float(source: &str, mut ind: usize) -> Result<(Token<'_>, usize), Parse
 	}
 
 	// remove dashes
-	let nb_source = parse_dashes_in_nb(&source[start_ind..ind], start_ind)?;
+	let nb_source = strip_dashes_in_nb(&source[start_ind..ind], start_ind)?;
 
 	// create token
 	let value = nb_source.parse::<f64>();
@@ -231,7 +243,7 @@ fn parse_nb(source: &str, mut ind: usize) -> Result<(Token<'_>, usize), ParserEr
 		16 => while_matching(source, ind, |c| matches!(c, '0'..='9' | 'a'..='f' | 'A'..='F' | '_')),
 		_ => unreachable!(),
 	};
-	let nb_source = parse_dashes_in_nb(&source[start_ind..end_ind], start_ind)?;
+	let nb_source = strip_dashes_in_nb(&source[start_ind..end_ind], start_ind)?;
 	if nb_source.len() == 0 {
 		return Err(end_of_input(source.len()));
 	}
@@ -347,7 +359,7 @@ pub fn tokenize(source: &str) -> Result<Vec<Token<'_>>, ParserError> {
 					|c| matches!(c, 'a'..='z' | 'A'..='Z' | '_' | '-' |'0'..='9'),
 				);
 
-				tokens.push(Token::Identifier(&source[ind..end_ind], ind));
+				tokens.push(Token::Ident(&source[ind..end_ind], ind));
 				ind = end_ind;
 				continue;
 			}

@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::builtins::BUILT_INS_NAMES;
+use crate::{builtins::BUILT_INS_NAMES, errors::ImportError};
 
 /// encapsulate the content of a decleration file.
 ///
@@ -61,6 +61,8 @@ pub enum DeclItem {
 	},
 }
 
+pub type LoadResult<'a> = Result<&'a DeclFile, ImportError>;
+
 /// trait for types providing decleration files.
 ///
 /// decleration providers are used by functions that need access to decleration files.
@@ -70,12 +72,12 @@ pub trait DeclProvider {
 	/// get a decleration file by its id.
 	///
 	/// this method can not fail, it is used for decleration files that were created before.
-	fn get_by_id<'a>(&'a self, id: u64) -> &'a DeclFile;
+	fn get<'a>(&'a self, id: u64) -> &'a DeclFile;
 
 	/// get a decleration file by its name.
 	///   
 	/// this method return `None` on fail, when the requested decleration file can not be found or it cant be parsed.
-	fn get_by_name<'a>(&'a self, name: &str) -> Option<&'a DeclFile>;
+	fn load<'a>(&'a self, name: &str) -> Result<&'a DeclFile, ImportError>;
 }
 
 impl DeclFile {
@@ -209,7 +211,7 @@ impl TypeId {
 			BUILT_INS_NAMES[&self.id].to_string()
 		// user defined
 		} else {
-			let file = provider.get_by_id(self.ns);
+			let file = provider.get(self.ns);
 
 			format!("`{}`.{}", file.name, file.get_by_id(self.id).unwrap().name())
 		}
@@ -229,7 +231,7 @@ impl PartialEq for TypeId {
 }
 
 pub fn resolve_typeid<'a>(typeid: &TypeId, provider: &'a dyn DeclProvider) -> &'a DeclItem {
-	provider.get_by_id(typeid.ns).get_by_id(typeid.id).unwrap()
+	provider.get(typeid.ns).get_by_id(typeid.id).unwrap()
 }
 
 fn add_item<'a, T>(vec: &mut Vec<Option<T>>, id: usize, item: T) -> Result<(), ()> {
@@ -253,12 +255,12 @@ fn add_item<'a, T>(vec: &mut Vec<Option<T>>, id: usize, item: T) -> Result<(), (
 pub struct VoidProvider {}
 impl DeclProvider for VoidProvider {
 	/// panic.
-	fn get_by_id(&self, _id: u64) -> &DeclFile {
+	fn get(&self, _id: u64) -> &DeclFile {
 		panic!("how did we get here")
 	}
 	/// always return `None`
-	fn get_by_name<'a>(&'a self, _name: &str) -> Option<&'a DeclFile> {
-		None
+	fn load<'a>(&'a self, _name: &str) -> Result<&'a DeclFile, ImportError> {
+		Err(ImportError::NotFound)
 	}
 }
 /// decleration provider with fixed set of decleration files.
@@ -295,11 +297,11 @@ impl<'a> FixedSetProviderRef<'a> {
 	}
 }
 impl DeclProvider for FixedSetProviderRef<'_> {
-	fn get_by_id(&self, id: u64) -> &DeclFile {
+	fn get(&self, id: u64) -> &DeclFile {
 		self.files.get(&id).unwrap()
 	}
-	fn get_by_name<'a>(&'a self, name: &str) -> Option<&'a DeclFile> {
-		self.files_by_name.get(name).map(|v| *v)
+	fn load<'a>(&'a self, name: &str) -> Result<&'a DeclFile, ImportError> {
+		self.files_by_name.get(name).map(|f| *f).ok_or(ImportError::NotFound)
 	}
 }
 
@@ -335,10 +337,11 @@ impl FixedSetProvider {
 	}
 }
 impl DeclProvider for FixedSetProvider {
-	fn get_by_id(&self, id: u64) -> &DeclFile {
+	fn get(&self, id: u64) -> &DeclFile {
 		self.files.get(&id).unwrap()
 	}
-	fn get_by_name<'a>(&'a self, name: &str) -> Option<&'a DeclFile> {
-		self.files_by_name.get(name).map(|ind| self.files.get(ind).unwrap())
+	fn load<'a>(&'a self, name: &str) -> Result<&'a DeclFile, ImportError> {
+		let file = self.files_by_name.get(name).map(|ind| self.files.get(ind).unwrap());
+		file.ok_or(ImportError::NotFound)
 	}
 }

@@ -4,13 +4,13 @@ use crate::{
 	DeclFile, DeclProvider, ParserError,
 	builtins::BUILT_INS_IDS,
 	declaration::{DeclItem, EnumVariant, Field, StructDef, TypeId},
-	errors::{end_of_input, unexpected_token},
+	errors::{ImportError, end_of_input, unexpected_token},
 	parser::{
 		ParseOptions,
 		tokenizer::Token,
 		utils::{
-			consume_ident, consume_str, consume_symbol, consume_uint, struct_like_end,
-			struct_like_start,
+			consume_ident, consume_str, consume_symbol, consume_uint, count_prefix,
+			remove_n_suffix, struct_like_end, struct_like_start,
 		},
 	},
 };
@@ -69,21 +69,36 @@ fn parse_tag(
 
 fn parse_import<'a>(
 	tokens: &'a [Token], ind: &mut usize, imports: &mut Vec<u64>, ctx: &mut DeclContext<'a>,
-	provider: &'a dyn DeclProvider,
+	provider: &'a dyn DeclProvider, options: &ParseOptions,
 ) -> Result<(), ParserError> {
 	// skip "import"
 	*ind += 1;
 
 	let cur_file_name = &ctx.file.name;
 
-	let path = consume_str(tokens, ind)?;
-	let file = provider.get_by_name(path);
-	if file.is_none() {
-		return Err(ParserError::TypeError(format!(
-			"unable to import declaration file \"{path}\" at declaration file \"{cur_file_name}\"",
-		)));
+	let mut path = consume_str(tokens, ind)?;
+	let path_owner;
+	if options.relative_paths && path.starts_with("../") {
+		let up_dirs = count_prefix(path, "../") + 1;
+		let parent = remove_n_suffix(&cur_file_name[..cur_file_name.len() - 1], "/", up_dirs);
+		path_owner = Some(parent.to_string() + "/" + path.trim_start_matches("../"));
+		path = &path_owner.as_ref().unwrap();
 	}
-	let file = file.unwrap();
+
+	let file = match provider.load(path) {
+		Ok(file) => file,
+		Err(ImportError::NotFound) => {
+			return Err(ParserError::TypeError(format!(
+				"declaration file \"{path}\" not found at declaration file \"{cur_file_name}\"",
+			)));
+		}
+		Err(ImportError::Parse(error)) => return Err(error),
+		Err(ImportError::Other(error)) => {
+			return Err(ParserError::ImportError(format!(
+				"while importing \"{path}\" at declaration file \"{cur_file_name}\"\n{error}"
+			)));
+		}
+	};
 
 	if imports.contains(&file.id) {
 		return Err(ParserError::SyntaxError(format!(
@@ -94,7 +109,7 @@ fn parse_import<'a>(
 
 	// check for specified namespace
 	match tokens.get(*ind) {
-		Some(Token::Identifier("as", _)) => {
+		Some(Token::Ident("as", _)) => {
 			// skip "as"
 			*ind += 1;
 
@@ -303,10 +318,10 @@ fn parse_fields(
 		let tag = parse_tag(tokens, ind, &mut cur_tag, "field tag", "struct", item, ctx)?;
 
 		let name = match tokens.get(*ind) {
-			Some(Token::Identifier(ident, _)) => ident.to_string(),
+			Some(Token::Ident(ident, _)) => ident.to_string(),
 			Some(Token::Str(str, _)) => str.to_string(),
-			Some(Token::EOF(_)) | None => return Err(end_of_input(tokens[*ind].ind())),
-			Some(token) => return Err(unexpected_token(token, token.ind())),
+			Some(Token::EOF(_)) | None => return Err(end_of_input(tokens[*ind].pos())),
+			Some(token) => return Err(unexpected_token(token, token.pos())),
 		};
 		*ind += 1;
 
@@ -431,9 +446,9 @@ pub fn parse_declaration<'a>(
 	let mut ctx = DeclContext::new(file);
 	let mut imports = Vec::<u64>::new();
 
-	while let Some(Token::Identifier(ident, _)) = tokens.get(*ind) {
+	while let Some(Token::Ident(ident, _)) = tokens.get(*ind) {
 		match *ident {
-			"import" => parse_import(tokens, ind, &mut imports, &mut ctx, provider)?,
+			"import" => parse_import(tokens, ind, &mut imports, &mut ctx, provider, options)?,
 			"struct" => {
 				let (name, id) = parse_item_common(tokens, ind, &mut ctx)?;
 
