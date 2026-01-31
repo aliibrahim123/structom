@@ -95,7 +95,7 @@ pub fn walk_fs<'a>(
 
 			// parse file and redirect errors
 			use LoadFileError::*;
-			use structom::ParserError::*;
+			use structom::ParseError::*;
 			match provider.load_file(&entry) {
 				Ok(decl) => inputs.push(Entry { resolved_path, rel_path, decl }),
 				Err(IO(_)) => return Err(errors::read_file(&entry.display())(())),

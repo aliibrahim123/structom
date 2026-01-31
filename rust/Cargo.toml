@@ -10,3 +10,5 @@ documentation = "https://docs.rs/structom/"
 
 [dependencies]
 chrono = "0.4.43"
+num-bigint = "0.4.6"
+num-traits = "0.2.19"

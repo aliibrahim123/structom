@@ -7,7 +7,7 @@ use std::{
 };
 
 use crate::{
-	DeclFile, DeclProvider, ParseOptions, ParserError, errors::ImportError, parse_declaration_file,
+	DeclFile, DeclProvider, ParseError, ParseOptions, errors::ImportError, parse_declaration_file,
 };
 
 /// provider that loads declerations from the file system.

@@ -1,7 +1,7 @@
 use chrono::{DateTime, TimeDelta, Timelike};
 
 use crate::{
-	ParserError, Value,
+	ParseError, Value,
 	errors::unexpected_token,
 	parser::utils::{all_matching, is_hex, while_matching},
 };
@@ -13,10 +13,10 @@ fn parse_uuid_part(source: &str, uuid: &mut [u8; 16], ind: usize) {
 		uuid[ind + i] = u8::from_str_radix(&source[i * 2..i * 2 + 2], 16).unwrap()
 	}
 }
-pub fn parse_uuid(source: &str, ind: usize) -> Result<Value, ParserError> {
+pub fn parse_uuid(source: &str, ind: usize) -> Result<Value, ParseError> {
 	// invalid length
 	if source.len() != 36 {
-		return Err(ParserError::SyntaxError(format!("invalid uuid ({source}) at {ind}")));
+		return Err(ParseError::SyntaxError(format!("invalid uuid ({source}) at {ind}")));
 	}
 
 	// extract parts
@@ -32,7 +32,7 @@ pub fn parse_uuid(source: &str, ind: usize) -> Result<Value, ParserError> {
 		|| source.as_bytes()[18] != b'-'
 		|| source.as_bytes()[23] != b'-'
 	{
-		return Err(ParserError::SyntaxError(format!("invalid uuid ({source}) at {ind}")));
+		return Err(ParseError::SyntaxError(format!("invalid uuid ({source}) at {ind}")));
 	}
 
 	// all parts are hex
@@ -42,7 +42,7 @@ pub fn parse_uuid(source: &str, ind: usize) -> Result<Value, ParserError> {
 		|| !all_matching(fourth_part, is_hex)
 		|| !all_matching(fifth_part, is_hex)
 	{
-		return Err(ParserError::SyntaxError(format!("invalid uuid ({source}) at {ind}")));
+		return Err(ParseError::SyntaxError(format!("invalid uuid ({source}) at {ind}")));
 	}
 
 	// parse
@@ -57,9 +57,9 @@ pub fn parse_uuid(source: &str, ind: usize) -> Result<Value, ParserError> {
 	Ok(Value::UUID(uuid))
 }
 
-pub fn parse_inst(source: &str, nanoseconds: bool, ind: usize) -> Result<Value, ParserError> {
+pub fn parse_inst(source: &str, nanoseconds: bool, ind: usize) -> Result<Value, ParseError> {
 	let inst = DateTime::parse_from_rfc3339(source).map_err(|_| {
-		ParserError::SyntaxError(format!(
+		ParseError::SyntaxError(format!(
 			"invalid {} ({source}) at {ind}",
 			if nanoseconds { "instN" } else { "inst" }
 		))
@@ -67,7 +67,7 @@ pub fn parse_inst(source: &str, nanoseconds: bool, ind: usize) -> Result<Value, 
 
 	// specifing nanoseconds in inst
 	if inst.nanosecond() % 1000000 != 0 && !nanoseconds {
-		return Err(ParserError::SyntaxError(format!("invalid inst ({source}) at {ind}")));
+		return Err(ParseError::SyntaxError(format!("invalid inst ({source}) at {ind}")));
 	}
 
 	Ok(Value::Inst(inst.with_timezone(&chrono::Utc)))
@@ -83,7 +83,7 @@ struct DurParseCTX<'a> {
 }
 fn parse_dur_part(
 	ctx: &mut DurParseCTX, unit: &str, multiplier: u64, max: u64,
-) -> Result<bool, ParserError> {
+) -> Result<bool, ParseError> {
 	let DurParseCTX { val, parts, ind, is_first, .. } = ctx;
 
 	// skip if not input
@@ -110,7 +110,7 @@ fn parse_dur_part(
 	// if number is so large
 	let nb = u64::from_str_radix(&part[0..nb_end], 10);
 	if nb.is_err() {
-		return Err(ParserError::SyntaxError(format!(
+		return Err(ParseError::SyntaxError(format!(
 			"duration part ({part}) is so large at {part_ind}",
 		)));
 	}
@@ -118,7 +118,7 @@ fn parse_dur_part(
 
 	// check range if not the first part
 	if !*is_first && nb >= max {
-		return Err(ParserError::SyntaxError(format!(
+		return Err(ParseError::SyntaxError(format!(
 			"duration part ({part}) is out of range 0..{} at {part_ind}",
 			max - 1
 		)));
@@ -127,13 +127,13 @@ fn parse_dur_part(
 	// add while remaining in range
 	let added = nb.checked_mul(multiplier);
 	if added.is_none() {
-		return Err(ParserError::SyntaxError(format!(
+		return Err(ParseError::SyntaxError(format!(
 			"duration part ({part}) is so large at {part_ind}",
 		)));
 	}
 	let new_val = val.checked_add_unsigned(added.unwrap());
 	if new_val.is_none() {
-		return Err(ParserError::SyntaxError(format!(
+		return Err(ParseError::SyntaxError(format!(
 			"duration ({}) is so large at {}",
 			ctx.source, ctx.start_ind
 		)));
@@ -145,7 +145,7 @@ fn parse_dur_part(
 
 	Ok(true)
 }
-pub fn parse_dur(mut source: &str, start_ind: usize, src_ind: usize) -> Result<Value, ParserError> {
+pub fn parse_dur(mut source: &str, start_ind: usize, src_ind: usize) -> Result<Value, ParseError> {
 	// case negative
 	let neg = source.starts_with("-");
 	if neg {
@@ -164,7 +164,7 @@ pub fn parse_dur(mut source: &str, start_ind: usize, src_ind: usize) -> Result<V
 		.collect();
 
 	if parts.is_empty() {
-		return Err(ParserError::SyntaxError(format!("invalid duration ({source}) at {start_ind}")));
+		return Err(ParseError::SyntaxError(format!("invalid duration ({source}) at {start_ind}")));
 	}
 
 	let mut ctx = DurParseCTX { val: 0, parts, ind: 0, is_first: true, start_ind, source };
@@ -186,7 +186,7 @@ pub fn parse_dur(mut source: &str, start_ind: usize, src_ind: usize) -> Result<V
 		(ctx.val.abs() % 1_000_000_000) as u32,
 	);
 	if dur.is_none() {
-		return Err(ParserError::SyntaxError(format!("invalid dur at {start_ind}")));
+		return Err(ParseError::SyntaxError(format!("invalid dur at {start_ind}")));
 	}
 	return Ok(Value::Dur(dur.unwrap()));
 }

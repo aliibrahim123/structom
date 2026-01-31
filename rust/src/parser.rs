@@ -5,7 +5,7 @@ mod utils;
 mod value;
 
 use crate::{
-	DeclProvider, ParserError, Value,
+	DeclProvider, ParseError, Value,
 	declaration::{DeclFile, TypeId},
 	errors::{ImportError, unexpected_token},
 	parser::{
@@ -41,7 +41,7 @@ impl Default for ParseOptions {
 /// ```
 pub fn parse_declaration_file(
 	source: &str, name: String, options: &ParseOptions, provider: &dyn DeclProvider,
-) -> Result<DeclFile, ParserError> {
+) -> Result<DeclFile, ParseError> {
 	let tokens = tokenize(source)?;
 	let mut ind = 0;
 
@@ -54,7 +54,7 @@ pub fn parse_declaration_file(
 	}
 	// ensure file is not empty
 	if file.items.len() == 0 {
-		return Err(ParserError::TypeError(format!("no declaration in file \"{}\"", file.name)));
+		return Err(ParseError::TypeError(format!("no declaration in file \"{}\"", file.name)));
 	}
 
 	Ok(file)
@@ -90,7 +90,7 @@ impl DeclProvider for MiddleProvider<'_> {
 /// ```
 pub fn parse(
 	source: &str, options: &ParseOptions, provider: &dyn DeclProvider,
-) -> Result<Value, ParserError> {
+) -> Result<Value, ParseError> {
 	let tokens = tokenize(source)?;
 	let mut ind = 0;
 

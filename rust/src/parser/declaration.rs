@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::{
-	DeclFile, DeclProvider, ParserError,
+	DeclFile, DeclProvider, ParseError,
 	builtins::BUILT_INS_IDS,
 	declaration::{DeclItem, EnumVariant, Field, StructDef, TypeId},
 	errors::{ImportError, end_of_input, unexpected_token},
@@ -39,7 +39,7 @@ impl<'a> DeclContext<'a> {
 fn parse_tag(
 	tokens: &[Token], ind: &mut usize, cur_tag: &mut u32, tag_name: &str, item: &str,
 	item_name: &str, ctx: &mut DeclContext<'_>,
-) -> Result<u32, ParserError> {
+) -> Result<u32, ParseError> {
 	let mut tag = *cur_tag as u64;
 
 	if let Some(Token::Symbol('[', _)) = tokens.get(*ind) {
@@ -48,7 +48,7 @@ fn parse_tag(
 		tag = consume_uint(tokens, ind)?;
 		// specified tag only allowed to be greater than previous
 		if tag < *cur_tag as u64 {
-			return Err(ParserError::TypeError(format!(
+			return Err(ParseError::TypeError(format!(
 				"{tag_name} ({tag}) must be greater than previous {tag_name} ({}) at {item} \"{item_name}\" in declaration file \"{}\"",
 				*cur_tag - 1,
 				ctx.file.name
@@ -58,7 +58,7 @@ fn parse_tag(
 		consume_symbol(']', tokens, ind)?;
 	}
 	if tag > 0xffffffff {
-		return Err(ParserError::TypeError(format!(
+		return Err(ParseError::TypeError(format!(
 			"{tag_name} ({tag}) is greater than maximum allowed value (0xffffff) at {item} \"{item_name}\" in declaration file \"{}\"",
 			ctx.file.name
 		)));
@@ -70,7 +70,7 @@ fn parse_tag(
 fn parse_import<'a>(
 	tokens: &'a [Token], ind: &mut usize, imports: &mut Vec<u64>, ctx: &mut DeclContext<'a>,
 	provider: &'a dyn DeclProvider, options: &ParseOptions,
-) -> Result<(), ParserError> {
+) -> Result<(), ParseError> {
 	// skip "import"
 	*ind += 1;
 
@@ -88,20 +88,20 @@ fn parse_import<'a>(
 	let file = match provider.load(path) {
 		Ok(file) => file,
 		Err(ImportError::NotFound) => {
-			return Err(ParserError::TypeError(format!(
+			return Err(ParseError::TypeError(format!(
 				"declaration file \"{path}\" not found at declaration file \"{cur_file_name}\"",
 			)));
 		}
 		Err(ImportError::Parse(error)) => return Err(error),
 		Err(ImportError::Other(error)) => {
-			return Err(ParserError::ImportError(format!(
+			return Err(ParseError::ImportError(format!(
 				"while importing \"{path}\" at declaration file \"{cur_file_name}\"\n{error}"
 			)));
 		}
 	};
 
 	if imports.contains(&file.id) {
-		return Err(ParserError::SyntaxError(format!(
+		return Err(ParseError::SyntaxError(format!(
 			"importing declaration file \"{path}\" twice at declaration file \"{cur_file_name}\""
 		)));
 	}
@@ -117,7 +117,7 @@ fn parse_import<'a>(
 
 			// check for namespace collision
 			if ctx.ns_imports.contains_key(ns) {
-				return Err(ParserError::TypeError(format!(
+				return Err(ParseError::TypeError(format!(
 					"importing a declaration file \"{path}\" into used namespace \"{ns}\" at declaration file \"{cur_file_name}\""
 				)));
 			}
@@ -133,7 +133,7 @@ fn parse_import<'a>(
 fn parse_anonymous_item(
 	type_name: &str, tokens: &[Token], ind: &mut usize, ctx: &mut DeclContext,
 	options: &ParseOptions, metadata: Option<Vec<(String, String)>>,
-) -> Result<TypeId, ParserError> {
+) -> Result<TypeId, ParseError> {
 	match type_name {
 		"struct" => {
 			let typeid = ctx.cur_high_id;
@@ -165,7 +165,7 @@ fn parse_anonymous_item(
 
 pub fn parse_metadata(
 	tokens: &[Token], ind: &mut usize, loc: &impl Fn() -> String, options: &ParseOptions,
-) -> Result<Option<Vec<(String, String)>>, ParserError> {
+) -> Result<Option<Vec<(String, String)>>, ParseError> {
 	let mut metadata = None;
 
 	// while there metadata
@@ -185,7 +185,7 @@ pub fn parse_metadata(
 		if let Some(metadata) = metadata.as_mut() {
 			// check for metadata collision
 			if metadata.iter().any(|(n, _)| name == n) {
-				return Err(ParserError::TypeError(format!(
+				return Err(ParseError::TypeError(format!(
 					"declaring multiple metadata with the same name \"{name}\" {}",
 					loc()
 				)));
@@ -217,7 +217,7 @@ macro_rules! parse_typeid_general {
 
 			let keyid = parse_typeid(tokens, ind, loc, ctx, options)?;
 			if (keyid.ns != 0 || keyid.id == 0x23 || keyid.id == 0x22) {
-				return Err(ParserError::TypeError(format!(
+				return Err(ParseError::TypeError(format!(
 					"map key can only be a primitive {}",
 					$loc(ctx)
 				)));
@@ -256,7 +256,7 @@ macro_rules! parse_typeid_general {
 			// get the file of the namespace
 			let file = ctx.ns_imports.get(ns);
 			if file.is_none() {
-				return Err(ParserError::TypeError(format!(
+				return Err(ParseError::TypeError(format!(
 					"undefined namespace \"{ns}\" {}",
 					$loc(ctx)
 				)));
@@ -266,7 +266,7 @@ macro_rules! parse_typeid_general {
 			// get the item
 			let item = file.get_by_name(type_name);
 			if item.is_none() {
-				return Err(ParserError::TypeError(format!(
+				return Err(ParseError::TypeError(format!(
 					"undefined type \"{type_name}\" in namespace \"{ns}\" {}",
 					$loc(ctx)
 				)));
@@ -275,7 +275,7 @@ macro_rules! parse_typeid_general {
 			return Ok(TypeId::new(file.id, item.unwrap().typeid(), metadata));
 		}
 
-		Err(ParserError::TypeError(format!("undefined type \"{type_name}\" {}", $loc(ctx))))
+		Err(ParseError::TypeError(format!("undefined type \"{type_name}\" {}", $loc(ctx))))
 	}};
 }
 pub(crate) use parse_typeid_general;
@@ -283,7 +283,7 @@ pub(crate) use parse_typeid_general;
 fn parse_typeid(
 	tokens: &[Token], ind: &mut usize, loc: &impl Fn(&DeclContext<'_>) -> String,
 	ctx: &mut DeclContext<'_>, options: &ParseOptions,
-) -> Result<TypeId, ParserError> {
+) -> Result<TypeId, ParseError> {
 	let metadata = parse_metadata(tokens, ind, &|| loc(ctx), options)?;
 
 	let first_part = consume_ident(tokens, ind)?;
@@ -302,7 +302,7 @@ fn parse_typeid(
 fn parse_fields(
 	tokens: &[Token], ind: &mut usize, item: &str, ctx: &mut DeclContext<'_>,
 	options: &ParseOptions,
-) -> Result<StructDef, ParserError> {
+) -> Result<StructDef, ParseError> {
 	let mut def = StructDef::default();
 	let mut cur_tag = 0u32;
 	let mut watched_comma = true;
@@ -327,7 +327,7 @@ fn parse_fields(
 
 		// check for collision
 		if def.get_field_by_name(&name).is_some() {
-			return Err(ParserError::TypeError(format!(
+			return Err(ParseError::TypeError(format!(
 				"declaring multiple fields with the same name \"{name}\" at struct \"{item}\" in declaration file \"{}\"",
 				ctx.file.name
 			)));
@@ -353,7 +353,7 @@ fn parse_fields(
 
 	// ensure at least one field
 	if def.fields.is_empty() {
-		return Err(ParserError::TypeError(format!(
+		return Err(ParseError::TypeError(format!(
 			"struct \"{item}\" must have at least one field at declaration file \"{}\"",
 			ctx.file.name
 		)));
@@ -365,7 +365,7 @@ fn parse_fields(
 fn parse_enum_body(
 	tokens: &[Token], ind: &mut usize, decl: &mut DeclItem, name: &str, ctx: &mut DeclContext<'_>,
 	options: &ParseOptions,
-) -> Result<(), ParserError> {
+) -> Result<(), ParseError> {
 	let mut watched_comma = true;
 	let mut cur_tag = 0u32;
 
@@ -381,7 +381,7 @@ fn parse_enum_body(
 
 		let variant = consume_ident(tokens, ind)?;
 		if decl.get_variant_by_name(variant).is_some() {
-			return Err(ParserError::TypeError(format!(
+			return Err(ParseError::TypeError(format!(
 				"declaring multiple variants with the same name \"{variant}\" at enum \"{name}\" in declaration file \"{}\"",
 				ctx.file.name
 			)));
@@ -402,7 +402,7 @@ fn parse_enum_body(
 	if let DeclItem::Enum { variants, .. } = decl
 		&& variants.is_empty()
 	{
-		return Err(ParserError::TypeError(format!(
+		return Err(ParseError::TypeError(format!(
 			"enum \"{name}\" must have at least one variant at declaration file \"{}\"",
 			ctx.file.name
 		)));
@@ -413,7 +413,7 @@ fn parse_enum_body(
 
 fn parse_item_common<'a>(
 	tokens: &'a [Token], ind: &mut usize, ctx: &mut DeclContext<'a>,
-) -> Result<(&'a str, u16), ParserError> {
+) -> Result<(&'a str, u16), ParseError> {
 	*ind += 1;
 
 	let file = &ctx.file;
@@ -422,14 +422,14 @@ fn parse_item_common<'a>(
 
 	let name = consume_ident(tokens, ind)?;
 	if file.get_by_name(name).is_some() {
-		return Err(ParserError::TypeError(format!(
+		return Err(ParseError::TypeError(format!(
 			"declaring multiple item with the same name \"{name}\" at declaration file \"{file_name}\""
 		)));
 	}
 
 	let id = parse_tag(tokens, ind, &mut cur_id, "item id", "item", name, ctx)?;
 	if id > 0xffff {
-		return Err(ParserError::TypeError(format!(
+		return Err(ParseError::TypeError(format!(
 			"item id ({id}) is greater than maximum allowed value (0xffff) at item \"{name}\" in declaration file \"{}\"",
 			ctx.file.name
 		)));
@@ -442,7 +442,7 @@ fn parse_item_common<'a>(
 pub fn parse_declaration<'a>(
 	file: &'a mut DeclFile, tokens: &'a [Token], ind: &mut usize, provider: &'a dyn DeclProvider,
 	options: &ParseOptions,
-) -> Result<DeclContext<'a>, ParserError> {
+) -> Result<DeclContext<'a>, ParseError> {
 	let mut ctx = DeclContext::new(file);
 	let mut imports = Vec::<u64>::new();
 
