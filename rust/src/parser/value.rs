@@ -52,7 +52,7 @@ fn parse_typeid(
 
 	let typename = consume_ident(tokens, ind)?;
 
-	parse_typeid_general!((tokens, ind, typename, loc, metadata, ctx, options), |_| loc())
+	//parse_typeid_general!((tokens, ind, typename, loc, metadata, ctx, options), |_| loc())
 }
 
 fn parse_arr(

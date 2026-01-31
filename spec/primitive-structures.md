@@ -15,11 +15,13 @@ primitive structures are used to define custom data types, they allow rich data 
 
 each structure has a name associated with it, and a typeid used in binary format.
 
-typeids are incremented according to the order of definition, and continue after hardcoded ones.
+typeids are incremented according to the order of definition, from parent to its inlined items then siblings, and continue after hardcoded ones.
 
 ```rust
-struct Struct1 {/* ... */}     // typeid = 0
-struct Struct2 {/* ... */}     // typeid = 1
+struct Struct1 {               // typeid = 0 
+	inlined: struct {/* .. */} // typeid = 1
+}
+struct Struct2 {/* ... */}     // typeid = 2
 struct Struct3 [5] {/* ... */} // typeid = 5
 struct Struct4 {/* ... */}     // typeid = 6
 ```
@@ -48,6 +50,8 @@ struct WithHardcodedId [3] {/* ... */}
 ```
 
 structs can be inlined, defined in fields type identifiers, this is only allowed in declarations.
+
+their typeid is the next typeid.
 ```
 "struct" struct_def
 ```

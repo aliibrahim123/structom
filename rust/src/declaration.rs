@@ -192,6 +192,9 @@ impl TypeId {
 	pub fn is_any(&self) -> bool {
 		self.ns == 0 && self.id == 1
 	}
+	pub fn is_builtin(&self) -> bool {
+		self.ns == 0
+	}
 
 	pub fn name(&self, provider: &dyn DeclProvider) -> String {
 		if self.ns == 0 {

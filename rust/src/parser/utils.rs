@@ -43,10 +43,10 @@ pub fn count_prefix(source: &str, search: &str) -> usize {
 }
 
 /// remove a suffix n times
-pub fn remove_n_suffix<'a>(source: &'a str, search: &str, count: usize) -> &'a str {
+pub fn remove_n_suffix<'a>(source: &'a str, sep: &str, count: usize) -> &'a str {
 	let mut ind = source.len();
 	for _ in 0..count {
-		match source[..ind].rfind(search) {
+		match source[..ind].rfind(sep) {
 			Some(i) => ind = i,
 			None => return "",
 		}
@@ -77,6 +77,16 @@ pub fn consume_ident<'a>(
 		Some(token) => unexpected_token(token, token.pos(), file),
 	}
 }
+/// safely try to consume a symbol
+pub fn try_consume_ident<'a>(
+	tokens: &'a [Token], ind: &mut usize, file: &str,
+) -> Result<Option<&'a str>, ParseError> {
+	match tokens.get(*ind) {
+		Some(Token::Ident(ident, _)) => (Ok(Some(*ident)), *ind += 1).0,
+		Some(Token::EOF(_)) | None => end_of_input(file),
+		_ => Ok(None),
+	}
+}
 /// safely consume a string
 pub fn consume_str<'a>(
 	tokens: &'a [Token], ind: &mut usize, file: &str,
@@ -90,11 +100,21 @@ pub fn consume_str<'a>(
 /// safely consume a symbol
 pub fn consume_symbol(
 	token: char, tokens: &[Token], ind: &mut usize, file: &str,
+) -> Result<(), ParseError> {
+	match tokens.get(*ind) {
+		Some(Token::Symbol(sym, _)) if *sym == token => (Ok(()), *ind += 1).0,
+		Some(Token::EOF(_)) | None => end_of_input(file),
+		Some(token) => unexpected_token(token, token.pos(), file),
+	}
+}
+/// safely try to consume a symbol
+pub fn try_consume_symbol(
+	token: char, tokens: &[Token], ind: &mut usize, file: &str,
 ) -> Result<bool, ParseError> {
 	match tokens.get(*ind) {
 		Some(Token::Symbol(sym, _)) if *sym == token => (Ok(true), *ind += 1).0,
 		Some(Token::EOF(_)) | None => end_of_input(file),
-		Some(token) => unexpected_token(token, token.pos(), file),
+		_ => Ok(false),
 	}
 }
 /// safely consume an uint
@@ -107,34 +127,29 @@ pub fn consume_uint(tokens: &[Token], ind: &mut usize, file: &str) -> Result<u64
 	}
 }
 
-/// handle struct like syntax commons, must be at start of field loop
-pub fn struct_like_start(
-	tokens: &[Token], ind: &mut usize, watched_comma: &mut bool, end_delimiter: char, file: &str,
-) -> Result<bool, ParseError> {
-	// break on end
-	if let Some(Token::Symbol(c, _)) = tokens.get(*ind)
-		&& *c == end_delimiter
-	{
-		*ind += 1;
-		return Ok(true);
-	}
-
-	// no comma
-	if *watched_comma == false {
-		return unexpected_token(&tokens[*ind], tokens[*ind].pos(), file);
-	}
-	*watched_comma = false;
-
-	Ok(false)
+/// handle start, comma and end
+macro_rules! parse_struct_like {
+	($args:expr, $file:expr, $ind:ident => $eacher:block) => {
+		let (tokens, start_char, end_char) = $args;
+		consume_symbol(start_char, tokens, $ind, $file)?;
+		// empty struct fast path
+		if try_consume_symbol(end_char, tokens, $ind, $file)? {
+		} else {
+			loop {
+				$eacher;
+				// comma after the last field is optional
+				let has_comma = try_consume_symbol(',', tokens, $ind, $file)?;
+				if try_consume_symbol(end_char, tokens, $ind, $file)? {
+					break;
+				}
+				if !has_comma {
+					return unexpected_token(&tokens[*$ind], tokens[*$ind].pos(), $file);
+				}
+			}
+		}
+	};
 }
-// handle struct like syntax commons, must be at end of field loop
-pub fn struct_like_end(tokens: &[Token], ind: &mut usize, watched_comma: &mut bool) {
-	// allow no comma at end
-	if let Some(Token::Symbol(',', _)) = tokens.get(*ind) {
-		*ind += 1;
-		*watched_comma = true;
-	}
-}
+pub(crate) use parse_struct_like;
 
 pub fn unexpected_token<T>(token: impl ToString, pos: Pos, file: &str) -> Result<T, ParseError> {
 	err!(format!("unexpected token \"{}\"", token.to_string()), pos, file)
