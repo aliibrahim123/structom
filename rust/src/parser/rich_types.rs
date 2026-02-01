@@ -1,4 +1,5 @@
 use chrono::{DateTime, TimeDelta, Timelike};
+use num_traits::CheckedMul;
 
 use crate::{
 	ParseError, Value,
@@ -109,13 +110,16 @@ fn parse_dur_part(
 	};
 
 	// first part is not capped
-	if !*is_first && amount >= max {
+	if unit != "y" && !*is_first && amount >= max {
 		let msg = format!("duration part ({part}) is out of range 0{unit}..{}{unit}", max - 1);
 		return err!(msg, pos, file);
 	}
 
-	// can not overflow
-	ctx.val += (amount * multiplier) as i64;
+	let Some(value) = (|| ctx.val.checked_add_unsigned(amount.checked_mul(multiplier)?))() else {
+		return err!(format!("duration ({}) is large", ctx.source), pos, file);
+	};
+
+	ctx.val = value;
 	*ind += 1;
 	*is_first = false;
 	Ok(true)

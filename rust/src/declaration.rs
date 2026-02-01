@@ -1,6 +1,9 @@
 use std::collections::HashMap;
 
-use crate::{builtins::BUILT_INS_NAMES, errors::ImportError};
+use crate::{
+	builtins::{ARR_TYPEID, BUILT_INS_NAMES, MAP_TYPEID},
+	errors::ImportError,
+};
 
 /// encapsulate the content of a decleration file.
 ///
@@ -189,11 +192,20 @@ impl TypeId {
 
 	pub const ANY: Self = Self { ns: 0, id: 1, variant: 0, item: None, metadata: None };
 
+	pub fn item(&self) -> &Self {
+		self.item.as_ref().unwrap()
+	}
 	pub fn is_any(&self) -> bool {
 		self.ns == 0 && self.id == 1
 	}
 	pub fn is_builtin(&self) -> bool {
 		self.ns == 0
+	}
+	pub fn arr(item: TypeId, metadata: Option<Vec<(String, String)>>) -> Self {
+		Self { ns: 0, id: ARR_TYPEID, variant: 0, item: Some(Box::new(item)), metadata }
+	}
+	pub fn map(key: u16, value: TypeId, metadata: Option<Vec<(String, String)>>) -> Self {
+		Self { ns: 0, id: MAP_TYPEID, variant: key, item: Some(Box::new(value)), metadata }
 	}
 
 	pub fn name(&self, provider: &dyn DeclProvider) -> String {

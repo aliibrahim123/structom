@@ -1,499 +1,378 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, ops::Not};
 
 use crate::{
 	DeclProvider, Key, ParseError, ParseOptions, Value,
-	builtins::BUILT_INS_IDS,
-	declaration::{DeclItem, EnumVariant, StructDef, TypeId, resolve_typeid},
-	errors::{end_of_input, unexpected_token},
+	builtins::{
+		ANY_TYPEID, ARR_TYPEID, BINT_TYPEID, BOOL_TYPEID, BUILT_INS_IDS, DUR_TYPEID, F32_TYPEID,
+		F64_TYPEID, I8_TYPEID, I16_TYPEID, I32_TYPEID, I64_TYPEID, INST_TYPEID, INSTN_TYPEID,
+		MAP_TYPEID, STR_TYPEID, U8_TYPEID, U16_TYPEID, U32_TYPEID, U64_TYPEID, UUID_TYPEID,
+		VINT_TYPEID, VUINT_TYPEID,
+	},
+	declaration::{DeclItem, StructDef, TypeId, resolve_typeid},
+	errors::err,
 	parser::{
 		declaration::{DeclContext, parse_metadata, parse_typeid_general},
 		rich_types::{parse_dur, parse_inst, parse_uuid},
-		tokenizer::Token,
-		utils::{consume_ident, consume_str, consume_symbol, struct_like_end, struct_like_start},
+		tokenizer::{Pos, Token},
+		utils::{
+			consume_ident, consume_str, consume_symbol, end_of_input, parse_struct_like,
+			try_consume_symbol, unexpected_token,
+		},
 	},
 };
 
-pub fn mismatch_types<T>(expected: &str, found: &str, ind: usize) -> Result<T, ParseError> {
-	Err(ParseError::TypeError(format!("expected type {expected}, found {found} at {ind}",)))
+struct ValueCtx<'a> {
+	file: &'a str,
+	options: &'a ParseOptions,
+	provider: &'a dyn DeclProvider,
+	decl: &'a DeclContext<'a>,
 }
-fn check_range_nb(nb: i64, signed: bool, bits: u8, ind: usize) -> Result<i64, ParseError> {
-	// compute range
-	let (min, max) = match signed {
-		false => (0, (1 << bits) - 1),
-		true => (-(1 << (bits - 1)), (1 << (bits - 1)) - 1),
-	};
+
+pub fn mismatch_types<T>(
+	expected: &str, found: &str, pos: Pos, file: &str,
+) -> Result<T, ParseError> {
+	err!(format!("expected type {expected}, found {found}"), pos, file)
+}
+
+fn check_nb_range<T: Into<i64>>(
+	nb: i64, kind: &str, min: T, max: T, pos: Pos, file: &str,
+) -> Result<i64, ParseError> {
 	// check range
-	if nb < min || nb > max {
-		return Err(ParseError::TypeError(format!(
-			"number ({nb}) is out of range for {}{bits} number at {ind}",
-			if signed { "i" } else { "u" }
-		)));
+	if nb < min.into() || nb > max.into() {
+		return err!(format!("number ({nb}) is out of range for {kind}"), pos, file);
 	}
 	Ok(nb)
 }
-
-fn parse_small_ints(nb: i64, typeid: &TypeId, ind: usize) -> Result<Value, ParseError> {
-	Ok(match typeid.id {
-		0x10 => Value::Uint(check_range_nb(nb, false, 8, ind)? as u64),
-		0x11 => Value::Uint(check_range_nb(nb, false, 16, ind)? as u64),
-		0x12 => Value::Uint(check_range_nb(nb, false, 32, ind)? as u64),
-		0x14 => Value::Int(check_range_nb(nb, true, 8, ind)?),
-		0x15 => Value::Int(check_range_nb(nb, true, 16, ind)?),
-		0x16 => Value::Int(check_range_nb(nb, true, 32, ind)?),
+fn parse_small_ints(nb: i64, typeid: u16, pos: Pos, file: &str) -> Result<Value, ParseError> {
+	Ok(match typeid {
+		U8_TYPEID => Value::Uint(check_nb_range(nb, "u8", u8::MIN, u8::MAX, pos, file)? as u64),
+		U16_TYPEID => Value::Uint(check_nb_range(nb, "u16", u16::MIN, u16::MAX, pos, file)? as u64),
+		U32_TYPEID => Value::Uint(check_nb_range(nb, "u32", u32::MIN, u32::MAX, pos, file)? as u64),
+		I8_TYPEID => Value::Int(check_nb_range(nb, "i8", i8::MIN, i8::MAX, pos, file)? as i64),
+		I16_TYPEID => Value::Int(check_nb_range(nb, "i16", i16::MIN, i16::MAX, pos, file)? as i64),
+		I32_TYPEID => Value::Int(check_nb_range(nb, "i32", i32::MIN, i32::MAX, pos, file)? as i64),
 		_ => unreachable!(),
 	})
 }
 
 fn parse_typeid(
-	tokens: &[Token], ind: &mut usize, loc: &impl Fn() -> String, ctx: &DeclContext<'_>,
-	options: &ParseOptions,
+	tokens: &[Token], ind: &mut usize, ctx: &DeclContext<'_>, options: &ParseOptions,
 ) -> Result<TypeId, ParseError> {
-	let metadata = parse_metadata(tokens, ind, loc, options)?;
-
-	let typename = consume_ident(tokens, ind)?;
-
-	//parse_typeid_general!((tokens, ind, typename, loc, metadata, ctx, options), |_| loc())
+	let metadata = parse_metadata(tokens, ind, options, &ctx.file.name)?;
+	parse_typeid_general!((tokens, ind, metadata, ctx, options))
 }
 
 fn parse_arr(
-	tokens: &[Token], ind: &mut usize, typeid: &TypeId, ctx: &DeclContext,
-	provider: &dyn DeclProvider, options: &ParseOptions,
+	tokens: &[Token], ind: &mut usize, typeid: &TypeId, ctx: &ValueCtx,
 ) -> Result<Value, ParseError> {
-	consume_symbol('[', tokens, ind)?;
+	let file = ctx.file;
+	consume_symbol('[', tokens, ind, file)?;
 
-	// replace any typeid with arr<any>
-	let typeid = if typeid.is_any() {
-		&TypeId::with_variant(0, 0x22, 0, Some(TypeId::ANY), None)
-	} else {
-		typeid
-	};
+	let typeid = if typeid.is_any() { &TypeId::arr(TypeId::ANY, None) } else { typeid };
+	let itemid = typeid.item();
 
 	let mut arr = Vec::new();
-	let mut watched_comma = true;
-	let itemid = typeid.item.as_ref().unwrap().as_ref();
-
-	// loop through items
-	loop {
-		if struct_like_start(tokens, ind, &mut watched_comma, ']')? {
-			break;
-		}
-
-		arr.push(parse_value(tokens, ind, itemid, ctx, provider, options)?);
-
-		struct_like_end(tokens, ind, &mut watched_comma);
-	}
-
+	parse_struct_like!((tokens, '[', ']'), file, ind => {
+		arr.push(parse_value(tokens, ind, itemid, ctx)?);
+	});
 	Ok(Value::Arr(arr))
 }
 fn parse_map(
-	tokens: &[Token], ind: &mut usize, typeid: &TypeId, ctx: &DeclContext,
-	provider: &dyn DeclProvider, options: &ParseOptions,
+	tokens: &[Token], ind: &mut usize, typeid: &TypeId, ctx: &ValueCtx,
 ) -> Result<Value, ParseError> {
-	consume_symbol('{', tokens, ind)?;
+	let ValueCtx { file, .. } = ctx;
+	consume_symbol('{', tokens, ind, file)?;
 
-	// replace any typeid with map<any, any>
-	let typeid = if typeid.is_any() {
-		&TypeId::with_variant(0, 0x23, 1, Some(TypeId::ANY), None)
-	} else {
-		typeid
-	};
+	let typeid = if typeid.is_any() { &TypeId::map(ANY_TYPEID, TypeId::ANY, None) } else { typeid };
+	let keyid = &TypeId::new(0, typeid.variant, None);
+	let valueid = typeid.item();
 
 	let mut map = HashMap::new();
-	let keyid = &TypeId::new(0, typeid.variant, None);
-	let itemid = typeid.item.as_ref().unwrap().as_ref();
-	let mut watched_comma = true;
-
-	// loop through items
-	loop {
-		if struct_like_start(tokens, ind, &mut watched_comma, '}')? {
-			break;
-		}
-
-		let key_ind = tokens[*ind].pos();
-		*ind += 1; // skip key
-		let key = match tokens.get(*ind - 1) {
+	parse_struct_like!((tokens, '{', '}'), file, ind => {
+		let pos = tokens[*ind].pos();
+		let key = match tokens.get(*ind -1) {
 			Some(Token::Ident(key, _)) => Key::from(*key),
 			Some(Token::Str(key, _)) => Key::Str(key.clone()),
 			// [key]
 			Some(Token::Symbol('[', _)) => {
-				let key = parse_value(tokens, ind, keyid, ctx, provider, options)?;
-				consume_symbol(']', tokens, ind)?;
-				// Value => Key
-				key.try_into().map_err(|_| {
-					ParseError::TypeError(format!("map key can only be a primitive at {key_ind}"))
-				})?
+				let key = parse_value(tokens, ind, keyid, ctx)?;
+				consume_symbol(']', tokens, ind, file)?;
+				let Ok(key) = key.try_into() else {
+					// key is of type any
+					return err!("map key can only be primitive".to_string(), pos, file)
+				};
+				key
 			}
-			_ => return Err(unexpected_token(tokens[*ind - 1].to_string(), key_ind)),
+			Some(Token::EOF(_)) | None => return end_of_input(file),
+			Some(token) => return unexpected_token(token, pos, file),
 		};
-
-		if let Key::Str(_) = &key
-			&& !matches!(keyid.id, 1 | 0x20)
-		{
-			mismatch_types(&keyid.name(provider), "str", key_ind)?
+		// the str path in keys doesnt check types
+		if matches!(key, Key::Str(_),) && !matches!(keyid.id, ANY_TYPEID | STR_TYPEID) {
+			mismatch_types(&keyid.name(ctx.provider), "str", pos, file)?
 		}
-
-		// check for collision
 		if map.contains_key(&key) {
-			return Err(ParseError::TypeError(format!("duplicated map key {key:?} at {key_ind}",)));
+			return err!(format!("duplicate map key {key:?}"), pos, file);
 		}
 
-		consume_symbol(':', tokens, ind)?;
+		consume_symbol(':', tokens, ind, file)?;
 
-		let value = parse_value(tokens, ind, itemid, ctx, provider, options)?;
+		let value = parse_value(tokens, ind, valueid, ctx)?;
 		map.insert(key, value);
-
-		struct_like_end(tokens, ind, &mut watched_comma);
-	}
-
+	});
 	Ok(Value::Map(Box::new(map)))
 }
 
-// parse structs / enums
-enum ResolveDefResult<'a> {
-	Norm(&'a StructDef, &'a str),
-	CaseUnitVariant(&'a str),
-}
-fn resolve_item_def<'a>(
-	tokens: &[Token], ind: &mut usize, map: &mut HashMap<Key, Value>, item: &'a DeclItem,
-	variant: Option<&'a EnumVariant>, start_ind: usize,
-) -> Result<ResolveDefResult<'a>, ParseError> {
-	use ResolveDefResult::*;
-
-	if let DeclItem::Enum { .. } = item {
-		let variant = match variant {
-			// only variant name is written
-			Some(variant) => variant,
-			// case Type.variant
-			_ => {
-				consume_symbol('.', tokens, ind)?;
-				let variant = consume_ident(tokens, ind)?;
-				item.get_variant_by_name(variant).ok_or_else(|| {
-					ParseError::TypeError(format!(
-						"variant \"{variant}\" not found in enum \"{}\" at {start_ind}",
-						item.name()
-					))
-				})?
-			}
+macro_rules! resolve_enum {
+	($variant:ident, $map:ident) => {{
+		let name = $variant.name.clone();
+		let Some(def) = &$variant.def else {
+			return Ok(Value::UnitVar(name));
 		};
-
-		// unit variant is parsed into a string
-		if variant.def.is_none() {
-			return Ok(CaseUnitVariant(&variant.name));
-		}
-		// variant with fields is parsed into a map with its fields
-		map.insert(Key::enum_variant_key().clone(), variant.name.clone().into());
-
-		Ok(Norm(variant.def.as_ref().unwrap(), &variant.name))
-
-	// it is struct
-	} else if let DeclItem::Struct { def, .. } = item {
-		Ok(Norm(def, ""))
-	} else {
-		unreachable!()
-	}
+		$map.insert(Key::enum_variant_key().clone(), name.into());
+		def
+	}};
 }
 fn parse_item(
-	tokens: &[Token], ind: &mut usize, typeid: &TypeId, variant: Option<&EnumVariant>,
-	start_ind: usize, ctx: &DeclContext, provider: &dyn DeclProvider, options: &ParseOptions,
+	tokens: &[Token], ind: &mut usize, typeid: &TypeId, start_pos: Pos, ctx: &ValueCtx,
 ) -> Result<Value, ParseError> {
-	let item = resolve_typeid(typeid, provider);
+	let ValueCtx { file, provider, .. } = ctx;
+	let item = resolve_typeid(typeid, *provider);
 	let mut map = HashMap::new();
 
-	// resolve definition
-	use ResolveDefResult::*;
-	let (def, variant) = match resolve_item_def(tokens, ind, &mut map, item, variant, start_ind)? {
-		Norm(def, variant) => (def, variant),
-		CaseUnitVariant(variant) => return Ok(Value::UnitVar(variant.to_string())),
+	let (def, item_name) = match item {
+		DeclItem::Struct { def, .. } => (def, format!("struct {}", item.name())),
+		DeclItem::Enum { .. } => {
+			consume_symbol('.', tokens, ind, file)?;
+			let variant = consume_ident(tokens, ind, file)?;
+			let Some(variant) = item.get_variant_by_name(variant) else {
+				let msg =
+					format!("variant \"{variant}\" does not exist in enum \"{}\"", item.name());
+				return err!(msg, start_pos, file);
+			};
+			let def = resolve_enum!(variant, map);
+			(def, format!("enum variant {}.{}", item.name(), variant.name))
+		}
 	};
 
+	parse_struct(tokens, ind, def, map, &item_name, start_pos, ctx)
+}
+fn parse_struct(
+	tokens: &[Token], ind: &mut usize, def: &StructDef, mut map: HashMap<Key, Value>,
+	item_name: &str, start_pos: Pos, ctx: &ValueCtx,
+) -> Result<Value, ParseError> {
+	let file = ctx.file;
+	consume_symbol('{', tokens, ind, file)?;
 	let mut required = def.required_fields;
 
-	consume_symbol('{', tokens, ind)?;
-	let mut watched_comma = true;
-
-	// loop through fields
-	loop {
-		if struct_like_start(tokens, ind, &mut watched_comma, '}')? {
-			break;
-		}
-
+	parse_struct_like!((tokens, '{', '}'), file, ind => {
+		let pos = tokens[*ind].pos();
 		let name = match tokens.get(*ind) {
 			Some(Token::Ident(key, _)) => *key,
 			Some(Token::Str(key, _)) => key,
-			_ => return Err(unexpected_token(tokens[*ind].to_string(), tokens[*ind].pos())),
+			Some(Token::EOF(_)) | None => return end_of_input(file),
+			Some(token) => return unexpected_token(token, pos, file),
 		};
+		*ind+= 1;
 
-		// check for existence
-		let field = &def.get_field_by_name(name).ok_or_else(|| {
-			ParseError::TypeError(format!(
-				"struct {}{} doesnt contain field \"{name}\" at {ind}",
-				typeid.name(provider),
-				if variant.is_empty() { "".to_string() } else { format!(".{variant}") }
-			))
-		})?;
-
-		// check for collision
+		let Some(field) = def.get_field_by_name(name)else  {
+			return err!(format!("{item_name} doesnt contain field \"{name}\""), pos, file);
+		};
 		let key = Key::from(name);
 		if map.contains_key(&key) {
-			return Err(ParseError::TypeError(format!(
-				"duplicated field \"{name}\" at {}",
-				tokens[*ind].pos()
-			)));
-		}
-		*ind += 1;
-
-		consume_symbol(':', tokens, ind)?;
-
-		if !field.is_optional {
-			required -= 1;
+			return err!(format!("duplicated field \"{name}\""), pos, file);
 		}
 
-		let value = parse_value(tokens, ind, &field.typeid, ctx, provider, options)?;
+		consume_symbol(':', tokens, ind, file)?;
+
+		let value = parse_value(tokens, ind, &field.typeid, ctx)?;
+		field.is_optional.not().then(|| required -= 1);
 		map.insert(key, value);
+	});
 
-		struct_like_end(tokens, ind, &mut watched_comma);
-	}
-
-	// case of missing required fields
 	if required != 0 {
-		return Err(ParseError::TypeError(format!(
-			"struct {}{} is missing required fields at {start_ind}",
-			typeid.name(provider),
-			if variant.is_empty() { "".to_string() } else { format!(".{variant}") }
-		)));
+		return err!(format!("{item_name} is missing required fields"), start_pos, file);
 	}
-
 	Ok(Value::Map(Box::new(map)))
 }
 
 fn parse_ident(
-	ident: &str, tokens: &[Token], ind: &mut usize, typeid: &TypeId, provider: &dyn DeclProvider,
-	ctx: &DeclContext<'_>, options: &ParseOptions,
+	ident: &str, tokens: &[Token], ind: &mut usize, typeid: &TypeId, ctx: &ValueCtx,
 ) -> Result<Value, ParseError> {
-	let start_ind = tokens[*ind - 1].pos();
+	let pos = tokens[*ind - 1].pos();
+	let ValueCtx { file, provider, .. } = ctx;
+	macro_rules! check {
+		($ty:literal, $pat:pat) => {
+			if typeid.is_builtin() || !matches!(typeid.id, 1 | $pat) {
+				mismatch_types(&typeid.name(*provider), $ty, pos, file)?;
+			}
+		};
+	}
 
 	match ident {
-		// bool
 		"true" | "false" => {
-			if typeid.ns != 0 || !matches!(typeid.id, 1 | 8) {
-				mismatch_types(&typeid.name(provider), "bool", *ind)?;
-			}
-			Ok(Value::Bool(ident == "true"))
+			check!("bool", BOOL_TYPEID);
+			return Ok(Value::Bool(ident == "true"));
 		}
-
-		// float constants
 		"nan" => {
-			if typeid.ns != 0 || !matches!(typeid.id, 1 | 0x18..=0x1a) {
-				mismatch_types(&typeid.name(provider), "f64", *ind)?;
-			}
-			Ok(Value::Float(f64::NAN))
+			check!("f64", F32_TYPEID | F64_TYPEID);
+			return Ok(Value::Float(f64::NAN));
 		}
 		"inf" => {
-			if typeid.ns != 0 || !matches!(typeid.id, 1 | 0x18..=0x1a) {
-				mismatch_types(&typeid.name(provider), "f64", *ind)?;
-			}
-			Ok(Value::Float(f64::INFINITY))
+			check!("f64", F32_TYPEID | F64_TYPEID);
+			return Ok(Value::Float(f64::INFINITY));
 		}
-
-		// rich types
 		"uuid" => {
-			if typeid.ns != 0 || !matches!(typeid.id, 1 | 0x33) {
-				mismatch_types(&typeid.name(provider), "uuid", *ind)?;
-			}
-			parse_uuid(consume_str(tokens, ind)?, *ind)
+			check!("uuid", UUID_TYPEID);
+			return parse_uuid(consume_str(tokens, ind, file)?, pos, file);
 		}
 		"inst" => {
-			if typeid.ns != 0 || !matches!(typeid.id, 1 | 0x30) {
-				mismatch_types(&typeid.name(provider), "inst", *ind)?;
-			}
-			parse_inst(consume_str(tokens, ind)?, false, *ind)
+			check!("inst", INST_TYPEID);
+			return parse_inst(consume_str(tokens, ind, file)?, false, pos, file);
 		}
 		"instN" => {
-			if typeid.ns != 0 || !matches!(typeid.id, 1 | 0x31) {
-				mismatch_types(&typeid.name(provider), "instN", *ind)?;
-			}
-			parse_inst(consume_str(tokens, ind)?, true, *ind)
+			check!("instN", INSTN_TYPEID);
+			return parse_inst(consume_str(tokens, ind, file)?, true, pos, file);
 		}
 		"dur" => {
-			if typeid.ns != 0 || !matches!(typeid.id, 1 | 0x32) {
-				mismatch_types(&typeid.name(provider), "dur", *ind)?;
-			}
-			parse_dur(consume_str(tokens, ind)?, start_ind, tokens[*ind - 1].pos())
+			check!("dur", DUR_TYPEID);
+			return parse_dur(tokens, ind, file);
 		}
+		_ => (),
+	}
 
-		// maps, arrs, structs and enums
-		_ => {
-			// infered enums written only with variant names shortcut
-			if typeid.ns != 0 {
-				let item = resolve_typeid(typeid, provider);
+	if !typeid.is_builtin()
+		&& let item = resolve_typeid(typeid, *provider)
+		&& let Some(variant) = item.get_variant_by_name(ident)
+	{
+		let mut map = HashMap::new();
+		let def = resolve_enum!(variant, map);
+		let name = format!("enum variant {}.{}", item.name(), variant.name);
+		return parse_struct(tokens, ind, def, map, &name, pos, ctx);
+	}
 
-				if let Some(variant) = item.get_variant_by_name(ident) {
-					#[rustfmt::skip]
-					return parse_item(
-						tokens, ind, typeid, Some(variant), start_ind, ctx, provider, options,
-					);
-				}
-			}
+	*ind -= 1;
+	let explicit_type = parse_typeid(tokens, ind, ctx.decl, ctx.options)?;
+	if typeid != &explicit_type {
+		return mismatch_types(&typeid.name(*provider), &explicit_type.name(*provider), pos, file);
+	}
+	let typeid = if typeid.is_any() { &explicit_type } else { typeid };
 
-			*ind -= 1;
-
-			// parse explicit type
-			let explicit_type =
-				parse_typeid(tokens, ind, &|| format!("at index {start_ind}"), ctx, options)?;
-
-			// check against the implicit type
-			if typeid != &explicit_type {
-				return Err(mismatch_types(
-					&typeid.name(provider),
-					&explicit_type.name(provider),
-					*ind,
-				)?);
-			}
-			// replace with the explicit type if implicit is any
-			let typeid = if typeid.is_any() { &explicit_type } else { typeid };
-
-			// builtins
-			if typeid.ns == 0 {
-				match typeid.id {
-					0x22 => parse_arr(tokens, ind, typeid, ctx, provider, options),
-					0x23 => parse_map(tokens, ind, typeid, ctx, provider, options),
-					_ => Err(unexpected_token(ident, start_ind)),
-				}
-			// user types
-			} else {
-				parse_item(tokens, ind, typeid, None, start_ind, ctx, provider, options)
-			}
+	if typeid.ns == 0 {
+		match typeid.id {
+			ARR_TYPEID => parse_arr(tokens, ind, typeid, ctx),
+			MAP_TYPEID => parse_map(tokens, ind, typeid, ctx),
+			_ => unexpected_token(ident, pos, file),
 		}
+	} else {
+		parse_item(tokens, ind, typeid, pos, ctx)
 	}
 }
 
 pub fn parse_value(
-	tokens: &[Token], ind: &mut usize, typeid: &TypeId, ctx: &DeclContext<'_>,
-	provider: &dyn DeclProvider, options: &ParseOptions,
+	tokens: &[Token], ind: &mut usize, typeid: &TypeId, ctx: &ValueCtx,
 ) -> Result<Value, ParseError> {
-	let start_ind = *ind;
+	let ValueCtx { file, provider, options, .. } = ctx;
+	let pos = tokens[*ind].pos();
+	macro_rules! check {
+		($ty:literal, $pat:pat) => {
+			if typeid.is_builtin() || !matches!(typeid.id, 1 | $pat) {
+				mismatch_types(&typeid.name(*provider), $ty, pos, file)?;
+			}
+		};
+	}
 
-	let metadata = parse_metadata(tokens, ind, &|| format!("at index {start_ind}"), options)?;
+	let metadata = parse_metadata(tokens, ind, options, file)?;
 	*ind += 1;
 	let value = match tokens.get(*ind - 1) {
-		Some(Token::Ident(ident, _)) => {
-			parse_ident(ident, tokens, ind, typeid, provider, ctx, options)?
-		}
-		// ananonymous arrays
+		Some(Token::Ident(ident, _)) => parse_ident(ident, tokens, ind, typeid, ctx)?,
 		Some(Token::Symbol('[', _)) => {
-			if typeid.ns != 0 || !matches!(typeid.id, 1 | 0x22) {
-				return mismatch_types(&typeid.name(provider), "arr", *ind);
-			}
+			check!("arr", ARR_TYPEID);
 			*ind -= 1;
-			parse_arr(tokens, ind, typeid, ctx, provider, options)?
+			parse_arr(tokens, ind, typeid, ctx)?
 		}
-		// anonymous maps and structs
 		Some(Token::Symbol('{', _)) => {
 			*ind -= 1;
 			if typeid.ns == 0 {
-				if !matches!(typeid.id, 1 | 0x23) {
-					return mismatch_types(&typeid.name(provider), "map", *ind);
-				}
-				parse_map(tokens, ind, typeid, ctx, provider, options)?
+				check!("map", MAP_TYPEID);
+				parse_map(tokens, ind, typeid, ctx)?
 			} else {
-				parse_item(tokens, ind, typeid, None, start_ind, ctx, provider, options)?
+				parse_item(tokens, ind, typeid, pos, ctx)?
 			}
 		}
-		// numbers
 		Some(Token::Uint(nb, _)) => {
-			if typeid.ns != 0 {
-				return mismatch_types(&typeid.name(provider), "uint", *ind);
-			}
+			check!("uint", U8_TYPEID..=F64_TYPEID | VUINT_TYPEID | VINT_TYPEID);
 			match typeid.id {
-				0x10..=0x12 | 0x14..=0x16 => parse_small_ints(*nb as i64, typeid, *ind)?,
-				0x13 | 0x1c | 1 => Value::Uint(*nb),
-				// signed int types with unsigned nb literial
-				0x17 | 0x1d => {
-					if *nb > 1 << 63 {
-						return Err(ParseError::TypeError(format!(
-							"number ({nb}) is out of range for i64 nb at {ind}",
-						)));
+				U8_TYPEID..=U32_TYPEID | I8_TYPEID..I32_TYPEID => {
+					parse_small_ints(*nb as i64, typeid.id, pos, file)?
+				}
+				ANY_TYPEID | U64_TYPEID | VUINT_TYPEID => Value::Uint(*nb),
+				I64_TYPEID | VINT_TYPEID => {
+					if *nb > i64::MAX as u64 {
+						return err!(format!("number ({nb}) is out of range for i64"), pos, file);
 					}
 					Value::Int(*nb as i64)
 				}
-				0x18..=0x19 => Value::Float(*nb as f64),
-				_ => return mismatch_types(&typeid.name(provider), "uint", *ind),
+				F32_TYPEID | F64_TYPEID => Value::Float(*nb as f64),
+				_ => unreachable!(),
 			}
 		}
 		Some(Token::Int(nb, _)) => {
-			if typeid.ns != 0 {
-				return mismatch_types(&typeid.name(provider), "int", *ind);
-			}
+			check!("int", U8_TYPEID..=F64_TYPEID | VUINT_TYPEID | VINT_TYPEID);
 			match typeid.id {
-				0x10..=0x12 | 0x14..=0x16 => parse_small_ints(*nb as i64, typeid, *ind)?,
-				0x13 | 0x1c => {
-					// unsigned int types with signed nb literial
+				U8_TYPEID..=U32_TYPEID | I8_TYPEID..I32_TYPEID => {
+					parse_small_ints(*nb as i64, typeid.id, pos, file)?
+				}
+				ANY_TYPEID | I64_TYPEID | VINT_TYPEID => Value::Int(*nb),
+				U64_TYPEID | VUINT_TYPEID => {
 					if *nb < 0 {
-						return Err(ParseError::TypeError(format!(
-							"number ({nb}) is out of range for u64 nb at {ind}",
-						)));
+						return err!(format!("number ({nb}) is out of range for u64"), pos, file);
 					}
 					Value::Uint(*nb as u64)
 				}
-				0x17 | 0x1d | 1 => Value::Int(*nb),
-				0x18..=0x19 => Value::Float(*nb as f64),
-				_ => return mismatch_types(&typeid.name(provider), "int", *ind),
+				F32_TYPEID | F64_TYPEID => Value::Float(*nb as f64),
+				_ => unreachable!(),
 			}
 		}
-		// +inf / -inf
-		Some(Token::Symbol(symbol, _)) if matches!(symbol, '+' | '-') => {
-			if typeid.ns != 0 || !matches!(typeid.id, 1 | 0x18..=0x1a) {
-				mismatch_types(&typeid.name(provider), "f64", *ind)?;
-			}
-
-			let ident = consume_ident(tokens, ind)?;
+		Some(Token::Symbol(symbol @ ('+' | '-'), _)) => {
+			check!("f64", F32_TYPEID | F64_TYPEID);
+			let ident = consume_ident(tokens, ind, file)?;
 			if ident != "inf" {
-				return Err(unexpected_token(symbol, start_ind));
+				return unexpected_token(ident, pos, file);
 			}
-
 			Value::Float(if *symbol == '+' { f64::INFINITY } else { f64::NEG_INFINITY })
 		}
 		Some(Token::Float(nb, _)) => {
-			if typeid.ns != 0 || !matches!(typeid.id, 1 | 0x18..=0x19) {
-				return mismatch_types(&typeid.name(provider), "f64", *ind);
-			}
+			check!("f64", F32_TYPEID | F64_TYPEID);
 			Value::Float(*nb)
 		}
-		Some(Token::BigInt(_, _)) => {
-			if typeid.ns != 0 || !matches!(typeid.id, 1 | 0x1e) {
-				return mismatch_types(&typeid.name(provider), "bint", *ind);
-			}
-			Value::BigInt(vec![])
+		Some(Token::BigInt(nb, _)) => {
+			check!("bigint", BINT_TYPEID);
+			Value::BigInt(nb.clone())
 		}
-		// strings
 		Some(Token::Str(str, _)) => {
-			if typeid.ns != 0 || !matches!(typeid.id, 1 | 0x20) {
-				return mismatch_types(&typeid.name(provider), "str", *ind);
-			}
+			check!("str", STR_TYPEID);
 			Value::Str(str.clone())
 		}
-		_ => return Err(end_of_input(tokens.len())),
+		Some(Token::EOF(_)) | None => return end_of_input(file),
+		Some(token) => return unexpected_token(token, pos, file),
 	};
 
-	// add metadata wrapper around the value
 	if options.metadata && (metadata.is_some() || typeid.metadata.is_some()) {
 		let mut wrapper = HashMap::new();
 		wrapper.insert(Key::has_meta_key().clone(), Value::Bool(true));
+		wrapper.insert(Key::inner_key().clone(), value);
 
-		// declared metadata in declerations
 		if let Some(metadata) = typeid.metadata.as_ref() {
 			for (name, value) in metadata {
 				wrapper.insert(Key::from(name.clone()), Value::from(value.clone()));
 			}
 		}
-		// then declared ones in value source
 		if let Some(metadata) = metadata {
 			for (name, value) in metadata {
 				wrapper.insert(Key::from(name), Value::from(value));
 			}
 		}
 
-		wrapper.insert(Key::inner_key().clone(), value);
 		Ok(Value::Map(Box::new(wrapper)))
 	} else {
 		Ok(value)

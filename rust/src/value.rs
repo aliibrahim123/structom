@@ -8,6 +8,7 @@ use std::{
 };
 
 use chrono::{DateTime, TimeDelta, Utc};
+use num_bigint::BigInt;
 
 use crate::stringify::{str_dur_val, str_uuid_val};
 
@@ -79,7 +80,7 @@ pub enum Value {
 	/// unsigned integer value, types: `u8`, `u16`, `u32`, `u64` `vuint`.
 	Uint(u64),
 	/// big integer value, types: `bint`.
-	BigInt(Vec<u8>),
+	BigInt(BigInt),
 	/// floating point value, types: `f32`, `f64`
 	Float(f64),
 	/// string value, types: `str`, unit enums.

@@ -202,7 +202,7 @@ macro_rules! parse_typeid_general {
 			consume_symbol('<', tokens, ind, file)?;
 			let itemid = parse_typeid(tokens, ind, ctx, options)?;
 			consume_symbol('>', tokens, ind, &ctx.file.name)?;
-			return Ok(TypeId::with_variant(0, ARR_TYPEID, 0, Some(itemid), metadata));
+			return Ok(TypeId::arr(itemid, metadata));
 		}
 
 		if type_name == "map" {
@@ -217,7 +217,7 @@ macro_rules! parse_typeid_general {
 			let valueid = parse_typeid(tokens, ind, ctx, options)?;
 			consume_symbol('>', tokens, ind, &ctx.file.name)?;
 
-			return Ok(TypeId::with_variant(0, MAP_TYPEID, keyid.id, Some(valueid), metadata));
+			return Ok(TypeId::map(keyid.id, valueid, metadata));
 		}
 
 		if let Some(id) = BUILT_INS_IDS.get(type_name) {
