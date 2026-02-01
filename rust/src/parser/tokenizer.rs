@@ -217,6 +217,7 @@ fn parse_str(source: &str, pos: &mut Pos, file: &str) -> Result<String, ParseErr
 	return Ok(res);
 }
 
+/// grammer: ["+" | "-"] (dec_part | [dec_part] "." dec_part) [("e" | "E") ["+" | "-"] dec_part]
 fn parse_float<'a>(
 	source: &'a str, mut ind: usize, pos: Pos, file: &str,
 ) -> Result<(Token<'a>, usize, Pos), ParseError> {
@@ -259,6 +260,7 @@ fn parse_float<'a>(
 	Ok((Token::Float(value, pos), ind, new_pos))
 }
 
+/// grammer: ["+" | "-"] (dec_part | "0x" hex_part | "0b" bin_part) ["bint"]
 fn parse_int<'a>(
 	source: &'a str, mut ind: usize, pos: Pos, file: &str,
 ) -> Result<(Token<'a>, usize, Pos), ParseError> {

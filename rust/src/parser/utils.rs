@@ -13,6 +13,9 @@ pub trait StrExt {
 
 	/// find the index of the first char matching the pattern after index
 	fn find_str_after(&self, pat: &str, ind: usize) -> Option<usize>;
+
+	/// find the index of the first whitespace char after index
+	fn find_ws_after(&self, ind: usize) -> Option<usize>;
 }
 
 impl StrExt for str {
@@ -21,6 +24,9 @@ impl StrExt for str {
 	}
 	fn find_after(&self, pat: char, ind: usize) -> Option<usize> {
 		self[ind..].find(pat).map(|i| ind + i)
+	}
+	fn find_ws_after(&self, ind: usize) -> Option<usize> {
+		self[ind..].find([' ', '\t', '\r', '\n']).map(|i| ind + i)
 	}
 	fn find_str_after(&self, pat: &str, ind: usize) -> Option<usize> {
 		self[ind..].find(pat).map(|i| ind + i)

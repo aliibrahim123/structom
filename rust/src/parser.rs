@@ -9,7 +9,7 @@ use crate::{
 	declaration::{DeclFile, TypeId},
 	errors::{ImportError, unexpected_token},
 	parser::{
-		declaration::{DeclContext, parse_declaration},
+		declaration::{DeclContext, parse_declarations},
 		tokenizer::tokenize,
 	},
 };
@@ -46,7 +46,7 @@ pub fn parse_declaration_file(
 	let mut ind = 0;
 
 	let mut file = DeclFile::new(name);
-	parse_declaration(&mut file, &tokens, &mut ind, provider, options)?;
+	parse_declarations(&mut file, &tokens, &mut ind, provider, options)?;
 
 	// ensure all tokens have been consumed
 	if ind != tokens.len() - 1 {
@@ -95,7 +95,7 @@ pub fn parse(
 	let mut ind = 0;
 
 	let mut root_file = DeclFile::new("root".to_string());
-	let ctx = parse_declaration(&mut root_file, &tokens, &mut ind, provider, options)?;
+	let ctx = parse_declarations(&mut root_file, &tokens, &mut ind, provider, options)?;
 
 	let _provider = MiddleProvider { provider, ctx: &ctx };
 	let value = value::parse_value(&tokens, &mut ind, &TypeId::ANY, &ctx, &_provider, options)?;

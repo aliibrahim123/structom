@@ -52,7 +52,7 @@ inst "1234-05-06T07:08:09.1234567890+01:30"
 ### duration value notation
 ```
 dur_unit = "ns" | "us" | "ms" | "s" | "m" | "h" | "d" | "mn" | "y"
-dur_value = "dur" '"' ["-"] (dic_digit+ dur_unit)+ '"'
+dur_value = "dur" '"' ["-"] (dec_digit+ dur_unit)+ '"'
 ```
 duration value are written inside a string, they are a series of unsigned integers followed by a time unit.
 
@@ -62,7 +62,7 @@ the duration can be negative through a leading `-` character.
 
 suffix | unit        | max value
 ------ | ----------- | ---------
-`y`    | year        | 300
+`y`    | year        | 290
 `mn`   | month       | 12
 `d`    | day         | 30 (365 if there is no month part)
 `h`    | hour        | 24

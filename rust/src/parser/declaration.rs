@@ -71,6 +71,7 @@ fn resolve_tag(
 	Ok(tag as u32)
 }
 
+/// grammer: "import" str ["as" ident]
 fn parse_import<'a>(
 	tokens: &'a [Token], ind: &mut usize, imports: &mut Vec<u64>, ctx: &mut DeclContext<'a>,
 	options: &ParseOptions,
@@ -131,6 +132,7 @@ fn parse_import<'a>(
 	Ok(())
 }
 
+/// grammer: "struct" struct_def | "enum" enum_def
 fn parse_anonymous_item(
 	tokens: &[Token], ind: &mut usize, metadata: Option<Vec<(String, String)>>,
 	ctx: &mut DeclContext, options: &ParseOptions,
@@ -154,6 +156,7 @@ fn parse_anonymous_item(
 	return Ok(TypeId::new(ctx.file.id, typeid, metadata));
 }
 
+/// grammer: ("@" ident "(" str ")")*
 pub fn parse_metadata(
 	tokens: &[Token], ind: &mut usize, options: &ParseOptions, file: &str,
 ) -> Result<Option<Vec<(String, String)>>, ParseError> {
@@ -263,6 +266,8 @@ fn parse_typeid(
 	parse_typeid_general!((tokens, ind, metadata, ctx, options))
 }
 
+/// grammer: "{" (field_def ",")* "}
+/// field_def: [tag] (ident | str) ["?"] ":" type_id
 fn parse_fields(
 	tokens: &[Token], ind: &mut usize, item: &str, ctx: &mut DeclContext<'_>,
 	options: &ParseOptions,
@@ -309,6 +314,8 @@ fn parse_fields(
 	return Ok(def);
 }
 
+/// grammer: "{" (variant ",")* "}
+/// variant: [tag] ident [struct_def]
 fn parse_enum_body(
 	tokens: &[Token], ind: &mut usize, decl: &mut DeclItem, ctx: &mut DeclContext<'_>,
 	options: &ParseOptions,
@@ -353,6 +360,7 @@ fn parse_enum_body(
 	Ok(())
 }
 
+/// reolve item tag and name collisions
 fn parse_item_common<'a>(
 	tokens: &'a [Token], ind: &mut usize, ctx: &mut DeclContext<'a>,
 ) -> Result<(&'a str, u16), ParseError> {
@@ -377,7 +385,7 @@ fn parse_item_common<'a>(
 	Ok((name, id as u16))
 }
 
-pub fn parse_declaration<'a>(
+pub fn parse_declarations<'a>(
 	file: &'a mut DeclFile, tokens: &'a [Token], ind: &mut usize, provider: &'a dyn DeclProvider,
 	options: &ParseOptions,
 ) -> Result<DeclContext<'a>, ParseError> {
