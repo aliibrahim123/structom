@@ -41,3 +41,12 @@ define_builtins![
 	("dur", DUR_TYPEID, 0x32),
 	("uuid", UUID_TYPEID, 0x33),
 ];
+
+pub const US_AS_NS: u64 = 1000;
+pub const MS_AS_NS: u64 = 1000 * US_AS_NS;
+pub const S_AS_NS: u64 = 1000 * MS_AS_NS;
+pub const M_AS_NS: u64 = 60 * S_AS_NS;
+pub const H_AS_NS: u64 = 60 * M_AS_NS;
+pub const D_AS_NS: u64 = 24 * H_AS_NS;
+pub const MN_AS_NS: u64 = 30 * D_AS_NS;
+pub const Y_AS_NS: u64 = 365 * D_AS_NS;

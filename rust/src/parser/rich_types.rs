@@ -3,6 +3,7 @@ use num_traits::CheckedMul;
 
 use crate::{
 	ParseError, Value,
+	builtins::{D_AS_NS, H_AS_NS, M_AS_NS, MN_AS_NS, MS_AS_NS, S_AS_NS, US_AS_NS, Y_AS_NS},
 	errors::err,
 	parser::{
 		tokenizer::{Pos, Token},
@@ -78,14 +79,6 @@ struct DurParseCTX<'a> {
 	file: &'a str,
 	source: &'a str,
 }
-const US_AS_NS: u64 = 1000;
-const MS_AS_NS: u64 = 1000 * US_AS_NS;
-const S_AS_NS: u64 = 1000 * MS_AS_NS;
-const M_AS_NS: u64 = 60 * S_AS_NS;
-const H_AS_NS: u64 = 60 * M_AS_NS;
-const D_AS_NS: u64 = 24 * H_AS_NS;
-const MN_AS_NS: u64 = 30 * D_AS_NS;
-const Y_AS_NS: u64 = 365 * D_AS_NS;
 fn parse_dur_part(
 	ctx: &mut DurParseCTX, unit: &str, multiplier: u64, max: u64,
 ) -> Result<bool, ParseError> {

@@ -119,7 +119,7 @@ pub enum Key {
 	/// unsigned integer value, types: `u8`, `u16`, `u32`, `u64` `vuint`.
 	Uint(u64),
 	/// big integer value, types: `bint`.
-	BigInt(Vec<u8>),
+	BigInt(BigInt),
 	/// string value, types: `str`.
 	Str(String),
 	/// instance value, types: `inst`, `instN`.
