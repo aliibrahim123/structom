@@ -2,15 +2,29 @@ use std::mem::discriminant;
 
 use crate::{
 	Key, Value,
-	builtins::*,
 	encoding::{
-		decode_arr, decode_bool, decode_dur, decode_f32, decode_f64, decode_i8, decode_i16,
-		decode_i32, decode_i64, decode_inst, decode_instN, decode_map, decode_str, decode_u8,
-		decode_u8_arr, decode_u16, decode_u32, decode_u64, decode_uuid, decode_vint, decode_vuint,
-		encode_arr, encode_bool, encode_dur, encode_f64, encode_instN, encode_map, encode_str,
-		encode_u8_arr, encode_uuid, encode_vint, encode_vuint,
+		decode_arr, decode_bint, decode_bool, decode_dur, decode_f32, decode_f64, decode_i8,
+		decode_i16, decode_i32, decode_i64, decode_inst, decode_instN, decode_map, decode_str,
+		decode_u8, decode_u16, decode_u32, decode_u64, decode_uuid, decode_vint, decode_vuint,
+		encode_arr, encode_bint, encode_bool, encode_dur, encode_f64, encode_instN, encode_map,
+		encode_str, encode_uuid, encode_vint, encode_vuint,
 	},
 };
+
+macro_rules! cast_typeid {
+	[$($name:ident) +] => {
+		$( pub const $name: u8 = crate::builtins::$name as u8; )*
+	};
+}
+cast_typeid![
+	ANY_TYPEID BOOL_TYPEID
+	U8_TYPEID U16_TYPEID U32_TYPEID U64_TYPEID
+	I8_TYPEID I16_TYPEID I32_TYPEID I64_TYPEID
+	F32_TYPEID F64_TYPEID
+	VUINT_TYPEID VINT_TYPEID BINT_TYPEID
+	STR_TYPEID ARR_TYPEID MAP_TYPEID
+	UUID_TYPEID INST_TYPEID INSTN_TYPEID DUR_TYPEID
+];
 
 macro_rules! encode_typeid_commons {
 	($enum:ident, $value:ident, $data:ident) => {
@@ -23,6 +37,7 @@ macro_rules! encode_typeid_commons {
 			$enum::Inst(_) => $data.push(INSTN_TYPEID),
 			$enum::Dur(_) => $data.push(DUR_TYPEID),
 			$enum::UUID(_) => $data.push(UUID_TYPEID),
+			#[allow(unused)]
 			_ => (),
 		}
 	};
@@ -33,11 +48,12 @@ macro_rules! encode_value_commons {
 			$enum::Bool(b) => encode_bool($data, *b),
 			$enum::Uint(nb) => encode_vuint($data, *nb),
 			$enum::Int(nb) => encode_vint($data, *nb),
-			$enum::BigInt(nb) => encode_u8_arr($data, nb),
+			$enum::BigInt(nb) => encode_bint($data, nb),
 			$enum::Str(str) => encode_str($data, str),
 			$enum::Inst(inst) => encode_instN($data, inst),
 			$enum::Dur(dur) => encode_dur($data, dur),
 			$enum::UUID(uuid) => encode_uuid($data, uuid),
+			#[allow(unused)]
 			_ => (),
 		}
 	};
@@ -49,7 +65,6 @@ fn enocde_value_typeid(data: &mut Vec<u8>, value: &Value) {
 		data.push(F64_TYPEID);
 	}
 }
-// encode values of typed containers
 fn encode_value(data: &mut Vec<u8>, value: &Value) {
 	encode_value_commons!(Value, value, data);
 	if let Value::Float(nb) = value {
@@ -71,7 +86,7 @@ pub fn encode_any(data: &mut Vec<u8>, value: &Value) {
 		}
 		Value::Arr(arr) => {
 			data.push(ARR_TYPEID);
-			// all elements of the same type (except arrays and maps)
+			// typeid arr path, except if items are arr of map
 			if let Some(first) = arr.first()
 				&& arr.iter().all(|v| discriminant(v) == discriminant(first))
 				&& !(first.is_array() || first.is_map())
@@ -85,20 +100,18 @@ pub fn encode_any(data: &mut Vec<u8>, value: &Value) {
 			}
 		}
 		Value::Map(map) => {
-			// typeid
 			data.push(MAP_TYPEID);
-			// are keys of the same type
+			// typeid keys path
 			let key_encoder: fn(&mut Vec<u8>, &Key) = if let Some(first) = map.keys().next()
 				&& map.keys().all(|key| discriminant(key) == discriminant(first))
 			{
 				encode_typeid_commons!(Key, first, data);
 				|data, key| encode_value_commons!(Key, key, data)
 			} else {
-				// else keys are of type any
 				data.push(ANY_TYPEID);
 				encode_any_key
 			};
-			// is values of the same type (except arrays and maps)
+			// typeid arr path, except if items are arr of map
 			let value_encoder = if let Some(first) = map.values().next()
 				&& map.values().all(|value| discriminant(value) == discriminant(first))
 				&& !(first.is_array() || first.is_map())
@@ -106,7 +119,6 @@ pub fn encode_any(data: &mut Vec<u8>, value: &Value) {
 				enocde_value_typeid(data, first);
 				encode_value
 			} else {
-				// else values are of type any
 				data.push(ANY_TYPEID);
 				encode_any
 			};
@@ -134,7 +146,7 @@ macro_rules! decode_value_commons {
 
 			VUINT_TYPEID => Some($enum::Uint(decode_vuint($data, $ind)?)),
 			VINT_TYPEID => Some($enum::Int(decode_vint($data, $ind)?)),
-			BINT_TYPEID => Some($enum::BigInt(decode_u8_arr($data, $ind)?)),
+			BINT_TYPEID => Some($enum::BigInt(decode_bint($data, $ind)?)),
 
 			STR_TYPEID => Some($enum::Str(decode_str($data, $ind)?)),
 
@@ -147,13 +159,11 @@ macro_rules! decode_value_commons {
 	};
 }
 pub fn decode_any(data: &[u8], ind: &mut usize) -> Option<Value> {
-	let typeid = *data.get(*ind)?;
-	*ind += 1;
+	let typeid = decode_u8(data, ind)?;
 	decode_value(data, ind, typeid)
 }
 pub fn decode_any_key(data: &[u8], ind: &mut usize) -> Option<Key> {
-	let typeid = *data.get(*ind)?;
-	*ind += 1;
+	let typeid = decode_u8(data, ind)?;
 	decode_value_commons!(Key, typeid, data, ind, decode_any_key)
 }
 pub fn decode_key(data: &[u8], ind: &mut usize, id: u8) -> Option<Key> {
@@ -165,16 +175,14 @@ pub fn decode_value(data: &[u8], ind: &mut usize, id: u8) -> Option<Value> {
 		F64_TYPEID => Some(Value::Float(decode_f64(data, ind)?)),
 
 		ARR_TYPEID => {
-			let itemid = *data.get(*ind)?;
-			*ind += 1;
+			let itemid = decode_u8(data, ind)?;
 			Some(Value::Arr(decode_arr(data, ind, false, |data, ind| {
 				decode_value(data, ind, itemid)
 			})?))
 		}
 		MAP_TYPEID => {
-			let keyid = *data.get(*ind)?;
-			let valueid = *data.get(*ind + 1)?;
-			*ind += 2;
+			let keyid = decode_u8(data, ind)?;
+			let valueid = decode_u8(data, ind)?;
 			Some(Value::Map(Box::new(decode_map(
 				data,
 				ind,

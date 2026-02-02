@@ -60,17 +60,17 @@ the numbers must be sorted from largest to smallest unit, and only the largest u
 
 the duration can be negative through a leading `-` character.
 
-suffix | unit        | max value
------- | ----------- | ---------
-`y`    | year        | 290
-`mn`   | month       | 12
-`d`    | day         | 30 (365 if there is no month part)
-`h`    | hour        | 24
-`m`    | minute      | 60
-`s`    | second      | 60
-`ms`   | millisecond | 1000
-`us`   | microsecond | 1000
-`ns`   | nanosecond  | 1000
+suffix | unit        | max value | equivalent to |
+------ | ----------- | --------- | ------------- |
+`y`    | year        | 290       | 365d          |
+`mn`   | month       | 12        | 30d           |
+`d`    | day         | 30 (365 if there is no month part) | 24h |
+`h`    | hour        | 24        | 60m           |
+`m`    | minute      | 60        | 60s           |
+`s`    | second      | 60        | 1000ms        |
+`ms`   | millisecond | 1000      | 1000us        |
+`us`   | microsecond | 1000      | 1000ns        |
+`ns`   | nanosecond  | 1000      |               |
 
 ```javascript
 dur "10s"

@@ -1,6 +1,6 @@
 use std::{
 	collections::HashMap,
-	fmt::{self, Display, Formatter, Write},
+	fmt::{self, Display, Formatter},
 	hash::{self, Hash},
 	ops::{Index, IndexMut},
 	slice::SliceIndex,
@@ -10,9 +10,9 @@ use std::{
 use chrono::{DateTime, TimeDelta, Utc};
 use num_bigint::BigInt;
 
-use crate::stringify::{str_dur_val, str_uuid_val};
+use crate::stringify::{StringifyOptions, str_key, stringify};
 
-/// type that represent a structom value.
+/// type representing a structom value.
 ///
 /// `Value`s are wrappers that represent any structom value, builtin or user defined.
 ///
@@ -55,7 +55,7 @@ use crate::stringify::{str_dur_val, str_uuid_val};
 /// // convert to native type
 ///	value.cast<u64>(); // => Ok(1)
 ///
-/// // stringify the value
+/// // stringify into object notation
 /// stringify(value, &StringifyOptions::default()); // => "1"
 ///
 /// // encode into binary
@@ -65,12 +65,12 @@ use crate::stringify::{str_dur_val, str_uuid_val};
 /// ## representation
 /// builtin types are represented through their respective variant.
 ///
-/// structs are represented through the `Map` variant where it contains the struct fields.
+/// structs are represented through the `Map` variant containing the struct fields.
 ///
 /// enums are represented by the `UnitVar` case it is unit variant.       
-/// else they are represented by a `Map` variant containing the fields, with a special key `$enum_variant` representing the variant name.
+/// else they are represented by a `Map` variant containing the fields, with a special key [`Key::enum_variant_key()`] storing the variant name.
 ///
-/// for metadata wrapped types, they are represented by a `Map` variant containing the metadata with their values, with a special keys: `$has_meta` of value `true` and `value` containing the wrapped value.
+/// for metadata wrapped types, they are represented by a `Map` variant containing the metadata with their values, with special keys: [`Key::has_meta_key()`] of value `true` and [`Key::inner_key()`] containing the wrapped value.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value {
 	/// boolean value, types: `bool`.
@@ -83,7 +83,7 @@ pub enum Value {
 	BigInt(BigInt),
 	/// floating point value, types: `f32`, `f64`
 	Float(f64),
-	/// string value, types: `str`, unit enums.
+	/// string value, types: `str`.
 	Str(String),
 	/// instance value, types: `inst`, `instN`.
 	Inst(DateTime<Utc>),
@@ -202,8 +202,8 @@ impl Key {
 
 impl Value {
 	/// convert `Value` into [`Key`]
-	pub fn into_key(self) -> Key {
-		self.try_into().unwrap()
+	pub fn into_key(self) -> Option<Key> {
+		self.try_into().ok()
 	}
 	/// get name of the wrapped enum variant, if not enum return `None`.
 	pub fn enum_variant(&self) -> Option<&str> {
@@ -226,7 +226,7 @@ impl Value {
 			if map.contains_key(&HAS_META_KEY) {
 				return map.get_mut(&INNER_KEY).unwrap();
 			}
-			unreachable!()
+			panic!("actualy this doesnt work since of dark magic, if you can fix it, please do")
 		}
 		self
 	}
@@ -344,8 +344,8 @@ macro_rules! try_into_int_impl {
 			type Error = ();
 			fn try_into(self) -> Result<$ty, Self::Error> {
 				match self {
-					$enum::Int(v) => Ok(v as $ty),
-					$enum::Uint(v) => Ok(v as $ty),
+					$enum::Int(v) => Ok(v.try_into().map_err(|_| ())?),
+					$enum::Uint(v) => Ok(v.try_into().map_err(|_| ())?),
 					_ => Err(()),
 				}
 			}
@@ -451,27 +451,24 @@ macro_rules! as_mut_impl {
 	};
 }
 
-/// `as_T() -> Option<T>`: get copy of the inner value if it is of type `T`, else `None`.
-///
-/// `as_ref_T() -> Option<T>`: get reference to the inner value if it is of type `T`, else `None`.
+/// `as_T() -> Option<T>`: get copy / reference of the inner value if it is of type `T`, else `None`.
 ///
 /// `as_mut_T() -> Option<T>`: get mutable reference to the inner value if it is of type `T`, else `None`.
 impl Value {
 	as_impl!(Value, (bool, as_bool, Bool), (i64, as_int, Int), (u64, as_uint, Uint));
-	as_impl!(Value, (f64, as_float, Float), (DateTime<Utc>, as_inst, Inst));
-	as_impl!(Value, (TimeDelta, as_dur, Dur), ([u8; 16], as_uuid, UUID));
+	as_impl!(Value, (f64, as_float, Float), ([u8; 16], as_uuid, UUID));
+	as_ref_impl!(Value, (TimeDelta, as_dur, Dur), (DateTime<Utc>, as_inst, Inst));
 	as_ref_impl!(Value, (str, as_str, Str), ([Value], as_slice, Arr));
-	as_ref_impl!(Value, ([u8], as_bigint, BigInt), (HashMap<Key, Value>, as_map, Map));
+	as_ref_impl!(Value, (BigInt, as_bigint, BigInt), (HashMap<Key, Value>, as_map, Map));
 	as_mut_impl!(Value, (Vec<Value>, as_vec_mut, Arr), (HashMap<Key, Value>, as_map_mut, Map));
 }
 
-/// `as_T() -> Option<T>`: get copy of the inner value if it is of type `T`, else `None`.
-///
-/// `as_ref_T() -> Option<T>`: get reference to the inner value if it is of type `T`, else `None`.
+/// `as_T() -> Option<T>`: get copy / reference of the inner value if it is of type `T`, else `None`.
 impl Key {
-	as_impl!(Key, (bool, as_bool, Bool), (i64, as_int, Int), (DateTime<Utc>, as_inst, Inst));
-	as_impl!(Key, (TimeDelta, as_dur, Dur), (u64, as_uint, Uint), ([u8; 16], as_uuid, UUID));
-	as_ref_impl!(Key, (str, as_str, Str), ([u8], as_bigint, BigInt));
+	as_impl!(Key, (bool, as_bool, Bool), (i64, as_int, Int), (u64, as_uint, Uint));
+	as_impl!(Key, ([u8; 16], as_uuid, UUID));
+	as_ref_impl!(Key, (TimeDelta, as_dur, Dur), (DateTime<Utc>, as_inst, Inst));
+	as_ref_impl!(Key, (str, as_str, Str), (BigInt, as_bigint, BigInt));
 }
 
 impl PartialEq<Key> for Value {
@@ -586,7 +583,7 @@ impl IndexMut<&Key> for Value {
 	}
 }
 impl Value {
-	/// get an item in value by index if it is an array, else return `None`.
+	/// get an item by index if value is an array, else return `None`.
 	pub fn get_by_index<I: SliceIndex<[Value]>>(
 		&self, index: I,
 	) -> Option<&<I as SliceIndex<[Value]>>::Output> {
@@ -595,7 +592,7 @@ impl Value {
 			_ => None,
 		}
 	}
-	/// get a mutable reference to an item in value by index if it is an array, else return `None`.
+	/// get a mutable reference to an item by index if value is an array, else return `None`.
 	pub fn get_by_index_mut<I: SliceIndex<[Value]>>(
 		&mut self, index: I,
 	) -> Option<&mut <I as SliceIndex<[Value]>>::Output> {
@@ -604,14 +601,14 @@ impl Value {
 			_ => None,
 		}
 	}
-	/// get an item in value by key if it is a map, else return `None`.
+	/// get an item by key if value is a map, else return `None`.
 	pub fn get_by_key(&self, key: &Key) -> Option<&Value> {
 		match self {
 			Value::Map(m) => m.get(key),
 			_ => None,
 		}
 	}
-	/// get a mutable reference to an item in value by key if it is a map, else return `None`.
+	/// get a mutable reference to an item by key if value is a map, else return `None`.
 	pub fn get_by_key_mut(&mut self, key: &Key) -> Option<&mut Value> {
 		match self {
 			Value::Map(m) => m.get_mut(key),
@@ -620,66 +617,14 @@ impl Value {
 	}
 }
 
-macro_rules! impl_display_commons {
-	($self:ident, $enum:ident, $f:ident) => {
-		let mut res = String::new();
-		match $self {
-			$enum::Bool(bool) => return write!($f, "{bool}"),
-			$enum::Int(nb) => return write!($f, "{nb}"),
-			$enum::Uint(nb) => return write!($f, "{nb}"),
-			$enum::Str(str) => return write!($f, "\"{}\"", str.replace('"', "\\\"")),
-			$enum::Inst(inst) => return write!($f, "{}", inst.to_rfc3339()),
-			$enum::Dur(dur) => {
-				str_dur_val(dur, &mut res);
-				return write!($f, "{res}");
-			}
-			$enum::UUID(uuid) => {
-				str_uuid_val(uuid, &mut res);
-				return write!($f, "{res}");
-			}
-			$enum::BigInt(_) => return write!($f, "not supported"),
-			_ => (),
-		}
-	};
-}
-
 impl Display for Value {
 	fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-		impl_display_commons!(self, Value, f);
-		match self {
-			Value::Float(nb) => write!(f, "{nb}"),
-			Value::UnitVar(var) => write!(f, "{var}"),
-			Value::Arr(arr) => {
-				f.write_char('[')?;
-				for (ind, value) in arr.iter().enumerate() {
-					if ind != 0 {
-						f.write_str(", ")?
-					}
-					write!(f, "{value}")?
-				}
-				f.write_char(']')
-			}
-			Value::Map(map) => {
-				if let Some(name) = map.get(&Key::enum_variant_key()) {
-					write!(f, "{}", name.as_str().unwrap())?
-				}
-				f.write_char('{')?;
-				for (ind, (key, value)) in map.iter().enumerate() {
-					if ind != 0 {
-						f.write_str(", ")?
-					}
-					write!(f, "{key}: {value}")?
-				}
-				f.write_char('}')
-			}
-			_ => unreachable!(),
-		}
+		stringify(self, &StringifyOptions::default()).fmt(f)
 	}
 }
 
 impl Display for Key {
 	fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-		impl_display_commons!(self, Key, f);
-		unreachable!()
+		str_key(self).fmt(f)
 	}
 }

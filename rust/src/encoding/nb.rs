@@ -1,3 +1,7 @@
+use num_bigint::BigInt;
+
+use crate::encoding::encode_u8_arr;
+
 #[inline]
 pub fn encode_u8(data: &mut Vec<u8>, value: u8) {
 	data.push(value);
@@ -104,47 +108,47 @@ pub fn decode_f64(data: &[u8], ind: &mut usize) -> Option<f64> {
 	Some(value)
 }
 
+/// encode a LEB128 vuint
 pub fn encode_vuint(data: &mut Vec<u8>, mut value: u64) {
 	let mut buf = [0u8; 10];
-	let mut cond = true;
+	let mut there_input = true;
 	let mut ind = 0;
 
-	// while there is input
-	while cond {
+	while there_input {
 		// extract least significant 7 bits
 		let byte = value as u8 & 0b0111_1111;
 		// shift to next section
 		value >>= 7;
-		// add continuation bit (0 = end byte)
+		// add continuation bit
 		buf[ind] = if value == 0 { byte } else { byte | 0b1000_0000 };
 
-		cond = value != 0;
+		there_input = value != 0;
 		ind += 1;
 	}
 
-	// append to data
 	data.extend_from_slice(&buf[0..ind]);
 }
+/// encode a LEB128, vuint into a pre allocated space, expanding it if needed
 pub fn encode_vuint_pre_aloc(
 	data: &mut Vec<u8>, mut value: u64, start_ind: usize, pre_aloc: usize,
 ) {
 	let mut buf = [0u8; 10];
 	let mut size = 0;
-	let mut cond = true;
+	let mut there_input = true;
 
-	while cond {
+	while there_input {
 		// extract least significant 7 bits
 		let byte = value as u8 & 0b0111_1111;
 		// shift to next section
 		value >>= 7;
-		// add continuation bit (0 = end byte)
+		// add continuation bit
 		buf[size] = if value == 0 { byte } else { byte | 0b1000_0000 };
 
-		cond = value != 0;
+		there_input = value != 0;
 		size += 1;
 	}
 
-	// case size is larger than pre allocated space, expand to fit
+	// if preallocated space is small, expand it
 	if size > pre_aloc {
 		let len = data.len();
 		data.resize(len + size - pre_aloc, 0);
@@ -164,36 +168,33 @@ pub fn encode_vuint_pre_aloc(
 pub fn encode_vint(data: &mut Vec<u8>, mut value: i64) {
 	let mut buf = [0u8; 10];
 	let mut ind = 0;
-	let mut cond = true;
-	// while there is input
-	while cond {
+	let mut there_input = true;
+	while there_input {
 		// extract least significant 7 bits
 		let mut byte = (value & 0b0111_1111) as u8;
 		// shift to next section
 		value >>= 7;
-		// ensure at least 1 sign bit is encoded (0 for positive and 1 for negative)
+		// ensure at least 1 sign bit is encoded
 		let sign_bit = byte & 0b0100_0000;
 		if (value == 0 && sign_bit == 0) || (value == -1 && sign_bit != 0) {
-			cond = false;
+			there_input = false;
 		} else {
-			// add continuation bit (0 = end byte)
+			// add continuation bit
 			byte |= 0b1000_0000;
 		}
 		buf[ind] = byte;
 		ind += 1;
 	}
 
-	// append to data
 	data.extend_from_slice(&buf[0..ind]);
 }
 
 pub fn decode_vuint(data: &[u8], ind: &mut usize) -> Option<u64> {
-	let mut cond = true;
+	let mut there_input = true;
 	let mut res = 0u64;
 	let mut shift = 0;
 
-	// while there is input
-	while cond {
+	while there_input {
 		let byte = *data.get(*ind)? as u64;
 		// add the least significant 7 bits to the next section of the result
 		res |= (byte & 0b0111_1111) << shift;
@@ -201,19 +202,18 @@ pub fn decode_vuint(data: &[u8], ind: &mut usize) -> Option<u64> {
 		shift += 7;
 		*ind += 1;
 		// if the continuation bit is set, continue
-		cond = byte & 0b1000_0000 != 0;
+		there_input = byte & 0b1000_0000 != 0;
 	}
 
 	Some(res)
 }
 pub fn decode_vint(data: &[u8], ind: &mut usize) -> Option<i64> {
-	let mut cond = true;
+	let mut there_input = true;
 	let mut res = 0i64;
 	let mut shift = 0u64;
 	let mut byte = 0i64;
 
-	// while there is input
-	while cond {
+	while there_input {
 		// add the least significant 7 bits to the next section of the result
 		byte = *data.get(*ind)? as i64;
 		res |= (byte & 0b0111_1111) << shift;
@@ -221,13 +221,25 @@ pub fn decode_vint(data: &[u8], ind: &mut usize) -> Option<i64> {
 		shift += 7;
 		*ind += 1;
 		// if the continuation bit is set, continue
-		cond = byte & 0b1000_0000 != 0;
+		there_input = byte & 0b1000_0000 != 0;
 	}
 
-	// if the value is neg, sign extend it
+	// sign extend if needed
 	if (shift < 64) && (byte & 0b0100_0000 != 0) {
 		res |= !0 << shift;
 	}
 
 	Some(res)
+}
+
+#[inline]
+pub fn encode_bint(data: &mut Vec<u8>, value: &BigInt) {
+	encode_u8_arr(data, &value.to_signed_bytes_le());
+}
+#[inline]
+pub fn decode_bint(data: &[u8], ind: &mut usize) -> Option<BigInt> {
+	let len = decode_vuint(data, ind)? as usize;
+	let value = BigInt::from_signed_bytes_le(&data[*ind..*ind + len]);
+	*ind += len;
+	Some(value)
 }

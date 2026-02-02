@@ -6,6 +6,7 @@ use crate::{
 	Key, Value,
 	builtins::{D_AS_NS, H_AS_NS, M_AS_NS, MS_AS_NS, S_AS_NS, US_AS_NS, Y_AS_NS},
 	parser::utils::StrExt,
+	value,
 };
 
 /// options for [`stringify`]
@@ -25,12 +26,14 @@ impl Default for StringifyOptions<'static> {
 	}
 }
 
-/// stringify a [`Value`].
+/// stringify a [`Value`] into object notation.
+///
+/// for the other way see [`crate::parse`]
 ///
 /// ## example
 /// ```
 /// let value = Value::from(vec![1, 2, 3]);
-///  assert_eq!(stringify(value, &StringifyOptions::default(), vec![1, 2, 3]);
+///  assert_eq!(stringify(value, &StringifyOptions::default()), "[1, 2, 3]");
 /// ```
 pub fn stringify(value: &Value, options: &StringifyOptions) -> String {
 	let mut result = "".to_string();
@@ -40,7 +43,7 @@ pub fn stringify(value: &Value, options: &StringifyOptions) -> String {
 
 /// for commons between keys and values
 macro_rules! str_commons {
-	($ty:ident, $value:ident, $result:ident) => {
+	($ty:ident, $value:ident, $result:expr) => {
 		match $value {
 			$ty::Bool(v) => match v {
 				true => $result.push_str("true"),
@@ -58,7 +61,11 @@ macro_rules! str_commons {
 		}
 	};
 }
-
+pub fn str_key(value: &Key) -> String {
+	let mut result = String::new();
+	str_commons!(Key, value, &mut result);
+	return result;
+}
 pub fn str_value(value: &Value, result: &mut String, depth: usize, options: &StringifyOptions) {
 	str_commons!(Value, value, result);
 

@@ -18,6 +18,7 @@ pub fn encode_inst(data: &mut Vec<u8>, value: &DateTime<Utc>) {
 	encode_i64(data, value.timestamp_millis());
 }
 #[inline]
+#[allow(non_snake_case)]
 pub fn encode_instN(data: &mut Vec<u8>, value: &DateTime<Utc>) {
 	encode_i64(data, value.timestamp_millis());
 	// chrono saves nanoseconds in the current second, in structom, it must be in the current millisecond
@@ -29,6 +30,7 @@ pub fn decode_inst(data: &[u8], ind: &mut usize) -> Option<DateTime<Utc>> {
 	DateTime::from_timestamp_millis(decode_i64(data, ind)?)
 }
 #[inline]
+#[allow(non_snake_case)]
 pub fn decode_instN(data: &[u8], ind: &mut usize) -> Option<DateTime<Utc>> {
 	DateTime::from_timestamp_millis(decode_i64(data, ind)?)?.with_nanosecond(decode_u32(data, ind)?)
 }

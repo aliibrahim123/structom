@@ -41,6 +41,8 @@ impl Default for ParseOptions {
 
 /// parse a decleration file into a [`DeclFile`].
 ///
+/// return [`ParseError`] if the source is invalid.
+///
 /// ## example
 /// ```
 /// let file = parse_declaration_file(
@@ -80,11 +82,13 @@ impl DeclProvider for MiddleProvider<'_> {
 	}
 }
 
-/// parse a structom file into a [`Value`].
+/// parse structom object notation into a [`Value`].
 ///
 /// the source is made up of optional declerations at top, followed by a root value.
 ///
-/// for info on how the values are represented, see the [`Value`] documentation.
+/// returns [`ParseError`] if the source is invalid.
+///
+/// for the other way see [`crate::stringify`]
 ///
 /// ## example
 /// ```

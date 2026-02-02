@@ -1,7 +1,10 @@
 use std::collections::HashMap;
 
 use crate::{
-	builtins::{ARR_TYPEID, BINT_TYPEID, MAP_TYPEID, STR_TYPEID}, declaration::{resolve_typeid, DeclItem, StructDef, TypeId}, encoding::{decode_arr, decode_key, decode_map, decode_value, decode_vuint}, DeclProvider, Key, Value
+	DeclProvider, Key, Value,
+	builtins::{ARR_TYPEID, BINT_TYPEID, MAP_TYPEID, STR_TYPEID},
+	declaration::{DeclItem, StructDef, TypeId, resolve_typeid},
+	encoding::{decode_arr, decode_key, decode_map, decode_value, decode_vuint},
 };
 
 pub fn decode_item(
@@ -11,16 +14,15 @@ pub fn decode_item(
 		DeclItem::Struct { def, .. } => decode_struct(data, ind, def, provider),
 		DeclItem::Enum { variants, .. } => {
 			let variant = variants.get(decode_vuint(data, ind)? as usize)?.as_ref()?;
+			let variant_name = variant.name.clone();
 
-			// case has fields
 			if let Some(def) = &variant.def {
 				let mut value = decode_struct(data, ind, def, provider)?;
-				value.as_map_mut()?.insert(Key::enum_variant_key().clone(), variant.name.clone().into());
+				value.as_map_mut()?.insert(Key::enum_variant_key().clone(), variant_name.into());
 				return Some(value);
 			};
 
-			// case unit enum variant
-			Some(Value::UnitVar(variant.name.clone()))
+			Some(Value::UnitVar(variant_name))
 		}
 	}
 }
@@ -28,32 +30,31 @@ pub fn decode_item(
 fn decode_field_value(
 	data: &[u8], ind: &mut usize, typeid: &TypeId, in_field: bool, provider: &dyn DeclProvider,
 ) -> Option<Value> {
-	// case user defined type
-	Some(if typeid.ns != 0 {
-		decode_item(data, ind, resolve_typeid(typeid, provider), provider)?
+	if !typeid.is_builtin() {
+		return Some(decode_item(data, ind, resolve_typeid(typeid, provider), provider)?);
+	}
 
-	// case array
-	} else if typeid.id == ARR_TYPEID as u16 {
-		let itemid = typeid.item.as_ref()?.as_ref();
+	Some(match typeid.id {
+		id if id == ARR_TYPEID => {
+			let itemid = typeid.item();
+			Value::Arr(decode_arr(data, ind, in_field, |data, ind| {
+				decode_field_value(data, ind, itemid, false, provider)
+			})?)
+		}
+		id if id == MAP_TYPEID => {
+			let keyid = typeid.variant as u8;
+			let itemid = typeid.item();
+			Value::Map(Box::new(decode_map(
+				data,
+				ind,
+				in_field,
+				|data, ind| decode_key(data, ind, keyid),
+				|data, ind| decode_field_value(data, ind, itemid, false, provider),
+			)?))
 
-		Value::Arr(decode_arr(data, ind, in_field, |data, ind| {
-			decode_field_value(data, ind, itemid, false, provider)
-		})?)
-
-	// case map
-	} else if typeid.id == MAP_TYPEID as u16 {
-		let keyid = typeid.variant as u8;
-		let itemid = typeid.item.as_ref()?.as_ref();
-
-		Value::Map(Box::new(decode_map(
-			data, ind, in_field,
-			|data, ind| decode_key(data, ind, keyid),
-			|data, ind| decode_field_value(data, ind, itemid, false, provider),
-		)?))
-
-	// case builtins
-	} else {
-		decode_value(data, ind, typeid.id as u8)?
+			// builtins
+		}
+		id => decode_value(data, ind, typeid.id as u8)?,
 	})
 }
 pub fn decode_struct(
@@ -62,30 +63,24 @@ pub fn decode_struct(
 	let mut map = HashMap::new();
 	let mut required = def.required_fields;
 
-	// loop through fields
-	for _ in 0..(decode_vuint(data, ind)?) {
+	let field_count = decode_vuint(data, ind)?;
+	for _ in 0..field_count {
 		let header = decode_vuint(data, ind)?;
-		let field = def.get_field_by_id((header as u32) >> 3);
-
-		// skip undefined tags
-		if field.is_none() {
+		let Some(field) = def.get_field_by_id((header as u32) >> 3) else {
 			skip_field(data, ind, header)?;
 			continue;
-		}
-
-		let field = field.unwrap();
+		};
 		let name = Key::from(field.name.clone());
-		// duplicate fields
 		if map.contains_key(&name) {
 			return None;
 		}
 		required -= if field.is_optional { 0 } else { 1 };
 
 		// skip len field for types that dont use it
-		#[rustfmt::skip] 
-		if header & 0b111 == 0b101 && (field.typeid.ns != 0
-			|| !matches!(field.typeid.id as u8,	MAP_TYPEID | ARR_TYPEID | STR_TYPEID | BINT_TYPEID)) 
-		{
+		let typeid = &field.typeid;
+		let use_len = typeid.is_builtin()
+			&& matches!(typeid.id, MAP_TYPEID | ARR_TYPEID | STR_TYPEID | BINT_TYPEID);
+		if header & 0b111 == 0b101 && !use_len {
 			decode_vuint(data, ind)?;
 		};
 
@@ -93,24 +88,20 @@ pub fn decode_struct(
 		map.insert(name, value);
 	}
 
-	// case not all required fields are present
 	if required != 0 {
 		return None;
 	}
-
 	Some(Value::Map(Box::new(map)))
 }
 pub fn skip_field(data: &[u8], ind: &mut usize, header: u64) -> Option<()> {
 	match header & 0b111 {
-		0b000 => *ind += 1,
-		0b001 => *ind += 2,
-		0b010 => *ind += 4,
-		0b011 => *ind += 8,
-		// decode vuint and ignore
-		0b100 => (decode_vuint(data, ind)?, ()).1,
-		// len field is encoded
-		0b101 => *ind += decode_vuint(data, ind)? as usize,
-		_ => return None,
+		0b000 => *ind += 1,                                 // b8
+		0b001 => *ind += 2,                                 // b16
+		0b010 => *ind += 4,                                 // b32
+		0b011 => *ind += 8,                                 // b64
+		0b100 => (decode_vuint(data, ind)?, ()).1,          // vuint
+		0b101 => *ind += decode_vuint(data, ind)? as usize, // len field
+		_ => return None,                                   // reserved
 	};
 	Some(())
 }

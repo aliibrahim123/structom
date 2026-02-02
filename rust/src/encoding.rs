@@ -43,18 +43,15 @@ pub fn decode(data: &[u8], provider: &dyn DeclProvider) -> Option<Value> {
 
 	let decl_path = decode_str(data, &mut ind)?;
 
-	// implicit any type if not decleration file specified
+	// implicit any type if no decleration file specified
 	let value = if decl_path.is_empty() {
 		decode_any(data, &mut ind)?
-
-	// else explicit type is required
 	} else {
 		let rootid = decode_vuint(data, &mut ind)? as u16;
 		let item = provider.load(&decl_path).ok()?.get_by_id(rootid)?;
 		decode_item(data, &mut ind, item, provider)?
 	};
 
-	// ensure all data is decoded
 	if ind != data.len() {
 		return None;
 	}
@@ -87,10 +84,10 @@ where
 
 	/// decode a type value from its binary representation.
 	///
-	/// this function is same as `decode` except that it expect only the encoded data not its header.
+	/// this function is same as [`decode`] except that it expect only the encoded data not its header.
 	fn decode_headless(data: &[u8]) -> Option<Self>;
 
-	/// decode a type value from its binary representation at the specified index in the given buffer.
+	/// decode a type value from its binary representation at an specified index.
 	///
 	/// this function expect only the encoded data, and allows additional data after the value.
 	///
