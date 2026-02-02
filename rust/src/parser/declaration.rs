@@ -149,7 +149,7 @@ fn parse_anonymous_item(
 			let name = format!("anonymous_enum_{typeid:x}");
 			let mut decl = DeclItem::new_enum(name, typeid);
 			parse_enum_body(tokens, ind, &mut decl, ctx, options)?;
-			_ = ctx.file.add_item(decl);
+			ctx.file.add_item(decl);
 		}
 		_ => unreachable!(),
 	}
@@ -398,13 +398,13 @@ pub fn parse_declarations<'a>(
 			"struct" => {
 				let (name, id) = parse_item_common(tokens, ind, &mut ctx)?;
 				let def = parse_fields(tokens, ind, name, &mut ctx, options)?;
-				_ = ctx.file.add_item(DeclItem::Struct { name: name.to_string(), typeid: id, def });
+				ctx.file.add_item(DeclItem::Struct { name: name.to_string(), typeid: id, def });
 			}
 			"enum" => {
 				let (name, id) = parse_item_common(tokens, ind, &mut ctx)?;
 				let mut decl = DeclItem::new_enum(name.to_string(), id);
 				parse_enum_body(tokens, ind, &mut decl, &mut ctx, options)?;
-				_ = ctx.file.add_item(decl);
+				ctx.file.add_item(decl);
 			}
 			_ => break,
 		}

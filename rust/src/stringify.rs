@@ -6,7 +6,6 @@ use crate::{
 	Key, Value,
 	builtins::{D_AS_NS, H_AS_NS, M_AS_NS, MS_AS_NS, S_AS_NS, US_AS_NS, Y_AS_NS},
 	parser::utils::StrExt,
-	value,
 };
 
 /// options for [`stringify`]

@@ -457,7 +457,7 @@ macro_rules! as_mut_impl {
 impl Value {
 	as_impl!(Value, (bool, as_bool, Bool), (i64, as_int, Int), (u64, as_uint, Uint));
 	as_impl!(Value, (f64, as_float, Float), ([u8; 16], as_uuid, UUID));
-	as_ref_impl!(Value, (TimeDelta, as_dur, Dur), (DateTime<Utc>, as_inst, Inst));
+	as_impl!(Value, (TimeDelta, as_dur, Dur), (DateTime<Utc>, as_inst, Inst));
 	as_ref_impl!(Value, (str, as_str, Str), ([Value], as_slice, Arr));
 	as_ref_impl!(Value, (BigInt, as_bigint, BigInt), (HashMap<Key, Value>, as_map, Map));
 	as_mut_impl!(Value, (Vec<Value>, as_vec_mut, Arr), (HashMap<Key, Value>, as_map_mut, Map));
@@ -465,9 +465,8 @@ impl Value {
 
 /// `as_T() -> Option<T>`: get copy / reference of the inner value if it is of type `T`, else `None`.
 impl Key {
-	as_impl!(Key, (bool, as_bool, Bool), (i64, as_int, Int), (u64, as_uint, Uint));
-	as_impl!(Key, ([u8; 16], as_uuid, UUID));
-	as_ref_impl!(Key, (TimeDelta, as_dur, Dur), (DateTime<Utc>, as_inst, Inst));
+	as_impl!(Key, (bool, as_bool, Bool), (i64, as_int, Int), ([u8; 16], as_uuid, UUID));
+	as_impl!(Key, (TimeDelta, as_dur, Dur), (DateTime<Utc>, as_inst, Inst), (u64, as_uint, Uint));
 	as_ref_impl!(Key, (str, as_str, Str), (BigInt, as_bigint, BigInt));
 }
 
@@ -584,7 +583,7 @@ impl IndexMut<&Key> for Value {
 }
 impl Value {
 	/// get an item by index if value is an array, else return `None`.
-	pub fn get_by_index<I: SliceIndex<[Value]>>(
+	pub fn index_arr<I: SliceIndex<[Value]>>(
 		&self, index: I,
 	) -> Option<&<I as SliceIndex<[Value]>>::Output> {
 		match self {
@@ -593,7 +592,7 @@ impl Value {
 		}
 	}
 	/// get a mutable reference to an item by index if value is an array, else return `None`.
-	pub fn get_by_index_mut<I: SliceIndex<[Value]>>(
+	pub fn index_arr_mut<I: SliceIndex<[Value]>>(
 		&mut self, index: I,
 	) -> Option<&mut <I as SliceIndex<[Value]>>::Output> {
 		match self {
@@ -602,14 +601,14 @@ impl Value {
 		}
 	}
 	/// get an item by key if value is a map, else return `None`.
-	pub fn get_by_key(&self, key: &Key) -> Option<&Value> {
+	pub fn index_map(&self, key: &Key) -> Option<&Value> {
 		match self {
 			Value::Map(m) => m.get(key),
 			_ => None,
 		}
 	}
 	/// get a mutable reference to an item by key if value is a map, else return `None`.
-	pub fn get_by_key_mut(&mut self, key: &Key) -> Option<&mut Value> {
+	pub fn index_map_mut(&mut self, key: &Key) -> Option<&mut Value> {
 		match self {
 			Value::Map(m) => m.get_mut(key),
 			_ => None,

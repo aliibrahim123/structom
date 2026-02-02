@@ -1,5 +1,4 @@
 use chrono::{DateTime, TimeDelta, Timelike};
-use num_traits::CheckedMul;
 
 use crate::{
 	ParseError, Value,
@@ -109,7 +108,7 @@ fn parse_dur_part(
 	}
 
 	let Some(value) = (|| ctx.val.checked_add_unsigned(amount.checked_mul(multiplier)?))() else {
-		return err!(format!("duration ({}) is large", ctx.source), pos, file);
+		return err!(format!("duration ({}) is large", ctx.source), ctx.start_pos, file);
 	};
 
 	ctx.val = value;
@@ -119,7 +118,6 @@ fn parse_dur_part(
 }
 pub fn parse_dur(tokens: &[Token], ind: &mut usize, file: &str) -> Result<Value, ParseError> {
 	let start_pos = tokens[*ind - 1].pos();
-	let src_pos = tokens[*ind].pos();
 	let mut source = consume_str(tokens, ind, file)?;
 
 	let neg = source.starts_with("-");

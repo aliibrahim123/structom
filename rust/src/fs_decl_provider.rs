@@ -6,9 +6,7 @@ use std::{
 	path::{Path, PathBuf, absolute},
 };
 
-use crate::{
-	DeclFile, DeclProvider, ParseError, ParseOptions, errors::ImportError, parse_declaration_file,
-};
+use crate::{DeclFile, DeclProvider, ParseOptions, errors::ImportError, parse_declaration_file};
 
 /// provider that loads declerations from the file system.
 ///
@@ -23,7 +21,7 @@ use crate::{
 /// let provider = FSProvider::new("/path/to/decls").unwrap();
 ///
 /// // cache common files
-/// provider.load_file("commons.stomd").unwrap();
+/// provider.load("commons.stomd").unwrap();
 ///
 /// // loads other.stomd, commons.stomd is cached
 /// parse(
@@ -49,7 +47,7 @@ struct ProviderCache {
 impl FSProvider {
 	/// creates a `FSProvider` working on a given root directory with default options.
 	pub fn new(root: impl Into<PathBuf>) -> io::Result<Self> {
-		FSProvider::with_options(root, ParseOptions::default())
+		FSProvider::with_options(root, ParseOptions { relative_paths: true, metadata: false })
 	}
 	/// creates a `FSProvider` working on a given root directory with given options.
 	pub fn with_options(root: impl Into<PathBuf>, parse_options: ParseOptions) -> io::Result<Self> {
@@ -57,8 +55,6 @@ impl FSProvider {
 	}
 
 	/// load a declaration file at a given path.
-	///
-	/// returns a reference to the cached file if used before, else load it and returns `LoadFileError` if an error occurs.
 	pub fn load_file<'a>(&'a self, path: impl AsRef<Path>) -> Result<&'a DeclFile, ImportError> {
 		let path = absolute(Path::join(&self.root, path.as_ref()))
 			.map_err(|e| ImportError::Other(e.to_string()))?;

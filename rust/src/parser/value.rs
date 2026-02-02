@@ -1,4 +1,4 @@
-use std::{collections::HashMap, ops::Not};
+use std::{collections::HashMap, fmt::Display};
 
 use crate::{
 	DeclProvider, Key, ParseError, ParseOptions, Value,
@@ -30,7 +30,7 @@ pub struct ValueCtx<'a> {
 }
 /// create a mismatch types error
 pub fn mismatch_types<T>(
-	expected: &str, found: &str, pos: Pos, file: &str,
+	expected: impl Display, found: impl Display, pos: Pos, file: &str,
 ) -> Result<T, ParseError> {
 	err!(format!("expected type {expected}, found {found}"), pos, file)
 }
@@ -376,7 +376,7 @@ pub fn parse_value(
 		wrapper.insert(Key::inner_key().clone(), value);
 
 		if let Some(metadata) = typeid.metadata.as_ref() {
-			for (name, value) in metadata {
+			for (name, value) in metadata.as_ref() {
 				wrapper.insert(Key::from(name.clone()), Value::from(value.clone()));
 			}
 		}

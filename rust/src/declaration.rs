@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, fmt::Display};
 
 use crate::{
 	builtins::{ARR_TYPEID, BUILT_INS_NAMES, MAP_TYPEID},
@@ -21,11 +21,13 @@ pub struct DeclFile {
 
 #[derive(Debug)]
 pub struct TypeId {
+	/// identifier of the owner declaration file
 	pub ns: u64,
+	/// identifier inside the owner declaration file
 	pub id: u16,
 	pub variant: u16,
 	pub item: Option<Box<TypeId>>,
-	pub metadata: Option<Vec<(String, String)>>,
+	pub metadata: Option<Box<Vec<(String, String)>>>,
 }
 
 #[derive(Debug)]
@@ -37,7 +39,7 @@ pub struct Field {
 }
 #[derive(Default, Debug)]
 pub struct StructDef {
-	pub fields: Vec<Option<Field>>,
+	pub fields: HashMap<u32, Field>,
 	pub fields_by_name: HashMap<String, u32>,
 	pub required_fields: u32,
 }
@@ -59,12 +61,10 @@ pub enum DeclItem {
 	Enum {
 		name: String,
 		typeid: u16,
-		variants: Vec<Option<EnumVariant>>,
+		variants: HashMap<u32, EnumVariant>,
 		variants_by_name: HashMap<String, u32>,
 	},
 }
-
-pub type LoadResult<'a> = Result<&'a DeclFile, ImportError>;
 
 /// trait for types providing decleration files.
 ///
@@ -77,9 +77,9 @@ pub trait DeclProvider {
 	/// this method can not fail, it is used for decleration files that were created before.
 	fn get<'a>(&'a self, id: u64) -> &'a DeclFile;
 
-	/// get a decleration file by its name.
+	/// load a decleration file by its name.
 	///   
-	/// this method return `None` on fail, when the requested decleration file can not be found or it cant be parsed.
+	/// this method return `ImportError` on fail, when the requested decleration file can not be found or it cant be parsed.
 	fn load<'a>(&'a self, name: &str) -> Result<&'a DeclFile, ImportError>;
 }
 
@@ -100,8 +100,7 @@ impl DeclFile {
 
 	#[doc(hidden)]
 	pub fn get_by_name(&self, name: &str) -> Option<&DeclItem> {
-		let id = self.items_by_name.get(name);
-		id.and_then(|id| self.get_by_id(*id))
+		self.items.get(self.items_by_name.get(name)?)
 	}
 	#[doc(hidden)]
 	pub fn get_by_id(&self, id: u16) -> Option<&DeclItem> {
@@ -130,64 +129,57 @@ impl DeclItem {
 	}
 
 	pub fn new_enum(name: String, typeid: u16) -> Self {
-		Self::Enum { name, typeid, variants: vec![], variants_by_name: HashMap::new() }
+		Self::Enum { name, typeid, variants: HashMap::new(), variants_by_name: HashMap::new() }
 	}
 
-	pub fn add_variant(&mut self, variant: EnumVariant) -> Result<(), ()> {
+	pub fn add_variant(&mut self, variant: EnumVariant) {
 		match self {
 			Self::Enum { variants, variants_by_name, .. } => {
 				variants_by_name.insert(variant.name.to_string(), variant.tag);
-				add_item(variants, variant.tag as usize, variant)
+				variants.insert(variant.tag, variant);
 			}
-			_ => Err(()),
+			_ => panic!("why"),
 		}
 	}
 	pub fn get_variant_by_name(&self, name: &str) -> Option<&EnumVariant> {
 		match self {
-			Self::Enum { variants_by_name, .. } => {
-				variants_by_name.get(name).and_then(|v| self.get_variant_by_id(*v))
+			Self::Enum { variants, variants_by_name, .. } => {
+				variants.get(variants_by_name.get(name)?)
 			}
 			_ => None,
 		}
 	}
 	pub fn get_variant_by_id(&self, tag: u32) -> Option<&EnumVariant> {
 		match self {
-			Self::Enum { variants, .. } => variants.get(tag as usize).and_then(|v| v.as_ref()),
+			Self::Enum { variants, .. } => variants.get(&tag),
 			_ => None,
 		}
 	}
 }
 
 impl StructDef {
-	pub fn add_field(&mut self, field: Field) -> Result<(), ()> {
+	pub fn add_field(&mut self, field: Field) {
 		self.required_fields += !field.is_optional as u32;
 		self.fields_by_name.insert(field.name.to_string(), field.tag);
-		add_item(&mut self.fields, field.tag as usize, field)
+		self.fields.insert(field.tag, field);
 	}
 	pub fn get_field_by_name(&self, name: &str) -> Option<&Field> {
-		let id = self.fields_by_name.get(name);
-		id.and_then(|v| self.get_field_by_id(*v))
+		self.fields.get(self.fields_by_name.get(name)?)
 	}
 	pub fn get_field_by_id(&self, tag: u32) -> Option<&Field> {
-		self.fields.get(tag as usize).and_then(|v| v.as_ref())
-	}
-}
-
-impl Field {
-	pub fn new(name: String, tag: u32, typeid: TypeId, is_optional: bool) -> Self {
-		Self { name, tag, typeid, is_optional }
+		self.fields.get(&tag)
 	}
 }
 
 impl TypeId {
 	pub fn new(ns: u64, id: u16, metadata: Option<Vec<(String, String)>>) -> Self {
-		Self { ns, id, variant: 0, item: None, metadata }
+		Self { ns, id, variant: 0, item: None, metadata: metadata.map(Box::new) }
 	}
 	pub fn with_variant(
-		ns: u64, id: u16, variant: u16, sub_type: Option<TypeId>,
+		ns: u64, id: u16, variant: u16, item: Option<TypeId>,
 		metadata: Option<Vec<(String, String)>>,
 	) -> Self {
-		Self { ns, id, variant, item: sub_type.map(|t| Box::new(t)), metadata }
+		Self { ns, id, variant, item: item.map(Box::new), metadata: metadata.map(Box::new) }
 	}
 
 	pub const ANY: Self = Self { ns: 0, id: 1, variant: 0, item: None, metadata: None };
@@ -202,37 +194,36 @@ impl TypeId {
 		self.ns == 0
 	}
 	pub fn arr(item: TypeId, metadata: Option<Vec<(String, String)>>) -> Self {
-		Self { ns: 0, id: ARR_TYPEID, variant: 0, item: Some(Box::new(item)), metadata }
+		Self::with_variant(0, ARR_TYPEID, 0, Some(item), metadata)
 	}
 	pub fn map(key: u16, value: TypeId, metadata: Option<Vec<(String, String)>>) -> Self {
-		Self { ns: 0, id: MAP_TYPEID, variant: key, item: Some(Box::new(value)), metadata }
+		Self::with_variant(0, MAP_TYPEID, key, Some(value), metadata)
 	}
 
-	pub fn name(&self, provider: &dyn DeclProvider) -> String {
-		if self.ns == 0 {
-			// arr
-			if self.id == 0x22 {
-				return format!("arr<{}>", self.item.as_ref().unwrap().name(provider));
+	pub fn name<'a>(&'a self, provider: &'a dyn DeclProvider) -> TypeIdFormatter<'a> {
+		TypeIdFormatter(self, provider)
+	}
+}
+pub struct TypeIdFormatter<'a>(&'a TypeId, &'a dyn DeclProvider);
+impl Display for TypeIdFormatter<'_> {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		let Self(typeid, provider) = *self;
+		if typeid.is_builtin() {
+			match typeid.id {
+				ARR_TYPEID => write!(f, "arr<{}>", typeid.item().name(provider)),
+				MAP_TYPEID => {
+					let key = BUILT_INS_NAMES[&typeid.variant];
+					write!(f, "map<{key}, {}>", typeid.item().name(provider))
+				}
+				id => write!(f, "{}", BUILT_INS_NAMES[&id]),
 			}
-			// map
-			if self.id == 0x23 {
-				return format!(
-					"map<{}, {}>",
-					BUILT_INS_NAMES[&self.variant],
-					self.item.as_ref().unwrap().name(provider)
-				);
-			}
-			// other builtin
-			BUILT_INS_NAMES[&self.id].to_string()
-		// user defined
 		} else {
-			let file = provider.get(self.ns);
-
-			format!("`{}`.{}", file.name, file.get_by_id(self.id).unwrap().name())
+			let file = provider.get(typeid.ns);
+			let item = file.get_by_id(typeid.id).unwrap();
+			write!(f, "`{}`.{}", file.name, item.name())
 		}
 	}
 }
-
 impl PartialEq for TypeId {
 	fn eq(&self, other: &Self) -> bool {
 		if self.is_any() {
@@ -249,17 +240,6 @@ pub fn resolve_typeid<'a>(typeid: &TypeId, provider: &'a dyn DeclProvider) -> &'
 	provider.get(typeid.ns).get_by_id(typeid.id).unwrap()
 }
 
-fn add_item<'a, T>(vec: &mut Vec<Option<T>>, id: usize, item: T) -> Result<(), ()> {
-	if id < vec.len() {
-		return Err(());
-	};
-	for _ in vec.len()..id {
-		vec.push(None)
-	}
-	vec.push(Some(item));
-	Ok(())
-}
-
 /// decleration provider with no decleration files.
 ///
 /// ## example
@@ -273,7 +253,7 @@ impl DeclProvider for VoidProvider {
 	fn get(&self, _id: u64) -> &DeclFile {
 		panic!("how did we get here")
 	}
-	/// always return `None`
+	/// always return `ImportError::NotFound`
 	fn load<'a>(&'a self, _name: &str) -> Result<&'a DeclFile, ImportError> {
 		Err(ImportError::NotFound)
 	}
@@ -285,11 +265,11 @@ impl DeclProvider for VoidProvider {
 /// ## example
 /// ```
 /// let provider = FixedSetProviderRef::new(&[
-/// 	some_provider.get_by_name("file1").unwrap(),
-/// 	other_provider.get_by_name("file2").unwrap(),
+/// 	some_provider.load("file1").unwrap(),
+/// 	other_provider.load("file2").unwrap(),
 /// ]);
-/// provider.get_by_name("file2"); // => Some(DeclFile { name: "file2" })
-/// provider.get_by_name("doesnt exist"); // => None
+/// provider.load("file2"); // => Some(DeclFile { name: "file2" })
+/// provider.load("doesnt exist"); // => ImportError::NotFound
 /// ```
 #[derive(Debug, Clone)]
 pub struct FixedSetProviderRef<'a> {
@@ -302,7 +282,6 @@ impl<'a> FixedSetProviderRef<'a> {
 		let mut files = HashMap::new();
 		let mut files_by_name = HashMap::new();
 
-		// add files
 		for &file in declarations {
 			files.insert(file.id, file);
 			files_by_name.insert(file.name.as_str(), file);
@@ -342,7 +321,6 @@ impl FixedSetProvider {
 		let mut files = HashMap::new();
 		let mut files_by_name = HashMap::new();
 
-		// add files
 		for file in declarations.into_iter() {
 			files_by_name.insert(file.name.clone(), file.id);
 			files.insert(file.id, file);
@@ -356,7 +334,9 @@ impl DeclProvider for FixedSetProvider {
 		self.files.get(&id).unwrap()
 	}
 	fn load<'a>(&'a self, name: &str) -> Result<&'a DeclFile, ImportError> {
-		let file = self.files_by_name.get(name).map(|ind| self.files.get(ind).unwrap());
-		file.ok_or(ImportError::NotFound)
+		let Some(file) = self.files_by_name.get(name) else {
+			return Err(ImportError::NotFound);
+		};
+		self.files.get(file).ok_or(ImportError::NotFound)
 	}
 }

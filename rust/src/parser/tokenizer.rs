@@ -2,7 +2,6 @@ use std::{
 	borrow::Cow,
 	fmt::Display,
 	ops::{Add, AddAssign},
-	str::FromStr,
 };
 
 use num_bigint::BigInt;

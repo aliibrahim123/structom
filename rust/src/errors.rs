@@ -69,9 +69,13 @@ macro_rules! err {
 }
 pub(crate) use err;
 
+/// error encountered during importing a declaration file.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ImportError {
+	/// file not found
 	NotFound,
+	/// error encountered during parsing
 	Parse(ParseError),
+	/// other reasons
 	Other(String),
 }

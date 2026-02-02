@@ -12,8 +12,8 @@ pub fn decode_item(
 ) -> Option<Value> {
 	match item {
 		DeclItem::Struct { def, .. } => decode_struct(data, ind, def, provider),
-		DeclItem::Enum { variants, .. } => {
-			let variant = variants.get(decode_vuint(data, ind)? as usize)?.as_ref()?;
+		DeclItem::Enum { .. } => {
+			let variant = item.get_variant_by_id(decode_vuint(data, ind)? as u32)?;
 			let variant_name = variant.name.clone();
 
 			if let Some(def) = &variant.def {
@@ -54,7 +54,7 @@ fn decode_field_value(
 
 			// builtins
 		}
-		id => decode_value(data, ind, typeid.id as u8)?,
+		id => decode_value(data, ind, id as u8)?,
 	})
 }
 pub fn decode_struct(
