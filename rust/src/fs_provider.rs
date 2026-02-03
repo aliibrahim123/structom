@@ -1,10 +1,13 @@
 use std::{
 	cell::RefCell,
 	collections::HashMap,
+	fmt::Debug,
 	fs::{canonicalize, read_to_string},
-	io,
+	io::{self, ErrorKind},
 	path::{Path, PathBuf, absolute},
 };
+
+use elsa::FrozenMap;
 
 use crate::{DeclFile, DeclProvider, ParseOptions, errors::ImportError, parse_declaration_file};
 
@@ -32,63 +35,79 @@ use crate::{DeclFile, DeclProvider, ParseOptions, errors::ImportError, parse_dec
 /// // fails in loading not_found.stomd
 /// assert!(parse("import \"not_found.stomd\" ... ", &ParseOptions::default(), &provider).is_err() == true);
 /// ```
-#[derive(Debug)]
 pub struct FSProvider {
 	root: PathBuf,
 	parse_options: ParseOptions,
-	cache: RefCell<ProviderCache>,
+	// files are only appended under shared reference since of `DeclProvider` protocol
+	files: FrozenMap<u64, Box<DeclFile>>,
+	files_by_name: RefCell<HashMap<PathBuf, u64>>,
 }
-#[derive(Debug, Default)]
-struct ProviderCache {
-	files: HashMap<u64, Box<DeclFile>>,
-	files_by_name: HashMap<PathBuf, u64>,
+
+impl Debug for FSProvider {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		f.debug_struct("FSProvider")
+			.field("root", &self.root)
+			.field("parse_options", &self.parse_options)
+			.finish()
+	}
 }
 
 impl FSProvider {
 	/// creates a `FSProvider` working on a given root directory with default options.
+	///
+	/// fail if the root [canonicalize](std::fs::canonicalize) fail.
 	pub fn new(root: impl Into<PathBuf>) -> io::Result<Self> {
 		FSProvider::with_options(root, ParseOptions { relative_paths: true, metadata: false })
 	}
 	/// creates a `FSProvider` working on a given root directory with given options.
+	/// ///
+	/// fail if the root [canonicalize](std::fs::canonicalize) fail.
 	pub fn with_options(root: impl Into<PathBuf>, parse_options: ParseOptions) -> io::Result<Self> {
-		Ok(Self { root: canonicalize(root.into())?, parse_options, cache: Default::default() })
+		Ok(Self {
+			root: canonicalize(root.into())?,
+			parse_options,
+			files: FrozenMap::new(),
+			files_by_name: RefCell::new(HashMap::new()),
+		})
 	}
 
-	/// load a declaration file at a given path.
+	/// load a declaration file at a given path if not loaded before.
 	pub fn load_file<'a>(&'a self, path: impl AsRef<Path>) -> Result<&'a DeclFile, ImportError> {
 		let path = absolute(Path::join(&self.root, path.as_ref()))
 			.map_err(|e| ImportError::Other(e.to_string()))?;
-		{
-			let cache = self.cache.borrow();
-			if let Some(id) = cache.files_by_name.get(&path) {
-				return Ok(unsafe {
-					&*(cache.files.get(&id).unwrap().as_ref() as *const DeclFile)
-				});
-			}
+
+		// already loaded
+		if let Some(id) = self.files_by_name.borrow().get(&path) {
+			return Ok(&self.files[id]);
 		}
 
+		// load
 		if !path.starts_with(&self.root) {
-			return Err(ImportError::Other(format!(
-				"importing outside root \"{}\"",
-				path.display()
-			)));
+			let msg = format!("importing outside root \"{}\"", path.display());
+			return Err(ImportError::Other(msg));
 		}
-		let source = read_to_string(&path).map_err(|e| ImportError::Other(e.to_string()))?;
-		let file_name = path.to_str().unwrap().to_string();
+
+		let source = read_to_string(&path).map_err(|e| {
+			if e.kind() == ErrorKind::NotFound {
+				ImportError::NotFound
+			} else {
+				ImportError::Other(e.to_string())
+			}
+		})?;
+		let file_name = path.to_string_lossy().to_string();
 		let file = parse_declaration_file(&source, file_name, &self.parse_options, self)
 			.map_err(ImportError::Parse)?;
 
-		let mut cache = self.cache.borrow_mut();
 		let id = file.id;
-		cache.files.insert(file.id, Box::new(file));
-		cache.files_by_name.insert(path, id);
+		self.files_by_name.borrow_mut().insert(path, file.id);
+		self.files.insert(file.id, Box::new(file));
 
-		Ok(unsafe { &*(cache.files.get(&id).unwrap().as_ref() as *const DeclFile) })
+		Ok(&self.files[&id])
 	}
 }
 impl DeclProvider for FSProvider {
 	fn get(&self, id: u64) -> &DeclFile {
-		unsafe { &*(self.cache.borrow().files.get(&id).unwrap().as_ref() as *const DeclFile) }
+		&self.files[&id]
 	}
 	/// gets a decleration file with a given name.
 	///

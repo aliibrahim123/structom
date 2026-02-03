@@ -28,7 +28,7 @@ pub(crate) mod builtins;
 mod declaration;
 pub mod encoding;
 mod errors;
-mod fs_decl_provider;
+mod fs_provider;
 mod parser;
 mod stringify;
 mod value;
@@ -38,7 +38,7 @@ pub use declaration::{
 };
 pub use encoding::{Serialized, decode, encode};
 pub use errors::ParseError;
-pub use fs_decl_provider::FSProvider;
+pub use fs_provider::FSProvider;
 pub use parser::{ParseOptions, parse, parse_declaration_file, tokenizer::Pos};
 pub use stringify::{StringifyOptions, stringify};
 pub use value::{Key, Value};
