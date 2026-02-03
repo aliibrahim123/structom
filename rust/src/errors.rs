@@ -31,8 +31,8 @@ impl Display for ParseError {
 
 impl ParseError {
 	/// position in source
-	pub fn pos(&self) -> Option<Pos> {
-		if self.data.pos == (0, 0) { None } else { Some(self.data.pos) }
+	pub fn pos(&self) -> Option<(u32, u32)> {
+		if self.data.pos == (0, 0) { None } else { Some(self.data.pos.into()) }
 	}
 	/// file where the error occured
 	pub fn at(&self) -> &str {

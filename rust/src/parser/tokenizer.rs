@@ -31,6 +31,12 @@ impl Pos {
 	}
 }
 
+impl Into<(u32, u32)> for Pos {
+	fn into(self) -> (u32, u32) {
+		(self.line, self.col)
+	}
+}
+
 impl PartialEq<(u32, u32)> for Pos {
 	fn eq(&self, other: &(u32, u32)) -> bool {
 		self.line == other.0 && self.col == other.1
