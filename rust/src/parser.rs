@@ -88,7 +88,7 @@ impl DeclProvider for MiddleProvider<'_> {
 ///
 /// returns [`ParseError`] if the source is invalid.
 ///
-/// for the other way see [`crate::stringify`]
+/// for the other way see [`stringify`](crate::stringify())
 ///
 /// ## example
 /// ```

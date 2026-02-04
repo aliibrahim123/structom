@@ -71,7 +71,7 @@ use crate::stringify::{StringifyOptions, str_key, stringify};
 /// else they are represented by a `Map` variant containing the fields, with a special key [`Key::enum_variant_key()`] storing the variant name.
 ///
 /// for metadata wrapped types, they are represented by a `Map` variant containing the metadata with their values, with special keys: [`Key::has_meta_key()`] of value `true` and [`Key::inner_key()`] containing the wrapped value.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub enum Value {
 	/// boolean value, types: `bool`.
 	Bool(bool),
@@ -110,7 +110,7 @@ pub enum Value {
 /// let map = Value::Map(HashMap::new())
 /// 	.insert(Key::from("some_key"), Value::Uint(1)); // => {"some_key": 1}
 /// ```
-#[derive(Debug, Clone, PartialEq, Hash, Eq)]
+#[derive(Debug, Clone, Hash, Eq)]
 pub enum Key {
 	/// boolean value, types: `bool`.
 	Bool(bool),
@@ -291,13 +291,13 @@ macro_rules! from_impl {
 
 from_impl!(Value, (bool, Bool), (i64, Int), (u64, Uint), (f64, Float));
 from_impl!(Value, (String, Str), (DateTime<Utc>, Inst), (TimeDelta, Dur));
-from_impl!(Value, ([u8; 16], UUID));
+from_impl!(Value, ([u8; 16], UUID), (BigInt, BigInt));
 
 from_impl!(Value, Uint, u64, [u8, u16, u32, usize]);
 from_impl!(Value, Int, i64, [i8, i16, i32, isize]);
 from_impl!(Value, Float, f64, [f32]);
 
-from_impl!(Key, (bool, Bool), (i64, Int), (u64, Uint), (String, Str));
+from_impl!(Key, (bool, Bool), (i64, Int), (u64, Uint), (String, Str), (BigInt, BigInt));
 from_impl!(Key, (DateTime<Utc>, Inst), (TimeDelta, Dur), ([u8; 16], UUID));
 
 from_impl!(Key, Uint, u64, [u8, u16, u32, usize]);
@@ -354,11 +354,11 @@ macro_rules! try_into_int_impl {
 }
 try_into_impl!(Value, (bool, Bool), (u64, Uint), (i64, Int), (f64, Float), (f32, Float));
 try_into_impl!(Value, (String, Str), (DateTime<Utc>, Inst), (TimeDelta, Dur));
-try_into_impl!(Value, ([u8; 16], UUID));
+try_into_impl!(Value, ([u8; 16], UUID), (BigInt, BigInt));
 
 try_into_int_impl!(Value, [u8, u16, u32, usize, i8, i16, i32, isize]);
 
-try_into_impl!(Key, (bool, Bool), (u64, Uint), (i64, Int), (String, Str));
+try_into_impl!(Key, (bool, Bool), (u64, Uint), (i64, Int), (String, Str), (BigInt, BigInt));
 try_into_impl!(Key, (DateTime<Utc>, Inst), (TimeDelta, Dur), ([u8; 16], UUID));
 try_into_int_impl!(Key, [u8, u16, u32, usize, i8, i16, i32, isize]);
 
@@ -470,6 +470,45 @@ impl Key {
 	as_ref_impl!(Key, (str, as_str, Str), (BigInt, as_bigint, BigInt));
 }
 
+impl PartialEq<Value> for Value {
+	fn eq(&self, other: &Value) -> bool {
+		match (self, other) {
+			(Value::Bool(a), Value::Bool(b)) => *a == *b,
+			(Value::Int(a), Value::Int(b)) => *a == *b,
+			(Value::Uint(a), Value::Uint(b)) => *a == *b,
+			(Value::Int(a), Value::Uint(b)) => *a == *b as _,
+			(Value::Uint(a), Value::Int(b)) => *a == *b as _,
+			(Value::BigInt(a), Value::BigInt(b)) => a == b,
+			(Value::Float(a), Value::Float(b)) => *a == *b,
+			(Value::Str(a), Value::Str(b)) => a == b,
+			(Value::Inst(a), Value::Inst(b)) => a == b,
+			(Value::Dur(a), Value::Dur(b)) => a == b,
+			(Value::UUID(a), Value::UUID(b)) => a == b,
+			(Value::Arr(a), Value::Arr(b)) => a == b,
+			(Value::Map(a), Value::Map(b)) => a == b,
+			(Value::UnitVar(a), Value::UnitVar(b)) => a == b,
+			_ => false,
+		}
+	}
+}
+impl PartialEq<Key> for Key {
+	fn eq(&self, other: &Key) -> bool {
+		match (self, other) {
+			(Key::Bool(a), Key::Bool(b)) => *a == *b,
+			(Key::Int(a), Key::Int(b)) => *a == *b,
+			(Key::Uint(a), Key::Uint(b)) => *a == *b,
+			(Key::Int(a), Key::Uint(b)) => *a == *b as _,
+			(Key::Uint(a), Key::Int(b)) => *a == *b as _,
+			(Key::BigInt(a), Key::BigInt(b)) => a == b,
+			(Key::Str(a), Key::Str(b)) => a == b,
+			(Key::Inst(a), Key::Inst(b)) => a == b,
+			(Key::Dur(a), Key::Dur(b)) => a == b,
+			(Key::UUID(a), Key::UUID(b)) => a == b,
+			_ => false,
+		}
+	}
+}
+
 impl PartialEq<Key> for Value {
 	fn eq(&self, other: &Key) -> bool {
 		match (self, other) {
@@ -522,12 +561,13 @@ macro_rules! eq_int_impl {
 }
 
 eq_impl!(Value, (bool, Bool), (DateTime<Utc>, Inst), (TimeDelta, Dur), (f64, Float));
-eq_impl!(Value, (&str, Str), (String, Str));
+eq_impl!(Value, (&str, Str), (String, Str), ([u8; 16], UUID), (BigInt, BigInt));
 
 eq_int_impl!(Value, [u8, u16, u32, u64, usize]);
 eq_int_impl!(Value, [i8, i16, i32, i64, isize]);
 
 eq_impl!(Key, (bool, Bool), (DateTime<Utc>, Inst), (TimeDelta, Dur), (String, Str), (&str, Str));
+eq_impl!(Key, (BigInt, BigInt), ([u8; 16], UUID));
 
 eq_int_impl!(Key, [u8, u16, u32, u64, usize]);
 eq_int_impl!(Key, [i8, i16, i32, i64, isize]);
@@ -618,7 +658,11 @@ impl Value {
 
 impl Display for Value {
 	fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-		stringify(self, &StringifyOptions::default()).fmt(f)
+		if f.alternate() {
+			stringify(self, &StringifyOptions { ident: "\t", ..Default::default() }).fmt(f)
+		} else {
+			stringify(self, &StringifyOptions::default()).fmt(f)
+		}
 	}
 }
 

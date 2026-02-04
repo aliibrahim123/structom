@@ -70,7 +70,7 @@ impl Add<usize> for Pos {
 }
 
 /// a lexical unit of the source, with its position
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Token<'s> {
 	Ident(&'s str, Pos),
 	Str(String, Pos),
@@ -279,7 +279,6 @@ fn parse_int<'a>(
 	let base = match source.get(ind..ind + 2) {
 		Some("0b") => 2,
 		Some("0x") => 16,
-		None => return end_of_input(file),
 		_ => 10,
 	};
 	(base != 10).then(|| ind += 2);
@@ -292,6 +291,9 @@ fn parse_int<'a>(
 		_ => unreachable!(),
 	};
 	if dg_start == end_ind {
+		if source.len() == end_ind {
+			return end_of_input(file);
+		}
 		return unexpected_token(&source.char_at(ind).unwrap(), pos, file);
 	}
 	let nb_source = strip_dashes_in_nb(&source[dg_start..end_ind], pos, file)?;
@@ -355,10 +357,18 @@ pub fn tokenize<'a>(source: &'a str, file: &str) -> Result<Vec<Token<'a>>, Parse
 
 	while let Some(cur_char) = source.char_at(ind) {
 		match cur_char {
-			' ' | '\t' | '\r' => inc!(1),
+			' ' | '\t' => inc!(1),
+			'\r' => {
+				if source.char_at(ind - 1) != Some('\n') && source.char_at(ind + 1) != Some('\n') {
+					pos.line += 1;
+					pos.col = 1;
+				}
+				ind += 1;
+			}
 			'\n' => {
 				pos.line += 1;
 				pos.col = 1;
+				ind += 1;
 			}
 
 			'.' => {
@@ -398,7 +408,9 @@ pub fn tokenize<'a>(source: &'a str, file: &str) -> Result<Vec<Token<'a>>, Parse
 						return end_of_input(file);
 					};
 					end_index = ind;
-					if source.char_at(ind - 1) != Some('\\') {
+					if source.char_at(ind - 1) != Some('\\')
+						|| source.char_at(ind - 2) == Some('\\')
+					{
 						break;
 					}
 				}
@@ -420,6 +432,7 @@ pub fn tokenize<'a>(source: &'a str, file: &str) -> Result<Vec<Token<'a>>, Parse
 						_ => unreachable!(),
 					});
 					inc!(1);
+					continue;
 				}
 
 				let token;

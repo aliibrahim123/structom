@@ -8,7 +8,7 @@ use crate::{
 	parser::utils::StrExt,
 };
 
-/// options for [`stringify`]
+/// options for [`stringify()`]
 #[derive(Debug, Clone)]
 pub struct StringifyOptions<'a> {
 	/// whether to stringify metadata, default: `false`.
@@ -27,7 +27,7 @@ impl Default for StringifyOptions<'static> {
 
 /// stringify a [`Value`] into object notation.
 ///
-/// for the other way see [`crate::parse`]
+/// for the other way see [`parse`](`crate::parse`)
 ///
 /// ## example
 /// ```

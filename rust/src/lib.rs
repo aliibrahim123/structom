@@ -37,6 +37,7 @@ pub use declaration::{
 	DeclFile, DeclProvider, FixedSetProvider, FixedSetProviderRef, VoidProvider,
 };
 pub use encoding::{Serialized, decode, encode};
+pub use errors::ImportError;
 pub use errors::ParseError;
 pub use fs_provider::FSProvider;
 pub use parser::{ParseOptions, parse, parse_declaration_file};

@@ -6,8 +6,8 @@ use std::fs::{canonicalize, create_dir, create_dir_all, remove_dir_all};
 use std::{fs::read_dir, path::Path};
 
 use clap::{Parser, ValueEnum};
+use structom::DeclFile;
 use structom::FSProvider;
-use structom::{DeclFile, LoadFileError};
 
 use crate::js::to_js;
 use crate::rust::to_rust;
@@ -94,15 +94,12 @@ pub fn walk_fs<'a>(
 			resolved_path.truncate(rel_path.len() - 6);
 
 			// parse file and redirect errors
-			use LoadFileError::*;
-			use structom::ParseError::*;
+			use structom::ImportError::*;
 			match provider.load_file(&entry) {
 				Ok(decl) => inputs.push(Entry { resolved_path, rel_path, decl }),
-				Err(IO(_)) => return Err(errors::read_file(&entry.display())(())),
-				Err(Parse(TypeError(err))) => return Err(err),
-				Err(Parse(SyntaxError(err))) => {
-					return Err(format!("{err} at decleration file \"{}\"", entry.display()));
-				}
+				Err(NotFound) => return Err(errors::read_file(&entry.display())(())),
+				Err(Parse(err)) => return Err(err.to_string()),
+				Err(Other(err)) => return Err(err),
 			};
 		}
 	}

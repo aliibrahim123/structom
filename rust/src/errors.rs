@@ -43,14 +43,14 @@ impl ParseError {
 	const AT_PRE: &'static str = "\n  --> ";
 	pub(crate) fn with_pos<T>(mut msg: String, pos: Pos, file: &str) -> Result<T, ParseError> {
 		let at_offset = (msg.len() + Self::AT_PRE.len()) as u16;
-		write!(msg, "{}{file}:{pos}\"", Self::AT_PRE).unwrap();
+		write!(msg, "{}{file}:{pos}", Self::AT_PRE).unwrap();
 		let at_size = file.len() as u16;
 		let msg = msg.into_boxed_str();
 		Err(Self { data: Box::new(ParseErrorData { pos, msg, at_offset, at_size }) })
 	}
 	pub(crate) fn new<T>(mut msg: String, file: &str) -> Result<T, ParseError> {
 		let at_offset = (msg.len() + Self::AT_PRE.len()) as u16;
-		write!(msg, "{}{file}\"", Self::AT_PRE).unwrap();
+		write!(msg, "{}{file}", Self::AT_PRE).unwrap();
 		let pos = Pos::new(0, 0);
 		let at_size = file.len() as u16;
 		let msg = msg.into_boxed_str();
