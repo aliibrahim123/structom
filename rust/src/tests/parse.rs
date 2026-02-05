@@ -77,10 +77,8 @@ fn uuid() {
 		0xbc,
 	];
 	assert_eq!(parse("uuid \"12345678-1234-1234-1234-123456789abc\""), Ok(Value::UUID(uuid)));
-	assert_eq!(
-		parse_typed("uuid", "uuid \"12345678-1234-1234-1234-123456789abc\""),
-		Ok(Value::UUID(uuid))
-	);
+	let value = parse_typed("uuid", "uuid \"12345678-1234-1234-1234-123456789abc\"");
+	assert_eq!(value, Ok(Value::UUID(uuid)));
 	assert!(parse("uuid \"12345678-GGGG-1234-1234-123456789abc\"").is_err());
 	assert!(parse_typed("uuid", "true").is_err());
 }
@@ -98,10 +96,8 @@ fn inst() {
 	assert_eq!(parse_typed("instN", "inst \"2026-02-02T20:04:02Z\""), Ok(Value::Inst(inst)));
 	assert!(parse("inst \"2026-02-02T20:04:02.1234Z\"").is_err());
 	let inst = DateTime::parse_from_str("+10000-01-01 00:00:00+02:00", "%Y-%m-%d %H:%M:%S%:z");
-	assert_eq!(
-		parse("inst \"+10000-01-01 00:00:00+02:00\""),
-		Ok(Value::Inst(inst.unwrap().with_timezone(&chrono::Utc)))
-	);
+	let value = parse("inst \"+10000-01-01 00:00:00+02:00\"");
+	assert_eq!(value, Ok(Value::Inst(inst.unwrap().with_timezone(&chrono::Utc))));
 	let inst = NaiveDate::parse_from_str("2026-02-02", "%Y-%m-%d")
 		.unwrap()
 		.and_hms_opt(0, 0, 0);
@@ -114,10 +110,8 @@ fn dur() {
 	assert_eq!(parse("dur \"0s\""), Ok(Value::Dur(TimeDelta::seconds(0))));
 	assert_eq!(parse("dur \"10s 10ms\""), Ok(Value::Dur(TimeDelta::milliseconds(10010))));
 	assert_eq!(parse("dur \"-10s 10ms\""), Ok(Value::Dur(-TimeDelta::milliseconds(10010))));
-	assert_eq!(
-		parse("dur \"1y 1mn 1d 1h 1m 1s 1ms 1us 1ns\""),
-		Ok(Value::Dur(TimeDelta::nanoseconds(34218061001001001)))
-	);
+	let value = parse("dur \"1y 1mn 1d 1h 1m 1s 1ms 1us 1ns\"");
+	assert_eq!(value, Ok(Value::Dur(TimeDelta::nanoseconds(34218061001001001))));
 	assert!(parse("dur \"1000y\"").is_err());
 	assert_eq!(parse("dur \"1000s 10ms\""), Ok(Value::Dur(TimeDelta::milliseconds(1000010))));
 	assert!(parse("dur \"1y 1000s\"").is_err());
@@ -137,10 +131,8 @@ fn arr() {
 	assert_eq!(parse("arr<u8> [1, 2, 3,]"), Ok(Value::from(vec![1, 2, 3])));
 	assert_eq!(parse_typed("arr<u8>", "[1, 2, 3]"), Ok(Value::from(vec![1, 2, 3])));
 	assert_eq!(parse("[[1, 2], 3]"), Ok(Value::Arr(vec![vec!(1, 2).into(), 3.into()])));
-	assert_eq!(
-		parse("arr<arr<i8>> [[1, 2], [3]]"),
-		Ok(Value::Arr(vec![vec![1, 2].into(), vec![3].into()]))
-	);
+	let value = parse("arr<arr<u8>> [[1, 2], [3]]");
+	assert_eq!(value, Ok(Value::Arr(vec![vec![1, 2].into(), vec![3].into()])));
 	assert!(parse_typed("arr<u8>", "[1, 2000, 3]").is_err());
 	assert!(parse("arr<u8> [1, 2000, 3]").is_err());
 	assert!(parse("[1, 2, 3").is_err());
@@ -160,10 +152,8 @@ fn map() {
 	assert_eq!(parse("{ [1]: 1 }"), Ok(Value::map_from([i(1u8, 1)])));
 	assert_eq!(parse("map<str, u8> { a: 1 }"), Ok(Value::map_from([("a", 1)])));
 	assert_eq!(parse_typed("map<str, u8>", "{ a: 1 }"), Ok(Value::map_from([("a", 1)])));
-	assert_eq!(
-		parse_typed("map<str, map<str, u8>>", "{ a: { a: 1 } }"),
-		Ok(Value::map_from([("a", Value::map_from([("a", 1)]))]))
-	);
+	let value = parse("map<str, map<str, u8>> { a: { a: 1 } }");
+	assert_eq!(value, Ok(Value::map_from([("a", Value::map_from([("a", 1)]))])));
 	assert_eq!(parse("{ a: { a: 1 } }"), Ok(Value::map_from([("a", Value::map_from([("a", 1)]))])));
 	assert!(parse_typed("map<u8, u8>", "{ a: 1 }").is_err());
 	assert!(parse("map<u8, u8> { a: 1 }").is_err());

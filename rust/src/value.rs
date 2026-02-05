@@ -144,7 +144,7 @@ impl Default for Key {
 pub static ENUM_VARIANT_KEY: LazyLock<Key> =
 	LazyLock::new(|| Key::Str("$enum_variant".to_string()));
 pub static HAS_META_KEY: LazyLock<Key> = LazyLock::new(|| Key::Str("$has_meta".to_string()));
-pub static INNER_KEY: LazyLock<Key> = LazyLock::new(|| Key::Str("value".to_string()));
+pub static INNER_KEY: LazyLock<Key> = LazyLock::new(|| Key::Str("$value".to_string()));
 impl Key {
 	/// the enum variant key in an enum map
 	pub fn enum_variant_key() -> &'static Key {

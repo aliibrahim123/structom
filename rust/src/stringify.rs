@@ -66,8 +66,6 @@ pub fn str_key(value: &Key) -> String {
 	return result;
 }
 pub fn str_value(value: &Value, result: &mut String, depth: usize, options: &StringifyOptions) {
-	str_commons!(Value, value, result);
-
 	match value {
 		Value::Float(nb) => {
 			// rust inf is similar to structom one
@@ -76,7 +74,9 @@ pub fn str_value(value: &Value, result: &mut String, depth: usize, options: &Str
 		Value::Arr(arr) => str_arr(arr, result, depth, options),
 		Value::Map(map) => str_map(map, result, depth, options),
 		Value::UnitVar(var) => result.push_str(var),
-		_ => unreachable!(),
+		_ => {
+			str_commons!(Value, value, result);
+		}
 	}
 }
 
@@ -131,7 +131,7 @@ fn str_map(
 	// case metadata
 	if options.metadata && map.contains_key(Key::has_meta_key()) {
 		for (key, value) in map.iter() {
-			if !matches!(key.as_str(), Some("$has_meta" | "value")) {
+			if !matches!(key.as_str(), Some("$has_meta" | "$value")) {
 				result.push('@');
 				result.push_str(key.as_str().unwrap());
 				result.push('(');
@@ -146,6 +146,9 @@ fn str_map(
 	let is_enum = map.contains_key(Key::enum_variant_key());
 	if is_enum {
 		result.push_str(map[Key::enum_variant_key()].as_str().unwrap());
+		if map.len() == 1 {
+			return;
+		}
 	}
 
 	if map.len() == 0 {
@@ -160,20 +163,24 @@ fn str_map(
 		&& map.keys().all(is_simple_key)
 		&& (is_one_key || (map.len() <= 4 && map.values().all(is_simple)));
 
-	for (ind, (key, value)) in map.iter().enumerate() {
+	let mut ind = 0;
+	for (key, value) in map.iter() {
 		if key.as_str() == Some("$enum_variant") {
 			continue;
 		}
 		if ind != 0 {
-			result.push_str(if do_ident(options) { ", " } else { "," });
+			result.push_str(if compact { ", " } else { "," });
 		}
+		ind += 1;
 		if !compact {
 			add_indent(result, depth + 1, options);
 		}
 
 		if let Key::Str(key) = key {
+			let is_iden = key.chars().all(|c| matches!(c, 'a'..='z' | 'A'..='Z' | '0'..='9' | '_'))
+				&& matches!(key.chars().next(), Some('a'..='z' | 'A'..='Z' | '_'));
 			// as identifier
-			if key.chars().all(|c| matches!(c, 'a'..='z' | 'A'..='Z' | '0'..='9' | '_')) {
+			if is_iden {
 				result.push_str(key);
 			// as str
 			} else {
@@ -193,7 +200,10 @@ fn str_map(
 		str_value(value, result, depth + if compact { 0 } else { 1 }, options);
 	}
 
-	add_indent(result, depth, options);
+	if !compact && do_ident(options) {
+		result.push(',');
+		add_indent(result, depth, options);
+	}
 	result.push_str("}");
 }
 
@@ -210,7 +220,7 @@ fn str_arr(arr: &Vec<Value>, result: &mut String, depth: usize, options: &String
 
 	for (ind, value) in arr.iter().enumerate() {
 		if ind != 0 {
-			result.push_str(if do_ident(options) { ", " } else { "," });
+			result.push_str(if compact { ", " } else { "," });
 		}
 		if compact {
 			str_value(value, result, depth, options);
@@ -219,8 +229,10 @@ fn str_arr(arr: &Vec<Value>, result: &mut String, depth: usize, options: &String
 			str_value(value, result, depth + 1, options);
 		}
 	}
-
-	add_indent(result, depth, options);
+	if !compact && do_ident(options) {
+		result.push(',');
+		add_indent(result, depth, options);
+	}
 	result.push_str("]");
 }
 
@@ -237,7 +249,8 @@ fn str_uuid(uuid: &[u8; 16], result: &mut String) {
 
 fn str_inst(inst: &DateTime<Utc>, result: &mut String) {
 	result.push_str(if inst.nanosecond() % 1000000 == 0 { "inst \"" } else { "instN \"" });
-	result.push_str(&inst.to_rfc3339());
+
+	result.push_str(&inst.format("%Y-%m-%dT%H:%M:%S%.fZ").to_string());
 	result.push('"');
 }
 
