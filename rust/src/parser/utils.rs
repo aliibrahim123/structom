@@ -85,12 +85,11 @@ pub fn consume_ident<'a>(
 }
 /// safely try to consume a symbol
 pub fn try_consume_ident<'a>(
-	tokens: &'a [Token], ind: &mut usize, file: &str,
-) -> Result<Option<&'a str>, ParseError> {
+	ident: &str, tokens: &'a [Token], ind: &mut usize, _file: &str,
+) -> Result<bool, ParseError> {
 	match tokens.get(*ind) {
-		Some(Token::Ident(ident, _)) => (Ok(Some(*ident)), *ind += 1).0,
-		Some(Token::EOF(_)) | None => end_of_input(file),
-		_ => Ok(None),
+		Some(Token::Ident(id, _)) if *id == ident => (Ok(true), *ind += 1).0,
+		_ => Ok(false),
 	}
 }
 /// safely consume a string
@@ -115,11 +114,10 @@ pub fn consume_symbol(
 }
 /// safely try to consume a symbol
 pub fn try_consume_symbol(
-	token: char, tokens: &[Token], ind: &mut usize, file: &str,
+	token: char, tokens: &[Token], ind: &mut usize, _file: &str,
 ) -> Result<bool, ParseError> {
 	match tokens.get(*ind) {
 		Some(Token::Symbol(sym, _)) if *sym == token => (Ok(true), *ind += 1).0,
-		Some(Token::EOF(_)) | None => end_of_input(file),
 		_ => Ok(false),
 	}
 }

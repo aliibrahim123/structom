@@ -1,4 +1,4 @@
-use chrono::{DateTime, TimeDelta, Timelike};
+use chrono::{DateTime, NaiveDate, NaiveDateTime, TimeDelta, Timelike};
 
 use crate::{
 	ParseError, Value,
@@ -56,7 +56,20 @@ pub fn parse_uuid(source: &str, pos: Pos, file: &str) -> Result<Value, ParseErro
 pub fn parse_inst(
 	source: &str, nanoseconds: bool, pos: Pos, file: &str,
 ) -> Result<Value, ParseError> {
-	let Ok(inst) = DateTime::parse_from_rfc3339(source) else {
+	let inst = 'block: {
+		macro_rules! try_parse {
+			($ty:ident, $fmt:literal, $inst:ident => $expr:expr) => {
+				if let Ok($inst) = $ty::parse_from_str(source, $fmt) {
+					break 'block $expr;
+				}
+			};
+		}
+		try_parse!(NaiveDateTime, "%Y-%m-%dT%H:%M:%S%.fZ", inst => inst.and_utc());
+		try_parse!(NaiveDateTime, "%Y-%m-%d %H:%M:%S%.fZ", inst => inst.and_utc());
+		try_parse!(DateTime, "%Y-%m-%dT%H:%M:%S%.f%:z", inst => inst.with_timezone(&chrono::Utc));
+		try_parse!(DateTime, "%Y-%m-%d %H:%M:%S%.f%:z", inst => inst.with_timezone(&chrono::Utc));
+		try_parse!(NaiveDate, "%Y-%m-%d", inst => inst.and_hms_opt(0, 0, 0).unwrap().and_utc());
+
 		let msg = format!("invalid {} ({source})", if nanoseconds { "instN" } else { "inst" });
 		return err!(msg, pos, file);
 	};
@@ -66,7 +79,7 @@ pub fn parse_inst(
 		return err!(format!("invalid inst ({source})"), pos, file);
 	}
 
-	Ok(Value::Inst(inst.with_timezone(&chrono::Utc)))
+	Ok(Value::Inst(inst))
 }
 
 struct DurParseCTX<'a> {
@@ -92,7 +105,7 @@ fn parse_dur_part(
 
 	if suffix != unit {
 		if unit == "ns" {
-			return err!(format!("unkown unit ({suffix})"), pos + amount.len(), file);
+			return err!(format!("unkown dur unit ({suffix})"), pos + amount.len(), file);
 		}
 		return Ok(false);
 	}
@@ -129,8 +142,7 @@ pub fn parse_dur(tokens: &[Token], ind: &mut usize, file: &str) -> Result<Value,
 	let mut parts = Vec::new();
 	let mut last_ind = 0;
 	let mut pos = start_pos + 1u32;
-	while let Some(ind) = source.find_ws_after(last_ind) {
-		let part = &source[last_ind..ind];
+	let mut add = |part, pos| {
 		if part != "" {
 			let split = while_matching(part, 0, |c| matches!(c, '0'..='9'));
 			if split == 0 {
@@ -138,6 +150,11 @@ pub fn parse_dur(tokens: &[Token], ind: &mut usize, file: &str) -> Result<Value,
 			}
 			parts.push((part, split, pos));
 		}
+		Ok(())
+	};
+	while let Some(ind) = source.find_ws_after(last_ind) {
+		let part = &source[last_ind..ind];
+		add(part, pos)?;
 		if source.char_at(ind) == Some('\n') {
 			pos.line += 1;
 			pos.col = 1;
@@ -146,6 +163,8 @@ pub fn parse_dur(tokens: &[Token], ind: &mut usize, file: &str) -> Result<Value,
 		}
 		last_ind = ind + 1;
 	}
+	add(&source[last_ind..], pos)?;
+	pos += source.len() - last_ind;
 
 	if parts.is_empty() {
 		return err!("empty duration".to_string(), start_pos, file);
@@ -163,11 +182,6 @@ pub fn parse_dur(tokens: &[Token], ind: &mut usize, file: &str) -> Result<Value,
 	parse_dur_part(&mut ctx, "us", US_AS_NS, 1000)?;
 	parse_dur_part(&mut ctx, "ns", 1, 1000)?;
 
-	let Some(dur) = TimeDelta::new(
-		ctx.val / 1_000_000_000 * if neg { -1 } else { 1 },
-		(ctx.val % 1_000_000_000) as u32,
-	) else {
-		return err!(format!("invalid duration ({source})"), start_pos, file);
-	};
-	return Ok(Value::Dur(dur));
+	let dur = TimeDelta::nanoseconds(ctx.val);
+	return Ok(Value::Dur(if neg { -dur } else { dur }));
 }

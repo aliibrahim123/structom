@@ -325,6 +325,14 @@ impl<K: Into<Key>, V: Into<Value>> From<HashMap<K, V>> for Value {
 	}
 }
 
+impl Value {
+	pub fn map_from<K: Into<Key>, V: Into<Value>, I: IntoIterator<Item = (K, V)>>(
+		iter: I,
+	) -> Value {
+		Value::Map(Box::new(iter.into_iter().map(|(k, v)| (k.into(), v.into())).collect()))
+	}
+}
+
 macro_rules! try_into_impl {
 	($enum:ident, $(($ty:ty, $var:ident)),+) => {
 		$(impl TryInto<$ty> for $enum {

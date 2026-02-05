@@ -91,6 +91,7 @@ fn parse_map(
 	let mut map = HashMap::new();
 	parse_struct_like!((tokens, '{', '}'), file, ind => {
 		let pos = tokens[*ind].pos();
+		*ind +=1;
 		let key = match tokens.get(*ind -1) {
 			Some(Token::Ident(key, _)) => Key::from(*key),
 			Some(Token::Str(key, _)) => Key::Str(key.clone()),
@@ -209,7 +210,7 @@ fn parse_ident(
 	/// ensure type, can be any
 	macro_rules! check_builtin {
 		($ty:literal, $pat:pat) => {
-			if typeid.is_builtin() || !matches!(typeid.id, 1 | $pat) {
+			if !typeid.is_builtin() || !matches!(typeid.id, 1 | $pat) {
 				mismatch_types(&typeid.name(*provider), $ty, pos, file)?;
 			}
 		};
@@ -234,7 +235,7 @@ fn parse_ident(
 			return parse_uuid(consume_str(tokens, ind, file)?, pos, file);
 		}
 		"inst" => {
-			check_builtin!("inst", INST_TYPEID);
+			check_builtin!("inst", INST_TYPEID | INSTN_TYPEID);
 			return parse_inst(consume_str(tokens, ind, file)?, false, pos, file);
 		}
 		"instN" => {
@@ -287,7 +288,7 @@ pub fn parse_value(
 	/// ensure type, can be any
 	macro_rules! check_builtin {
 		($ty:literal, $pat:pat) => {
-			if typeid.is_builtin() || !matches!(typeid.id, 1 | $pat) {
+			if !typeid.is_builtin() || !matches!(typeid.id, 1 | $pat) {
 				mismatch_types(&typeid.name(*provider), $ty, pos, file)?;
 			}
 		};

@@ -91,8 +91,9 @@ fn parse_import<'a>(
 			remove_n_suffix(&cur_file, "/", 1).to_string() + "/" + path.strip_prefix("./").unwrap()
 		} else {
 			let up_dirs = count_prefix(path, "../") + 1;
-			remove_n_suffix(&cur_file, "/", up_dirs).to_string()
-				+ "/" + path.trim_start_matches("../")
+			let parent = remove_n_suffix(&cur_file, "/", up_dirs).to_string();
+			(if parent.is_empty() { String::new() } else { parent + "/" })
+				+ path.trim_start_matches("../")
 		});
 		path = &path_owner.as_ref().unwrap();
 	}
@@ -113,7 +114,7 @@ fn parse_import<'a>(
 	}
 	imports.push(imported.id);
 
-	if matches!(try_consume_ident(tokens, ind, cur_file)?, Some("as")) {
+	if try_consume_ident("as", tokens, ind, cur_file)? {
 		let ns = consume_ident(tokens, ind, cur_file)?;
 		if ctx.ns_imports.contains_key(ns) {
 			let msg = format!("importing \"{path}\" into used namespace \"{ns}\"");
