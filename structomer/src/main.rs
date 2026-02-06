@@ -46,7 +46,13 @@ struct Args {
 	declerations: Option<String>,
 }
 
-fn main() -> Result<(), String> {
+fn main() {
+	if let Err(e) = mainer() {
+		eprintln!("{e}");
+	}
+}
+
+fn mainer() -> Result<(), String> {
 	let Args { input, output, from, to, declerations } = Args::parse();
 
 	let provider: Box<dyn DeclProvider> = match declerations {
@@ -95,6 +101,10 @@ fn main() -> Result<(), String> {
 	Ok(())
 }
 
+fn strip<'a>(str: &'a str, prefix: &str, suffix: &str) -> &'a str {
+	str.strip_prefix(prefix).unwrap().strip_suffix(suffix).unwrap()
+}
+
 pub fn to_json(value: &Value) -> JsonValue {
 	match value {
 		Value::Bool(b) => json!(b),
@@ -103,9 +113,14 @@ pub fn to_json(value: &Value) -> JsonValue {
 		Value::Float(f) => json!(f),
 		Value::Str(s) => json!(s),
 		Value::UnitVar(s) => json!(s),
-		Value::BigInt(_) => JsonValue::Null,
+		Value::BigInt(n) => json!(n.to_str_radix(10)),
 		Value::Inst(d) => json!(d.to_rfc3339()),
-		Value::Dur(_) | Value::UUID(_) => json!(value.to_string()),
+		Value::Dur(_) => {
+			json!(strip(&value.to_string(), "dur \"", "\""))
+		}
+		Value::UUID(_) => {
+			json!(strip(&value.to_string(), "uuid \"", "\""))
+		}
 		Value::Arr(els) => JsonValue::Array(els.iter().map(to_json).collect()),
 		Value::Map(map) => {
 			let mut jmap = JsonMap::new();
@@ -113,6 +128,10 @@ pub fn to_json(value: &Value) -> JsonValue {
 				let key = match key {
 					_ if key == Key::enum_variant_key() => "type".to_string(),
 					Key::Str(str) => str.to_string(),
+					Key::BigInt(bint) => bint.to_str_radix(10),
+					Key::Dur(_) => strip(&key.to_string(), "dur \"", "\"").to_string(),
+					Key::UUID(_) => strip(&key.to_string(), "uuid \"", "\"").to_string(),
+					Key::Inst(inst) => inst.to_rfc3339(),
 					_ => key.to_string(),
 				};
 				jmap.insert(key, to_json(value));
