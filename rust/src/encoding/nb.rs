@@ -239,7 +239,7 @@ pub fn encode_bint(data: &mut Vec<u8>, value: &BigInt) {
 #[inline]
 pub fn decode_bint(data: &[u8], ind: &mut usize) -> Option<BigInt> {
 	let len = decode_vuint(data, ind)? as usize;
-	let value = BigInt::from_signed_bytes_le(&data[*ind..*ind + len]);
+	let value = BigInt::from_signed_bytes_le(&data.get(*ind..*ind + len)?);
 	*ind += len;
 	Some(value)
 }
