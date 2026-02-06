@@ -24,6 +24,19 @@ use crate::{DeclProvider, Value, encoding::item::decode_item};
 /// encode a given [`Value`] into its binary representation.
 ///
 /// this function insert a header of empty `decl_path` to implicitly specify `any` type.
+///
+/// ### `Value` variants encodings
+/// - `Bool`: `bool`.
+/// - `Int`: `vint`.
+/// - `Uint`: `vuint`.
+/// - `Float`: `f64`.
+/// - `BigInt`: `bint`.
+/// - `Str`: `str`.
+/// - `Inst`: `instN`.
+/// - `Dur`: `dur`.
+/// - `uuid`: `uuid`.
+/// - `Arr`: `arr<T>` where `T` is a specific type if all items have same type, else `T` is `any`.
+/// - `Map`: `map<K, V>` where `K` and `V` are specific types if all keys / values have same type, else `K` / `V` are `any`.
 pub fn encode(value: &Value) -> Vec<u8> {
 	// make decl_path empty string, so type is any implicitly
 	let mut data = vec![0];
