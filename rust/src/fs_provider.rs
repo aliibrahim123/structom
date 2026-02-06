@@ -80,7 +80,6 @@ impl FSProvider {
 		if let Some(id) = self.files_by_name.borrow().get(&path) {
 			return Ok(&self.files[id]);
 		}
-
 		// load
 		if !path.starts_with(&self.root) {
 			let msg = format!("importing outside root \"{}\"", path.display());

@@ -88,7 +88,9 @@ fn parse_import<'a>(
 	let is_parent_dir = path.starts_with("../");
 	if options.relative_paths && (is_cur_dir || is_parent_dir) {
 		path_owner = Some(if is_cur_dir {
-			remove_n_suffix(&cur_file, "/", 1).to_string() + "/" + path.strip_prefix("./").unwrap()
+			let parent = remove_n_suffix(&cur_file, "/", 1);
+			(if parent.is_empty() { String::new() } else { parent.to_string() + "/" })
+				+ path.strip_prefix("./").unwrap()
 		} else {
 			let up_dirs = count_prefix(path, "../") + 1;
 			let parent = remove_n_suffix(&cur_file, "/", up_dirs).to_string();
