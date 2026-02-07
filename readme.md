@@ -2,10 +2,10 @@
 structom (StructuredAtoms) is a lightweight general data exchange format designed for universal applications, from small human readable object files to large scale data serialization.
 
 ## docs
-### [specification](./spec/index.md)
+### [specification](https://github.com/aliibrahim123/structom/blob/main/spec/index.md)
 ### languages
 - [**rust**](https://crates.io/crates/structom)
-- [**javascript**](https://github.com/aliibrahim123/structom/blob/main/spec/index.md)
+- [**javascript**](./js/readme.md)
 
 # tools
 - [**structomer**](https://crates.io/crates/structomer)
