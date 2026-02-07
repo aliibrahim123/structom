@@ -9,4 +9,4 @@ readme = "./readme.md"
 
 [dependencies]
 clap = { version = "4.5.54", features = ["derive"] }
-structom = "0.2.0"
+structom = "0.2.2"

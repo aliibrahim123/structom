@@ -21,7 +21,6 @@ use crate::{
 /// DeclFile.id => mod path
 pub type PathMap = HashMap<u64, String>;
 
-/// generation common state
 pub struct Ctx<'a> {
 	file: &'a DeclFile,
 	provider: &'a FSProvider,
@@ -32,18 +31,15 @@ pub struct Ctx<'a> {
 pub fn to_rust(
 	inputs: &Vec<Entry>, in_dir: &str, out_dir: &Path, provider: &FSProvider,
 ) -> Result<(), String> {
-	// prepare path map
 	let mut path_map = HashMap::new();
 	for Entry { resolved_path, decl, .. } in inputs {
 		path_map.insert(decl.id, ["super", &resolved_path].join("::"));
 	}
 
-	// generate files
 	for Entry { resolved_path, rel_path, decl } in inputs {
 		let mut source = String::new();
 		let ctx = Ctx { file: decl, provider, path_map: &path_map };
 
-		// write header and imports
 		write!(source, "// generated from file: {}\n\n", &decl.name).unwrap();
 		source.push_str("use std::collections::HashMap;\n");
 		source.push_str("use structom::{Value, Key, encoding::*};\n\n");
@@ -56,7 +52,6 @@ pub fn to_rust(
 		write(&output, source).map_err(errors::write_file(&output.display()))?;
 	}
 
-	// generate root mod
 	let root_path = absolute(out_dir.join("mod.rs")).unwrap();
 	write(&root_path, gen_root(inputs, in_dir))
 		.map_err(errors::write_file(&root_path.display()))?;

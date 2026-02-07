@@ -52,3 +52,12 @@ pub fn encode_header(source: &mut String, file: &str, typeid: u64) {
 		write!(source, "0x{byte:02x}, ").unwrap();
 	}
 }
+
+pub mod field_len {
+	pub const U8: u32 = 0b000;
+	pub const U16: u32 = 0b001;
+	pub const U32: u32 = 0b010;
+	pub const U64: u32 = 0b011;
+	pub const VINT: u32 = 0b100;
+	pub const LEN: u32 = 0b101;
+}

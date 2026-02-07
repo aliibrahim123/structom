@@ -4,11 +4,9 @@ use std::fmt::Write;
 /// generate root mod
 pub fn gen_root(inputs: &Vec<Entry>, in_dir: &str) -> String {
 	let mut source = String::new();
-	// header
 	write!(source, "// generated from {in_dir}\n").unwrap();
 	source.push_str("import * as enc from \"structom\";\n\n");
 
-	// import modules
 	for Entry { resolved_path, .. } in inputs {
 		write!(source, "import * as ns_{resolved_path} from \"./{resolved_path}.ts\";\n").unwrap();
 	}
@@ -24,7 +22,6 @@ pub fn gen_root(inputs: &Vec<Entry>, in_dir: &str) -> String {
 		// match typeid
 		write!(source, "\t\tcase '{rel_path}': {{ switch (enc.decode_vuint(buf, cur)) {{\n")
 			.unwrap();
-		// try decode
 		for (_, item) in &decl.items {
 			write!(source, "\t\t\tcase {}: return ns_{resolved_path}", item.typeid()).unwrap();
 			write!(source, ".decode_{}(buf, cur) as any;\n", item.name()).unwrap();

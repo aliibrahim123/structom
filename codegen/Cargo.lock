@@ -311,9 +311,9 @@ checksum = "7da8b5736845d9f2fcb837ea5d9e2628564b3b043a70948a3f0b778838c5fb4f"
 
 [[package]]
 name = "structom"
-version = "0.2.0"
+version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b3879a777627551caec302bc4cc20cf93738f291fbcd90564c514141293bccbd"
+checksum = "c3ec6cb788cb3240a094ecfc5a0b899ffabfe34819925853b1348cb920757adf"
 dependencies = [
  "chrono",
  "elsa",

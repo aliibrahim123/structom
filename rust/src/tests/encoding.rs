@@ -4,7 +4,7 @@ use chrono::{DateTime, TimeDelta};
 use num_bigint::BigInt;
 
 use crate::{
-	FixedSetProvider, FixedSetProviderRef, Key, Value, VoidProvider,
+	FixedSetProvider, Key, Value, VoidProvider,
 	encoding::{self, *},
 	parse_declaration_file,
 };

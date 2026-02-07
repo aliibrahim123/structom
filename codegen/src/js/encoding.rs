@@ -32,7 +32,7 @@ pub fn gen_encoding(source: &mut String, rel_path: &str, ctx: &Ctx) {
 				write!(source, "export function decode_{name}(buf: Buffer, cur: Cursor)").unwrap();
 				write!(source, ": {name} {{\n").unwrap();
 				write!(source, "let value = {{}} as any as {name};\n").unwrap();
-				decode_struct(source, def, ctx);
+				decode_fields(source, def, ctx);
 				source.push_str("}\n\n");
 			}
 			DeclItem::Enum { .. } => {
@@ -44,18 +44,14 @@ pub fn gen_encoding(source: &mut String, rel_path: &str, ctx: &Ctx) {
 	}
 }
 
-/// generate encoding function for enum
 fn encode_enum(source: &mut String, item: &DeclItem, ctx: &Ctx) {
 	let DeclItem::Enum { name, variants, .. } = item else { unreachable!() };
 
-	// fn decleration
 	write!(source, "export function encode_int_{name}(buf: Buffer, value: {name}) {{\n").unwrap();
-	// encode based on variant
 	source.push_str("\tswitch (value.type) {");
-	for variant in variants.iter().filter_map(|v| v.as_ref()) {
-		let EnumVariant { name: var_name, tag, .. } = variant;
+	for EnumVariant { name: var_name, tag, def, .. } in variants {
 		// has fields
-		if variant.def.is_some() {
+		if def.is_some() {
 			write!(source, "\n\t\tcase '{var_name}':  {{\n").unwrap();
 			write!(source, "\t\t\tenc.encode_vuint(buf, {tag});\n",).unwrap();
 			write!(source, "\t\t\treturn encode_{name}_{var_name}(buf, value);\n",).unwrap();
@@ -69,7 +65,7 @@ fn encode_enum(source: &mut String, item: &DeclItem, ctx: &Ctx) {
 	source.push_str("\n\t}\n}\n");
 
 	// generate encode functions for variants with fields
-	for variant in variants.iter().filter_map(|v| v.as_ref().filter(|v| v.def.is_some())) {
+	for variant in variants.iter().filter(|v| v.def.is_some()) {
 		let EnumVariant { name: var_name, def: Some(def), .. } = variant else { unreachable!() };
 		write!(source, "export function encode_{name}_{var_name}(buf: Buffer, ").unwrap();
 		write!(source, "value: {name} & {{ type: '{var_name}' }}) {{\n").unwrap();
@@ -78,18 +74,14 @@ fn encode_enum(source: &mut String, item: &DeclItem, ctx: &Ctx) {
 	}
 }
 
-/// generate encoding function for struct
 fn encode_struct(source: &mut String, def: &StructDef, ctx: &Ctx) {
-	// split fields into optional and required
 	#[rustfmt::skip]
 	let (opt_fields, req_fields): (Vec<_>, Vec<_>) = 
-		def.fields.iter().filter_map(|f| f.as_ref()).partition(|field| field.is_optional);
+		def.fields.values().partition(|field| field.is_optional);
 
 	// encode fields count
-	// case only required, direct count
 	if opt_fields.is_empty() {
 		write!(source, "\tenc.encode_vuint(buf, {});\n", req_fields.len()).unwrap();
-	// case there optionals, count them if have value
 	} else {
 		write!(source, "\tenc.encode_vuint(buf, {}\n", req_fields.len()).unwrap();
 		for field in &opt_fields {
@@ -98,18 +90,17 @@ fn encode_struct(source: &mut String, def: &StructDef, ctx: &Ctx) {
 		source.push_str("\t);\n");
 	}
 
-	// encode required fields
 	for field in req_fields {
 		encode_field(source, &field, ctx);
 	}
-	// encode optional fields if have value
+
 	for field in opt_fields {
 		write!(source, "\tif ('{}' in value) {{\n", field.name).unwrap();
 		encode_field(source, &field, ctx);
 		source.push_str("\t}\n");
 	}
 }
-// encode code for common field value types
+
 // encode header then value
 fn encode_simple_value(source: &mut String, ty: &str, name: &str, tag: u32, size: u32) {
 	write!(source, "\tenc.encode_vuint(buf, {});\n", tag << 3 | size).unwrap();
@@ -127,14 +118,13 @@ fn encode_sized_value(source: &mut String, tag: u32, encoder: impl Fn(&mut Strin
 	// reserve 2 byte space for len
 	write!(source, "\tlet size_ind_{size_ind_inst} = buf.pos;\n").unwrap();
 	source.push_str("\tenc.encode_u8_arr(buf, [0, 0]);\n\t");
-	// encode value
 	encoder(source);
 	// encode len, expand it if required
 	source.push_str(";\n\tenc.encode_vuint_pre_aloc(buf, buf.pos - size_ind_");
 	write!(source, "{size_ind_inst} - 2, size_ind_{size_ind_inst}, 2);\n").unwrap();
 }
-// generate fn that encode primitive types
-fn write_primitive_encoder(source: &mut String, typeid: u8) {
+
+fn write_primitive_encoder(source: &mut String, typeid: u16) {
 	match typeid {
 		ANY_TYPEID => source.push_str("enc.encode_any"),
 
@@ -165,38 +155,32 @@ fn write_primitive_encoder(source: &mut String, typeid: u8) {
 		_ => (),
 	}
 }
-/// write fn that encode specific type
+
 fn write_value_encoder(source: &mut String, typeid: &TypeId, ctx: &Ctx) {
 	let Ctx { file, path_map, provider } = ctx;
-	// builtins
-	if typeid.ns == 0 {
-		match typeid.id as u8 {
+	if typeid.is_builtin() {
+		match typeid.id {
 			ARR_TYPEID => {
 				source.push_str("(buf, value) => enc.encode_arr(buf, value, ");
-				// item encoder
-				write_value_encoder(source, typeid.item.as_ref().unwrap(), ctx);
+				write_value_encoder(source, typeid.item(), ctx);
 				source.push_str(")");
 			}
 			MAP_TYPEID => {
 				source.push_str("(buf, value) => enc.encode_map(buf, value, ");
-				// key encoder
-				write_primitive_encoder(source, typeid.variant as u8);
+				write_primitive_encoder(source, typeid.variant);
 				source.push_str(", ");
-				// value encoder
-				write_value_encoder(source, typeid.item.as_ref().unwrap(), ctx);
+				write_value_encoder(source, typeid.item(), ctx);
 				source.push_str(")");
 			}
 			id => write_primitive_encoder(source, id),
 		}
-	// user defined
 	} else {
 		// same file
 		if typeid.ns == file.id {
 			write!(source, "encode_int_{}", file.get_by_id(typeid.id).unwrap().name()).unwrap();
-		// different file
 		} else {
 			// write ns.encode_type
-			let file = provider.get_by_id(typeid.ns);
+			let file = provider.get(typeid.ns);
 			source.push_str("ns_");
 			source.push_str(path_map.get(&typeid.ns).unwrap());
 			source.push_str(".encode_int_");
@@ -204,13 +188,11 @@ fn write_value_encoder(source: &mut String, typeid: &TypeId, ctx: &Ctx) {
 		}
 	}
 }
-/// generate encode code for a field
 fn encode_field(source: &mut String, field: &Field, ctx: &Ctx) {
 	let Ctx { file, path_map, provider } = ctx;
 	let Field { name, typeid, tag, .. } = field;
-	// builtins
-	if typeid.ns == 0 {
-		match typeid.id as u8 {
+	if typeid.is_builtin() {
+		match typeid.id {
 			ANY_TYPEID => encode_sized_value(source, *tag, |source| {
 				write!(source, "enc.encode_any(buf, value.{name})").unwrap()
 			}),
@@ -237,17 +219,14 @@ fn encode_field(source: &mut String, field: &Field, ctx: &Ctx) {
 			STR_TYPEID => encode_simple_value(source, "str", name, *tag, 0b101),
 			ARR_TYPEID => encode_sized_value(source, *tag, |source| {
 				write!(source, "enc.encode_arr(buf, value.{name}, ").unwrap();
-				// item encoder
-				write_value_encoder(source, typeid.item.as_ref().unwrap(), ctx);
+				write_value_encoder(source, typeid.item(), ctx);
 				source.push_str(", true)");
 			}),
 			MAP_TYPEID => encode_sized_value(source, *tag, |source| {
 				write!(source, "enc.encode_map(buf, value.{name}, ").unwrap();
-				// key encoder
-				write_primitive_encoder(source, typeid.variant as u8);
+				write_primitive_encoder(source, typeid.variant);
 				source.push_str(", ");
-				// value encoder
-				write_value_encoder(source, typeid.item.as_ref().unwrap(), ctx);
+				write_value_encoder(source, typeid.item(), ctx);
 				source.push_str(", true)");
 			}),
 
@@ -257,17 +236,15 @@ fn encode_field(source: &mut String, field: &Field, ctx: &Ctx) {
 			UUID_TYPEID => encode_compound_value(source, "uuid", name, *tag, 16),
 			_ => unreachable!(),
 		}
-	// user defined types
 	} else {
 		encode_sized_value(source, *tag, |source| {
 			// same file
 			if typeid.ns == file.id {
 				let item_name = file.get_by_id(typeid.id).unwrap().name();
 				write!(source, "encode_int_{item_name}(buf, value.{name})",).unwrap();
-			// different file
 			} else {
 				// write ns.encode_value
-				let file = provider.get_by_id(typeid.ns);
+				let file = provider.get(typeid.ns);
 				let item_name = file.get_by_id(typeid.id).unwrap().name();
 				source.push_str("ns_");
 				source.push_str(path_map.get(&typeid.ns).unwrap());
@@ -277,17 +254,13 @@ fn encode_field(source: &mut String, field: &Field, ctx: &Ctx) {
 	};
 }
 
-/// generate decoding function for enum
 fn decode_enum(source: &mut String, item: &DeclItem, ctx: &Ctx) {
 	let DeclItem::Enum { name, variants, .. } = item else { unreachable!() };
 
-	// main function
 	write!(source, "export function decode_{name}(buf: Buffer, cur: Cursor): {name} {{\n").unwrap();
 
-	// switch on tag
 	write!(source, "\tswitch (enc.decode_vuint(buf, cur) as number) {{\n").unwrap();
-	for variant in variants.iter().filter_map(|v| v.as_ref()) {
-		let EnumVariant { name: var_name, tag, def, .. } = variant;
+	for EnumVariant { name: var_name, tag, def, .. } in variants {
 		if def.is_some() {
 			write!(source, "\t\tcase {tag}: return decode_{name}_{var_name}(buf, cur);\n").unwrap();
 		} else {
@@ -297,33 +270,27 @@ fn decode_enum(source: &mut String, item: &DeclItem, ctx: &Ctx) {
 	source.push_str("\t}\n\treturn undefined as any;\n}\n");
 
 	// generate decode functions for variants with fields
-	for variant in variants.iter().filter_map(|v| v.as_ref().filter(|v| v.def.is_some())) {
+	for variant in variants.iter().filter(|v| v.def.is_some()) {
 		let EnumVariant { name: var_name, def: Some(def), .. } = variant else { unreachable!() };
 		write!(source, "export function decode_{name}_{var_name}(buf: Buffer, cur: Cursor) {{\n")
 			.unwrap();
 		write!(source, "let value = {{ type: '{var_name}' }} as any ").unwrap();
 		write!(source, "as {name} & {{ type: '{var_name}' }};\n").unwrap();
-		decode_struct(source, def, ctx);
+		decode_fields(source, def, ctx);
 		source.push_str("}\n");
 	}
 
 	source.push('\n');
 }
 
-/// generate decoding function for struct
-fn decode_struct(source: &mut String, def: &StructDef, ctx: &Ctx) {
-	let fields = def.fields.iter().filter_map(|f| f.as_ref()).collect::<Vec<_>>();
-
-	// header
+fn decode_fields(source: &mut String, def: &StructDef, ctx: &Ctx) {
 	source.push_str("\tlet count = enc.decode_vuint(buf, cur);\n");
 	source.push_str("\tfor (let i = 0; i < count; i++) {\n");
 	source.push_str("\t\tlet header = enc.decode_vuint(buf, cur) as number;\n");
 	source.push_str("\t\tlet tag = header >> 3;\n");
 
-	// fields
 	let mut is_first = true;
-	for field in &fields {
-		let Field { name, tag, typeid, .. } = field;
+	for Field { name, tag, typeid, .. } in def.fields.values() {
 		if is_first {
 			write!(source, "\t\tif (tag === {tag}) {{\n").unwrap();
 		} else {
@@ -334,14 +301,12 @@ fn decode_struct(source: &mut String, def: &StructDef, ctx: &Ctx) {
 		is_first = false;
 	}
 
-	// skip field if nout found
 	source.push_str(" else { enc.skip_field(buf, cur, header) }\n");
 	source.push_str("\t}\n");
 
 	source.push_str("\treturn value;\n");
 }
 
-// encode code for common field value types
 fn decode_simple_value(source: &mut String, name: &str, ty: &str) {
 	write!(source, "\t\t\tvalue.{name} = enc.decode_{ty}(buf, cur);\n").unwrap();
 }
@@ -349,8 +314,7 @@ fn decode_compound_value(source: &mut String, name: &str, ty: &str) {
 	source.push_str("\t\t\tenc.decode_vuint(buf, cur);\n");
 	write!(source, "\t\t\tvalue.{name} = enc.decode_{ty}(buf, cur);\n").unwrap();
 }
-/// generate fn that decode primitive types
-fn write_primitive_decoder(source: &mut String, typeid: u8) {
+fn write_primitive_decoder(source: &mut String, typeid: u16) {
 	match typeid {
 		ANY_TYPEID => source.push_str("enc.decode_any"),
 
@@ -380,21 +344,20 @@ fn write_primitive_decoder(source: &mut String, typeid: u8) {
 		_ => (),
 	}
 }
-/// write a fn that decode a value
 fn write_value_decoder(source: &mut String, typeid: &TypeId, ctx: &Ctx) {
 	let Ctx { file, path_map, provider } = ctx;
-	if typeid.ns == 0 {
-		match typeid.id as u8 {
+	if typeid.is_builtin() {
+		match typeid.id {
 			ARR_TYPEID => {
 				source.push_str("(buf, cur) => enc.decode_arr(buf, cur, ");
-				write_value_decoder(source, typeid.item.as_ref().unwrap(), ctx);
+				write_value_decoder(source, typeid.item(), ctx);
 				source.push_str(")");
 			}
 			MAP_TYPEID => {
 				source.push_str("(buf, cur) => enc.decode_map(buf, cur, ");
-				write_primitive_decoder(source, typeid.variant as u8);
+				write_primitive_decoder(source, typeid.variant);
 				source.push_str(", ");
-				write_value_decoder(source, typeid.item.as_ref().unwrap(), ctx);
+				write_value_decoder(source, typeid.item(), ctx);
 				source.push_str(")");
 			}
 			id => write_primitive_decoder(source, id),
@@ -403,7 +366,7 @@ fn write_value_decoder(source: &mut String, typeid: &TypeId, ctx: &Ctx) {
 		if typeid.ns == file.id {
 			write!(source, "decode_{}", file.get_by_id(typeid.id).unwrap().name()).unwrap();
 		} else {
-			let file = provider.get_by_id(typeid.ns);
+			let file = provider.get(typeid.ns);
 			source.push_str("ns_");
 			source.push_str(path_map.get(&typeid.ns).unwrap());
 			source.push_str(".decode_");
@@ -411,12 +374,10 @@ fn write_value_decoder(source: &mut String, typeid: &TypeId, ctx: &Ctx) {
 		}
 	}
 }
-/// decode code for one field
 fn decode_field(source: &mut String, name: &str, typeid: &TypeId, ctx: &Ctx) {
 	let Ctx { file, provider, path_map } = ctx;
-	// builtins
-	if typeid.ns == 0 {
-		match typeid.id as u8 {
+	if typeid.is_builtin() {
+		match typeid.id {
 			ANY_TYPEID => decode_compound_value(source, name, "any"),
 			BOOL_TYPEID => decode_simple_value(source, name, "bool"),
 
@@ -445,28 +406,25 @@ fn decode_field(source: &mut String, name: &str, typeid: &TypeId, ctx: &Ctx) {
 
 			ARR_TYPEID => {
 				write!(source, "\t\t\tvalue.{name} = enc.decode_arr(buf, cur, ").unwrap();
-				write_value_decoder(source, typeid.item.as_ref().unwrap(), ctx);
+				write_value_decoder(source, typeid.item(), ctx);
 				source.push_str(", true);\n");
 			}
 			MAP_TYPEID => {
 				write!(source, "\t\t\tvalue.{name} = enc.decode_map(buf, cur, ").unwrap();
-				write_primitive_decoder(source, typeid.variant as u8);
+				write_primitive_decoder(source, typeid.variant);
 				source.push_str(", ");
-				write_value_decoder(source, typeid.item.as_ref().unwrap(), ctx);
+				write_value_decoder(source, typeid.item(), ctx);
 				source.push_str(", true);\n");
 			}
 			_ => (),
 		}
-	// user defined
 	} else {
-		// same file
 		if typeid.ns == file.id {
 			source.push_str("\t\t\tenc.decode_vuint(buf, cur);\n");
 			let type_name = file.get_by_id(typeid.id).unwrap().name();
 			write!(source, "\t\t\tvalue.{name} = decode_{type_name}(buf, cur);\n",).unwrap();
-		// different file
 		} else {
-			let file = provider.get_by_id(typeid.ns);
+			let file = provider.get(typeid.ns);
 			source.push_str("\t\t\tenc.decode_vuint(buf, cur);\n");
 			write!(source, "\t\t\tvalue.{name} = ns_").unwrap();
 			source.push_str(path_map.get(&typeid.ns).unwrap());

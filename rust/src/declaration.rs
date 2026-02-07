@@ -61,8 +61,9 @@ pub enum DeclItem {
 	Enum {
 		name: String,
 		typeid: u16,
-		variants: HashMap<u32, EnumVariant>,
-		variants_by_name: HashMap<String, u32>,
+		variants: Vec<EnumVariant>,
+		variants_by_id: HashMap<u32, usize>,
+		variants_by_name: HashMap<String, usize>,
 	},
 }
 
@@ -129,14 +130,22 @@ impl DeclItem {
 	}
 
 	pub fn new_enum(name: String, typeid: u16) -> Self {
-		Self::Enum { name, typeid, variants: HashMap::new(), variants_by_name: HashMap::new() }
+		Self::Enum {
+			name,
+			typeid,
+			variants: Vec::new(),
+			variants_by_id: HashMap::new(),
+			variants_by_name: HashMap::new(),
+		}
 	}
 
 	pub fn add_variant(&mut self, variant: EnumVariant) {
 		match self {
-			Self::Enum { variants, variants_by_name, .. } => {
-				variants_by_name.insert(variant.name.to_string(), variant.tag);
-				variants.insert(variant.tag, variant);
+			Self::Enum { variants, variants_by_id, variants_by_name, .. } => {
+				let ind = variants.len();
+				variants_by_name.insert(variant.name.to_string(), ind);
+				variants_by_id.insert(variant.tag, ind);
+				variants.push(variant);
 			}
 			_ => panic!("why"),
 		}
@@ -144,14 +153,14 @@ impl DeclItem {
 	pub fn get_variant_by_name(&self, name: &str) -> Option<&EnumVariant> {
 		match self {
 			Self::Enum { variants, variants_by_name, .. } => {
-				variants.get(variants_by_name.get(name)?)
+				variants.get(*variants_by_name.get(name)?)
 			}
 			_ => None,
 		}
 	}
 	pub fn get_variant_by_id(&self, tag: u32) -> Option<&EnumVariant> {
 		match self {
-			Self::Enum { variants, .. } => variants.get(&tag),
+			Self::Enum { variants, variants_by_id, .. } => variants.get(*variants_by_id.get(&tag)?),
 			_ => None,
 		}
 	}
