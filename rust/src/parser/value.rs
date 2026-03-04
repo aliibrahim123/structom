@@ -104,12 +104,12 @@ fn parse_map(
 				};
 				key
 			}
-			Some(Token::EOF(_)) | None => return end_of_input(file),
+			Some(Token::Eof(_)) | None => return end_of_input(file),
 			Some(token) => return unexpected_token(token, pos, file),
 		};
 		// the str path in keys doesnt check types
 		if matches!(key, Key::Str(_),) && !matches!(keyid.id, ANY_TYPEID | STR_TYPEID) {
-			mismatch_types(&keyid.name(ctx.provider), "str", pos, file)?
+			mismatch_types(keyid.name(ctx.provider), "str", pos, file)?
 		}
 		if map.contains_key(&key) {
 			return err!(format!("duplicate map key {key:?}"), pos, file);
@@ -174,7 +174,7 @@ fn parse_fields(
 		let name = match tokens.get(*ind) {
 			Some(Token::Ident(key, _)) => *key,
 			Some(Token::Str(key, _)) => key,
-			Some(Token::EOF(_)) | None => return end_of_input(file),
+			Some(Token::Eof(_)) | None => return end_of_input(file),
 			Some(token) => return unexpected_token(token, pos, file),
 		};
 		*ind+= 1;
@@ -264,7 +264,7 @@ fn parse_ident(
 	*ind -= 1;
 	let explicit_type = parse_typeid(tokens, ind, ctx.decl, ctx.options)?;
 	if typeid != &explicit_type {
-		return mismatch_types(&typeid.name(*provider), &explicit_type.name(*provider), pos, file);
+		return mismatch_types(typeid.name(*provider), explicit_type.name(*provider), pos, file);
 	}
 	let typeid = if typeid.is_any() { &explicit_type } else { typeid };
 
@@ -334,7 +334,7 @@ pub fn parse_value(
 			check_builtin!("int", U8_TYPEID..=F64_TYPEID | VUINT_TYPEID | VINT_TYPEID);
 			match typeid.id {
 				U8_TYPEID..=U32_TYPEID | I8_TYPEID..=I32_TYPEID => {
-					downcast_small_ints(*nb as i64, typeid.id, pos, file)?
+					downcast_small_ints(*nb, typeid.id, pos, file)?
 				}
 				ANY_TYPEID | I64_TYPEID | VINT_TYPEID => Value::Int(*nb),
 				U64_TYPEID | VUINT_TYPEID => {
@@ -367,7 +367,7 @@ pub fn parse_value(
 			check_builtin!("str", STR_TYPEID);
 			Value::Str(str.clone())
 		}
-		Some(Token::EOF(_)) | None => return end_of_input(file),
+		Some(Token::Eof(_)) | None => return end_of_input(file),
 		Some(token) => return unexpected_token(token, pos, file),
 	};
 

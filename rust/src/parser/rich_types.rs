@@ -110,7 +110,7 @@ fn parse_dur_part(
 		return Ok(false);
 	}
 
-	let Ok(amount) = u64::from_str_radix(amount, 10) else {
+	let Ok(amount) = amount.parse::<u64>() else {
 		return err!(format!("duration part ({amount}) is large"), pos, file);
 	};
 
@@ -144,7 +144,7 @@ pub fn parse_dur(tokens: &[Token], ind: &mut usize, file: &str) -> Result<Value,
 	let mut pos = start_pos + 1u32;
 	let mut add = |part, pos| {
 		if part != "" {
-			let split = while_matching(part, 0, |c| matches!(c, '0'..='9'));
+			let split = while_matching(part, 0, |c| c.is_ascii_digit());
 			if split == 0 {
 				return err!(format!("invalid duration part ({part})"), pos, file);
 			}
@@ -183,5 +183,5 @@ pub fn parse_dur(tokens: &[Token], ind: &mut usize, file: &str) -> Result<Value,
 	parse_dur_part(&mut ctx, "ns", 1, 1000)?;
 
 	let dur = TimeDelta::nanoseconds(ctx.val);
-	return Ok(Value::Dur(if neg { -dur } else { dur }));
+	Ok(Value::Dur(if neg { -dur } else { dur }))
 }

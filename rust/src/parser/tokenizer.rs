@@ -31,18 +31,15 @@ impl Pos {
 	}
 }
 
-impl Into<(u32, u32)> for Pos {
-	fn into(self) -> (u32, u32) {
-		(self.line, self.col)
+impl From<Pos> for (u32, u32) {
+	fn from(val: Pos) -> Self {
+		(val.line, val.col)
 	}
 }
 
 impl PartialEq<(u32, u32)> for Pos {
 	fn eq(&self, other: &(u32, u32)) -> bool {
 		self.line == other.0 && self.col == other.1
-	}
-	fn ne(&self, other: &(u32, u32)) -> bool {
-		self.line != other.0 || self.col != other.1
 	}
 }
 
@@ -83,7 +80,7 @@ pub enum Token<'s> {
 	Symbol(char, Pos),
 
 	/// end of file
-	EOF(Pos),
+	Eof(Pos),
 }
 
 impl Token<'_> {
@@ -96,7 +93,7 @@ impl Token<'_> {
 			Token::BigInt(_, ind) => *ind,
 			Token::Float(_, ind) => *ind,
 			Token::Symbol(_, ind) => *ind,
-			Token::EOF(ind) => *ind,
+			Token::Eof(ind) => *ind,
 		}
 	}
 }
@@ -111,7 +108,7 @@ impl Display for Token<'_> {
 			Token::BigInt(nb, _) => write!(f, "{nb}"),
 			Token::Float(nb, _) => write!(f, "{nb}"),
 			Token::Symbol(symbol, _) => write!(f, "{symbol}"),
-			Token::EOF(_) => write!(f, "end_of_file"),
+			Token::Eof(_) => write!(f, "end_of_file"),
 		}
 	}
 }
@@ -219,7 +216,7 @@ fn parse_str(source: &str, pos: &mut Pos, file: &str) -> Result<String, ParseErr
 	update_pos_in_raw(pos, rest);
 	res.push_str(rest);
 
-	return Ok(res);
+	Ok(res)
 }
 
 /// grammer: ["+" | "-"] (dec_part | [dec_part] "." dec_part) [("e" | "E") ["+" | "-"] dec_part]
@@ -294,7 +291,7 @@ fn parse_int<'a>(
 		if source.len() == end_ind {
 			return end_of_input(file);
 		}
-		return unexpected_token(&source.char_at(ind).unwrap(), pos, file);
+		return unexpected_token(source.char_at(ind).unwrap(), pos, file);
 	}
 	let nb_source = strip_dashes_in_nb(&source[dg_start..end_ind], pos, file)?;
 	ind = end_ind;
@@ -319,7 +316,7 @@ fn parse_int<'a>(
 		return Ok((Token::BigInt(value, pos), ind, new_pos));
 	}
 
-	if suffix != "" {
+	if !suffix.is_empty() {
 		return err!(format!("invalid suffix \"{suffix}\""), pos, file);
 	}
 
@@ -330,7 +327,7 @@ fn parse_int<'a>(
 			return err!(format!("integer ({nb_source}) out of range"), pos, file);
 		};
 
-		return Ok((Token::Int(value * if neg { -1 } else { 1 }, pos), ind, new_pos));
+		Ok((Token::Int(value * if neg { -1 } else { 1 }, pos), ind, new_pos))
 	}
 	// uint path
 	else {
@@ -338,7 +335,7 @@ fn parse_int<'a>(
 			return err!(format!("unsigned integer ({nb_source}) out of range"), pos, file);
 		};
 
-		return Ok((Token::Uint(value, pos), ind, new_pos));
+		Ok((Token::Uint(value, pos), ind, new_pos))
 	}
 }
 
@@ -465,6 +462,6 @@ pub fn tokenize<'a>(source: &'a str, file: &str) -> Result<Vec<Token<'a>>, Parse
 		}
 	}
 	// make life easier
-	tokens.push(Token::EOF(pos));
+	tokens.push(Token::Eof(pos));
 	Ok(tokens)
 }

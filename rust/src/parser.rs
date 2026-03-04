@@ -61,7 +61,7 @@ pub fn parse_declaration_file(
 	if ind != tokens.len() - 1 {
 		return unexpected_token(&tokens[ind], tokens[ind].pos(), &file.name);
 	}
-	if file.items.len() == 0 {
+	if file.items.is_empty() {
 		return err!(format!("no declaration"), &file.name);
 	}
 
@@ -74,7 +74,7 @@ struct MiddleProvider<'a> {
 	ctx: &'a DeclContext<'a>,
 }
 impl DeclProvider for MiddleProvider<'_> {
-	fn get<'a>(&'a self, id: u64) -> &'a DeclFile {
+	fn get(&self, id: u64) -> &DeclFile {
 		if id == self.ctx.file.id { self.ctx.file } else { self.provider.get(id) }
 	}
 	fn load<'a>(&'a self, name: &str) -> Result<&'a DeclFile, ImportError> {

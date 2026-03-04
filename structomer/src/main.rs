@@ -71,7 +71,7 @@ fn mainer() -> Result<(), String> {
 
 	let source = match from {
 		Type::Obj => parse(&input, &Default::default(), &*provider).map_err(|v| v.to_string())?,
-		Type::Bin => decode(&input.as_bytes(), &*provider).ok_or("invalid binary data")?,
+		Type::Bin => decode(input.as_bytes(), &*provider).ok_or("invalid binary data")?,
 		Type::JSON => from_json(JsonValue::from_str(&input).map_err(|e| e.to_string())?),
 	};
 

@@ -31,7 +31,7 @@ fn decode_field_value(
 	data: &[u8], ind: &mut usize, typeid: &TypeId, in_field: bool, provider: &dyn DeclProvider,
 ) -> Option<Value> {
 	if !typeid.is_builtin() {
-		return Some(decode_item(data, ind, resolve_typeid(typeid, provider), provider)?);
+		return decode_item(data, ind, resolve_typeid(typeid, provider), provider);
 	}
 
 	Some(match typeid.id {

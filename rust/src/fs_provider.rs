@@ -72,7 +72,7 @@ impl FSProvider {
 	}
 
 	/// load a declaration file at a given path if not loaded before.
-	pub fn load_file<'a>(&'a self, path: impl AsRef<Path>) -> Result<&'a DeclFile, ImportError> {
+	pub fn load_file(&self, path: impl AsRef<Path>) -> Result<&DeclFile, ImportError> {
 		let path = absolute(Path::join(&self.root, path.as_ref()))
 			.map_err(|e| ImportError::Other(e.to_string()))?;
 

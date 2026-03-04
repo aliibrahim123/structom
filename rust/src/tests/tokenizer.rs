@@ -50,7 +50,7 @@ fn test(source: &str, tokens: &[Token]) {
 }
 #[test]
 fn core() {
-	assert_eq!(tokenize("", ""), Ok(vec![Token::EOF(Pos::new(1, 1))]));
+	assert_eq!(tokenize("", ""), Ok(vec![Token::Eof(Pos::new(1, 1))]));
 
 	test("  \t\t\n\n\r\r", &[]);
 	test("// a comment \n // a comment", &[]);

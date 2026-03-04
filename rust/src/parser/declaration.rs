@@ -50,7 +50,7 @@ fn resolve_tag(
 	if try_consume_symbol('[', tokens, ind, file)? {
 		let spec_tag = consume_uint(tokens, ind, &ctx.file.name)?;
 
-		if spec_tag < *cur_tag as u64 {
+		if spec_tag < *cur_tag {
 			let msg = format!(
 				"{tag_type} ({spec_tag}) must be at least ({cur_tag}) at {item_type} \"{item_name}\"",
 			);
@@ -88,16 +88,16 @@ fn parse_import<'a>(
 	let is_parent_dir = path.starts_with("../");
 	if options.relative_paths && (is_cur_dir || is_parent_dir) {
 		path_owner = Some(if is_cur_dir {
-			let parent = remove_n_suffix(&cur_file, "/", 1);
+			let parent = remove_n_suffix(cur_file, "/", 1);
 			(if parent.is_empty() { String::new() } else { parent.to_string() + "/" })
 				+ path.strip_prefix("./").unwrap()
 		} else {
 			let up_dirs = count_prefix(path, "../") + 1;
-			let parent = remove_n_suffix(&cur_file, "/", up_dirs).to_string();
+			let parent = remove_n_suffix(cur_file, "/", up_dirs).to_string();
 			(if parent.is_empty() { String::new() } else { parent + "/" })
 				+ path.trim_start_matches("../")
 		});
-		path = &path_owner.as_ref().unwrap();
+		path = path_owner.as_ref().unwrap();
 	}
 
 	let imported = match ctx.provider.load(path) {
@@ -156,7 +156,7 @@ fn parse_anonymous_item(
 		}
 		_ => unreachable!(),
 	}
-	return Ok(TypeId::new(ctx.file.id, typeid, metadata));
+	Ok(TypeId::new(ctx.file.id, typeid, metadata))
 }
 
 /// grammer: ("@" ident "(" str ")")*
@@ -173,7 +173,7 @@ pub fn parse_metadata(
 		consume_symbol(')', tokens, ind, file)?;
 
 		let metadata = match &mut metadata {
-			None if options.metadata == false => continue,
+			None if !options.metadata => continue,
 			Some(metadata) => metadata,
 			None => {
 				metadata = Some(vec![]);
@@ -291,7 +291,7 @@ fn parse_fields(
 		let name = match tokens.get(*ind) {
 			Some(Token::Ident(ident, _)) => ident.to_string(),
 			Some(Token::Str(str, _)) => str.to_string(),
-			Some(Token::EOF(_)) | None => return end_of_input(file),
+			Some(Token::Eof(_)) | None => return end_of_input(file),
 			Some(token) => return unexpected_token(token, token.pos(), file),
 		};
 		*ind += 1;
@@ -314,7 +314,7 @@ fn parse_fields(
 		return err!(msg, start_pos, &ctx.file.name);
 	}
 
-	return Ok(def);
+	Ok(def)
 }
 
 /// grammer: "{" (variant ",")* "}

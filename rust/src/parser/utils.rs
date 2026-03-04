@@ -79,13 +79,13 @@ pub fn consume_ident<'a>(
 ) -> Result<&'a str, ParseError> {
 	match tokens.get(*ind) {
 		Some(Token::Ident(ident, _)) => (Ok(*ident), *ind += 1).0,
-		Some(Token::EOF(_)) | None => end_of_input(file),
+		Some(Token::Eof(_)) | None => end_of_input(file),
 		Some(token) => unexpected_token(token, token.pos(), file),
 	}
 }
 /// safely try to consume a symbol
-pub fn try_consume_ident<'a>(
-	ident: &str, tokens: &'a [Token], ind: &mut usize, _file: &str,
+pub fn try_consume_ident(
+	ident: &str, tokens: &[Token], ind: &mut usize, _file: &str,
 ) -> Result<bool, ParseError> {
 	match tokens.get(*ind) {
 		Some(Token::Ident(id, _)) if *id == ident => (Ok(true), *ind += 1).0,
@@ -98,7 +98,7 @@ pub fn consume_str<'a>(
 ) -> Result<&'a str, ParseError> {
 	match tokens.get(*ind) {
 		Some(Token::Str(str, _)) => (Ok(&str[..]), *ind += 1).0,
-		Some(Token::EOF(_)) | None => end_of_input(file),
+		Some(Token::Eof(_)) | None => end_of_input(file),
 		Some(token) => unexpected_token(token, token.pos(), file),
 	}
 }
@@ -108,7 +108,7 @@ pub fn consume_symbol(
 ) -> Result<(), ParseError> {
 	match tokens.get(*ind) {
 		Some(Token::Symbol(sym, _)) if *sym == token => (Ok(()), *ind += 1).0,
-		Some(Token::EOF(_)) | None => end_of_input(file),
+		Some(Token::Eof(_)) | None => end_of_input(file),
 		Some(token) => unexpected_token(token, token.pos(), file),
 	}
 }
@@ -126,7 +126,7 @@ pub fn consume_uint(tokens: &[Token], ind: &mut usize, file: &str) -> Result<u64
 	match tokens.get(*ind) {
 		Some(Token::Uint(nb, _)) => (Ok(*nb), *ind += 1).0,
 		Some(Token::Int(nb, _)) if (*nb >= 0) => (Ok(*nb as u64), *ind += 1).0,
-		Some(Token::EOF(_)) | None => end_of_input(file),
+		Some(Token::Eof(_)) | None => end_of_input(file),
 		Some(token) => unexpected_token(token, token.pos(), file),
 	}
 }

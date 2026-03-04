@@ -217,7 +217,7 @@ impl Value {
 	pub fn inner(&self) -> &Value {
 		match &self {
 			Value::Map(map) if map.contains_key(&HAS_META_KEY) => &map[&INNER_KEY],
-			_ => &self,
+			_ => self,
 		}
 	}
 	/// get mut ref to the inner value of a metadata wrapped type, else return self.

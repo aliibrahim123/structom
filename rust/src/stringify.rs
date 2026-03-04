@@ -37,7 +37,7 @@ impl Default for StringifyOptions<'static> {
 pub fn stringify(value: &Value, options: &StringifyOptions) -> String {
 	let mut result = "".to_string();
 	str_value(value, &mut result, 0, options);
-	return result;
+	result
 }
 
 /// for commons between keys and values
@@ -63,7 +63,7 @@ macro_rules! str_commons {
 pub fn str_key(value: &Key) -> String {
 	let mut result = String::new();
 	str_commons!(Key, value, &mut result);
-	return result;
+	result
 }
 pub fn str_value(value: &Value, result: &mut String, depth: usize, options: &StringifyOptions) {
 	match value {
@@ -94,7 +94,7 @@ fn str_str(str: &str, result: &mut String) {
 
 /// add new line and ident till depth
 fn add_indent(result: &mut String, depth: usize, options: &StringifyOptions) {
-	if options.ident.len() > 0 {
+	if !options.ident.is_empty() {
 		result.push('\n');
 		for _ in 0..depth {
 			result.push_str(options.ident);
@@ -151,11 +151,11 @@ fn str_map(
 		}
 	}
 
-	if map.len() == 0 {
+	if map.is_empty() {
 		result.push_str("{}");
 		return;
 	}
-	result.push_str("{");
+	result.push('{');
 
 	// compact: 4 simple fields or 1 field
 	let is_one_key = map.len() == 1 || (is_enum && map.len() == 2);
@@ -193,7 +193,7 @@ fn str_map(
 			result.push(']');
 		}
 
-		result.push_str(":");
+		result.push(':');
 		if do_ident(options) {
 			result.push(' ');
 		}
@@ -204,15 +204,15 @@ fn str_map(
 		result.push(',');
 		add_indent(result, depth, options);
 	}
-	result.push_str("}");
+	result.push('}');
 }
 
-fn str_arr(arr: &Vec<Value>, result: &mut String, depth: usize, options: &StringifyOptions) {
-	if arr.len() == 0 {
+fn str_arr(arr: &[Value], result: &mut String, depth: usize, options: &StringifyOptions) {
+	if arr.is_empty() {
 		result.push_str("[]");
 		return;
 	}
-	result.push_str("[");
+	result.push('[');
 
 	// compact: 8 simple item or 1 item
 	let compact =
@@ -233,7 +233,7 @@ fn str_arr(arr: &Vec<Value>, result: &mut String, depth: usize, options: &String
 		result.push(',');
 		add_indent(result, depth, options);
 	}
-	result.push_str("]");
+	result.push(']');
 }
 
 fn str_uuid(uuid: &[u8; 16], result: &mut String) {
@@ -248,7 +248,7 @@ fn str_uuid(uuid: &[u8; 16], result: &mut String) {
 }
 
 fn str_inst(inst: &DateTime<Utc>, result: &mut String) {
-	result.push_str(if inst.nanosecond() % 1000000 == 0 { "inst \"" } else { "instN \"" });
+	result.push_str(if inst.nanosecond().is_multiple_of(1000000) { "inst \"" } else { "instN \"" });
 
 	result.push_str(&inst.format("%Y-%m-%dT%H:%M:%S%.fZ").to_string());
 	result.push('"');

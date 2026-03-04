@@ -33,12 +33,12 @@ pub fn encode_str(data: &mut Vec<u8>, value: &str) {
 }
 #[inline]
 pub fn decode_str(data: &[u8], ind: &mut usize) -> Option<String> {
-	Some(String::from_utf8(decode_u8_arr(data, ind)?).ok()?)
+	String::from_utf8(decode_u8_arr(data, ind)?).ok()
 }
 
 #[inline]
 pub fn encode_arr<T>(
-	data: &mut Vec<u8>, value: &[T], in_field: bool, item_fn: impl Fn(&mut Vec<u8>, &T) -> (),
+	data: &mut Vec<u8>, value: &[T], in_field: bool, item_fn: impl Fn(&mut Vec<u8>, &T),
 ) {
 	if !in_field {
 		encode_vuint(data, value.len() as u64)
@@ -70,8 +70,8 @@ pub fn decode_arr<T>(
 
 #[inline]
 pub fn encode_map<K, V>(
-	data: &mut Vec<u8>, value: &HashMap<K, V>, in_field: bool,
-	key_fn: impl Fn(&mut Vec<u8>, &K) -> (), val_fn: impl Fn(&mut Vec<u8>, &V) -> (),
+	data: &mut Vec<u8>, value: &HashMap<K, V>, in_field: bool, key_fn: impl Fn(&mut Vec<u8>, &K),
+	val_fn: impl Fn(&mut Vec<u8>, &V),
 ) {
 	if !in_field {
 		encode_vuint(data, value.len() as u64)

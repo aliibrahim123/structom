@@ -76,7 +76,7 @@ pub trait DeclProvider {
 	/// get a decleration file by its id.
 	///
 	/// this method can not fail, it is used for decleration files that were created before.
-	fn get<'a>(&'a self, id: u64) -> &'a DeclFile;
+	fn get(&self, id: u64) -> &DeclFile;
 
 	/// load a decleration file by its name.
 	///   
@@ -304,7 +304,7 @@ impl DeclProvider for FixedSetProviderRef<'_> {
 		self.files.get(&id).unwrap()
 	}
 	fn load<'a>(&'a self, name: &str) -> Result<&'a DeclFile, ImportError> {
-		self.files_by_name.get(name).map(|f| *f).ok_or(ImportError::NotFound)
+		self.files_by_name.get(name).copied().ok_or(ImportError::NotFound)
 	}
 }
 
