@@ -1,4 +1,2 @@
-/rust/target
-/codegen/target
-/structomer/target
-/test/
+/target/
+/tests/

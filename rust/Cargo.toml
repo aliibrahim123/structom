@@ -1,0 +1,15 @@
+[package]
+name = "structom"
+description = "structom rust crate"
+version = "0.3.0"
+edition = "2024"
+readme = "../readme.md"
+license = "MIT"
+repository = "https://github.com/aliibrahim123/structom"
+documentation = "https://docs.rs/structom/"
+
+[lib]
+doctest = true
+
+[dependencies]
+gramex = { version = "0.2.4", features = ["str"] }
