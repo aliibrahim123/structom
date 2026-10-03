@@ -10,29 +10,29 @@ for (const file of await readdir('./spec/')) {
 	}
 }
 
-function u8(name) {
-	return { bits: 1, name, attr: 'u8' };
+function u8(name, type = 'u8') {
+	return { bits: 1, name, attr: type };
 }
-function u16(name) {
-	return { bits: 2, name, attr: 'u16' };
+function u16(name, type = 'u16') {
+	return { bits: 2, name, attr: type };
 }
-function u32(name) {
-	return { bits: 4, name, attr: 'u32' };
+function u32(name, type = 'u32') {
+	return { bits: 4, name, attr: type };
 }
-function u64(name) {
-	return { bits: 8, name, attr: 'u64' };
+function u64(name, type = 'u64') {
+	return { bits: 8, name, attr: type };
 }
-function i8(name) {
-	return { bits: 1, name, attr: 'i8' };
+function i8(name, type = 'i8') {
+	return { bits: 1, name, attr: type };
 }
-function i16(name) {
-	return { bits: 2, name, attr: 'i16' };
+function i16(name, type = 'i16') {
+	return { bits: 2, name, attr: type };
 }
-function i32(name) {
-	return { bits: 4, name, attr: 'i32' };
+function i32(name, type = 'i32') {
+	return { bits: 4, name, attr: type };
 }
-function i64(name) {
-	return { bits: 8, name, attr: 'i64' };
+function i64(name, type = 'i64') {
+	return { bits: 8, name, attr: type };
 }
 function pad(bytes) {
 	return { bits: bytes };
@@ -42,26 +42,51 @@ function typeid(name) {
 }
 
 const encodings = {
-	binary_basic: [
-		u16('a'),
-		u8('b'),
-		{ bits: 1, name: 'pad' },
-		i32('c'),
-		u32('len'),
-		u16('item0'),
-		u16('item1'),
-		u16('item2'),
-	],
+	binary_example: {
+		lanes: 2,
+		encoding: [
+			u16('a'),
+			u8('b'),
+			u8('', 'pad'),
+			i32('ptr_to_item1'),
+			u32('len'),
+			u16('item0'),
+			u16('item1'),
+			u16('item2'),
+
+			u16('01 02'),
+			u8('03'),
+			u8(''),
+			i32('0a'),
+			u32('03'),
+			u16('04 05'),
+			u16('06 07'),
+			u16('08 09'),
+		],
+	},
 	header: [
-		{ name: '53', bits: 1 },
-		{ name: '54', bits: 1 },
-		{ name: '4F', bits: 1 },
-		{ name: '4D', bits: 1 },
+		u8('53', ''),
+		u8('54', ''),
+		u8('4F', ''),
+		u8('4D', ''),
 		u32('imports_len'),
-		{ name: 'import_n', bits: 4, attr: 'str * n' },
+		u32('import_n', 'str * n'),
 		u32('sections_len'),
-		{ name: 'section_n', bits: 8, attr: 'u64 * n' },
+		u64('section_n', 'u64 * n'),
 		typeid('root_value'),
+	],
+	header_example: [
+		u8('53', ''),
+		u8('54', ''),
+		u8('4F', ''),
+		u8('4D', ''),
+		u32('01 00 00 00', 'imports_len'),
+		u32('06 00 00 00', 'import1_len'),
+		...Array.from('schema').map((v) => u8(v.charCodeAt(0).toString(16), '')),
+		pad(2),
+		u32('01 00 00 00', 'sections_len'),
+		u16('01 00', 'ns'),
+		u16('00 00', 'id'),
 	],
 	sections: [
 		u32('obj0_len'),
@@ -69,12 +94,21 @@ const encodings = {
 		pad(2),
 		u32('obj1_len'),
 		{ name: 'obj1_fields', bits: 7 },
-		{ name: '...', bits: 2 },
+		u16('...', ''),
 	],
+	type_id: [u16('ns'), u16('id')],
+	typeid_example: {
+		lanes: 2,
+		margin: { left: 60 },
+		label: { left: ['`u8`', '`Enum`'] },
+		encoding: [u16('00 00', 'ns'), u16('10 00', 'id'), u16('01 00', 'ns'), u16('01 00', 'id')],
+	},
 };
 
 for (const [name, encoding] of Object.entries(encodings)) {
-	let diagram_raw = render(encoding);
+	let diagram_raw = Array.isArray(encoding)
+		? render(encoding)
+		: render(encoding.encoding, encoding);
 
 	let rootG = diagram_raw[3];
 	for (let laneG of rootG.slice(2)) {

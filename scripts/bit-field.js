@@ -241,7 +241,7 @@ const compactLabels = (desc, opt) => {
 	for (let i = 0; i < mod; i++) {
 		const idx = vflip ? i : mod - i - 1;
 		if (mask[idx]) {
-			labels.push(text(idx + offset, step * (i + 0.5), 0.5 * fontsize + 4));
+			//labels.push(text(idx + offset, step * (i + 0.5), 0.5 * fontsize + 4));
 		}
 	}
 
@@ -420,8 +420,8 @@ const optDefaults = (opt) => {
 
 	opt.fontfamily = opt.fontfamily || 'monospace';
 	opt.fontweight = opt.fontweight || 'normal';
-	opt.compact = opt.compact || false;
-	opt.hflip = opt.hflip || false;
+	opt.compact = opt.compact || true;
+	opt.hflip = opt.hflip || true;
 	opt.vflip = opt.vflip || true;
 	opt.uneven = opt.uneven || false;
 	opt.margin = opt.margin || {};
