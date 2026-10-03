@@ -96,7 +96,7 @@ Root {
 }
 ```
 
-# binary encoding basics
+# binary encoding foundation
 
 the binary encoding is machine friendly format of structom designed for high performance serialization
 
@@ -106,23 +106,33 @@ data is encoded in little endian format aligned to their natural alignment, with
 
 data is encoded as signed / unsigned integers of `n` bits, specified through `u/sn` section type.
 
-![binary basics](./binary_basic.svg)
-
 array like data is encoded as a section encoding the length, followed by the items sections, they are always `0`-indexed.
+
+![binary basics](./binary_basic.svg)
 
 ## root structure
 
 ### header
 
+![header](./header.svg)
+
 a binary file starts a header begining with the magic number `53 54 4F 4D (STOM)`.
 
 then it followed by a list of imports encoded as `arr<str>`, it starts with a `u32` length field followed by `str`s encoding the imports paths.
 
-then a list of sections encoded as `arr<u64>`, it starts with a non zero `u32` length field followed by `u64` section offsets, if there is one section, no offsets need to be specified.
+then a list of sections encoded as `arr<u64>`, it starts with a non zero `u32` length field followed by `u64` section offsets.
+
+if there is one section, no offsets need to be specified.
+
+then a `typeid` of the root value is followed
 
 ### sections
 
-sections are non uniformly sized part of a binary file, they created a 2 level address space for the file, decreasing the pointer length (`u32`) while supporting `u64` file sizes.
+![sections](./sections.svg)
+
+sections are non uniformly sized part of a binary file.
+
+they created a 2 level address space for the file, decreasing the pointer length (`u32`) while supporting `u64` file sizes.
 
 sections are composed of multiple objects, each object encoded a specific data structure defined by the schema.
 
