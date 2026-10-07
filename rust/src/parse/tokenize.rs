@@ -3,3 +3,6 @@ pub struct Span {
 	start: u64,
 	len: u64,
 }
+fn tokenize() {
+	0.;
+}

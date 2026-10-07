@@ -37,9 +37,43 @@ function i64(name, type = 'i64') {
 function pad(bytes) {
 	return { bits: bytes };
 }
-function typeid(name) {
-	return { bits: 4, name, attr: 'typeid' };
+function typeid(ns, id) {
+	[ns, id] = id ? [ns, id] : ['00 00', ns];
+	return [u16(ns, 'ns'), u16(id, 'id')];
 }
+function builtin(name, id, encoding) {
+	let first_word = (id % 256).toString(16).padStart(2, '0');
+	let second_word = Math.floor(id / 256)
+		.toString(16)
+		.padStart(2, '0');
+	let res = {
+		[`${name}_typeid`]: {
+			margin: { left: 55 },
+			encoding: typeid(`${first_word} ${second_word}`),
+			label: { left: 'typeid' },
+		},
+	};
+	if (encoding) {
+		res[`${name}_value`] = {
+			margin: { left: 55 },
+			encoding,
+			label: { left: 'value' },
+		};
+	}
+	return res;
+}
+
+function object(name, id, encoding) {
+	let res = builtin(name, id, [u32('ptr')]);
+	res[`${name}_object`] = {
+		margin: { left: 55 },
+		encoding,
+		label: { left: 'object' },
+	};
+	return res;
+}
+
+const rest = u16('...', '');
 
 const encodings = {
 	binary_example: {
@@ -57,8 +91,8 @@ const encodings = {
 			u16('01 02'),
 			u8('03'),
 			u8(''),
-			i32('0a'),
-			u32('03'),
+			i32('0a 00 00 00'),
+			u32('03 00 00 00'),
 			u16('04 05'),
 			u16('06 07'),
 			u16('08 09'),
@@ -71,9 +105,9 @@ const encodings = {
 		u8('4D', ''),
 		u32('imports_len'),
 		u32('import_n', 'str * n'),
-		u32('sections_len'),
-		u64('section_n', 'u64 * n'),
-		typeid('root_value'),
+		u32('segments_len'),
+		u64('segment_n', 'u64 * n'),
+		u32('root_value', 'typeid'),
 	],
 	header_example: [
 		u8('53', ''),
@@ -84,25 +118,52 @@ const encodings = {
 		u32('06 00 00 00', 'import1_len'),
 		...Array.from('schema').map((v) => u8(v.charCodeAt(0).toString(16), '')),
 		pad(2),
-		u32('01 00 00 00', 'sections_len'),
-		u16('01 00', 'ns'),
-		u16('00 00', 'id'),
+		u32('01 00 00 00', 'segments_len'),
+		...typeid('01 00', '00 00'),
 	],
-	sections: [
+	segments: [
 		u32('obj0_len'),
 		{ name: 'obj0_fields', bits: 10 },
 		pad(2),
 		u32('obj1_len'),
 		{ name: 'obj1_fields', bits: 7 },
-		u16('...', ''),
+		rest,
 	],
-	type_id: [u16('ns'), u16('id')],
+	type_id: [u16('ns'), u16('id'), u32('param_n', 'typeid * n')],
 	typeid_example: {
 		lanes: 2,
-		margin: { left: 60 },
-		label: { left: ['`u8`', '`Enum`'] },
-		encoding: [u16('00 00', 'ns'), u16('10 00', 'id'), u16('01 00', 'ns'), u16('01 00', 'id')],
+		margin: { left: 90 },
+		label: { left: ['`u8`', '`Enum<u8>`'] },
+		encoding: [
+			...typeid('10 00'),
+			u32('', ''),
+			...typeid('01 00', '01 00'),
+			u16('00 00', 'T_ns'),
+			u16('10 00', 'T_id'),
+		],
 	},
+	binary_generic_example: {
+		lanes: 2,
+		compact: false,
+		label: { left: ['Generic', 'a'] },
+		encoding: [
+			u32('0c 00 00 00', 'a'),
+			u16('12 34', 'b'),
+			pad(2),
+			u16('ff 00', 'c'),
+			pad(2),
+
+			u32('03 00 00 00', 'len'),
+			u8("'a'", ''),
+			u8("'b'", ''),
+			u8("'c'", ''),
+			pad(4),
+		],
+	},
+	...builtin('none', 0),
+	...builtin('bool', 2),
+	...object('any', 1, [u32('len'), u32('typeid', ''), { bits: 10, name: 'value' }, rest]),
+	...builtin('far', 3, [u32('section'), u32('offset')]),
 };
 
 for (const [name, encoding] of Object.entries(encodings)) {

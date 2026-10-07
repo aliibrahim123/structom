@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="49" viewBox="0 0 800 49"><style>			.bg { fill: #fafafa; }
+			svg line { stroke: #222; }
+			svg text { fill: #111; }
+			@media (prefers-color-scheme: dark) {
+				.bg { fill: #1e1e1e; }
+				svg line { stroke: #a0a0a0; }
+				svg text { fill: #e0e0e0; }
+			}</style><g transform="translate(0.5,0.5)" text-anchor="middle" font-size="14" font-family="monospace" font-weight="normal"><g transform="translate(55,2)"><rect class="bg" width="240" height="29"/><g stroke="black" stroke-width="1" stroke-linecap="round"><line x2="240"/><line x1="240" x2="240" y2="29"/><line x2="240" y1="29" y2="29"/><line y2="29"/><line x1="30" x2="30" y2="3"/><line x1="30" x2="30" y1="29" y2="26"/><line x1="60" x2="60" y2="3"/><line x1="60" x2="60" y1="29" y2="26"/><line x1="90" x2="90" y2="3"/><line x1="90" x2="90" y1="29" y2="26"/><line x1="120" x2="120" y2="29"/><line x1="150" x2="150" y2="3"/><line x1="150" x2="150" y1="29" y2="26"/><line x1="180" x2="180" y2="3"/><line x1="180" x2="180" y1="29" y2="26"/><line x1="210" x2="210" y2="3"/><line x1="210" x2="210" y1="29" y2="26"/></g><g><g/><g transform="translate(15,14)"><g transform="translate(45)"><text y="6"><tspan>section</tspan></text></g><g transform="translate(165)"><text y="6"><tspan>offset</tspan></text></g></g><g transform="translate(15,37)"><g transform="translate(45)"><text y="6"><tspan>u32</tspan></text></g><g transform="translate(165)"><text y="6"><tspan>u32</tspan></text></g></g></g><g text-anchor="end"><g transform="translate(-4,15)"><text y="6"><tspan>value</tspan></text></g></g></g><g transform="translate(55,-3)"/></g></svg>

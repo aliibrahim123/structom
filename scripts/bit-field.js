@@ -420,7 +420,7 @@ const optDefaults = (opt) => {
 
 	opt.fontfamily = opt.fontfamily || 'monospace';
 	opt.fontweight = opt.fontweight || 'normal';
-	opt.compact = opt.compact || true;
+	opt.compact = opt.compact != undefined ? opt.compact : true;
 	opt.hflip = opt.hflip || true;
 	opt.vflip = opt.vflip || true;
 	opt.uneven = opt.uneven || false;
@@ -493,7 +493,7 @@ export const render = (desc, opt) => {
 	const mod = Math.ceil((bits * 1.0) / lanes);
 	opt.mod = mod | 0;
 
-	const maxBitWidth = 35;
+	const maxBitWidth = 30;
 	const maxWidth = maxBitWidth * mod;
 	const maxHspace = maxWidth + margin.left + margin.right + 1;
 	if (opt.hspace > maxHspace) opt.hspace = maxHspace;
