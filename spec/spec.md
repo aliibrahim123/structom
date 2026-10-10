@@ -298,11 +298,11 @@ if the resolved item is generic, its parameters are specifed as `typeid`s after 
 ![typeid example](./typeid_example.svg)
 
 ```sturctom
-/// module1.stomd
+// module1.stomd
 struct Struct { }
 union Union<T> { A(T) }
 
-/// value.stomo
+// value.stomo
 import "./module1.stomd"
 [u8 10, Union.A<u8> 1]
 ```
@@ -640,7 +640,7 @@ items with `_` name get skipped, with ids still counting them.
 ### inner definitions
 
 ```gramex
-let inner_def = "struct" name:ident struct_body | "enum" name:ident enum_body;
+let inner_def = "fixed"? "struct" name:ident struct_body | "union" name:ident union_body;
 ```
 
 items can be declerated inlined withen others fields, becoming their types.
@@ -655,7 +655,7 @@ inner definitions can also be used inside generic parameters.
 
 ```structom
 // id = 0
-struct Element {
+fixed struct Element {
 	tag: str,
 	attr: list</* id = 1 */ struct {
 		// id = 2
@@ -668,9 +668,9 @@ struct Element {
 struct _ {}
 
 // id = 4
-fixed union Union<T> {
+union Union<T> {
 	A, B, C,
-	D(/* id = 5 */ enum { A, B, C(T) }),
+	D(/* id = 5 */ union { A, B, C(T) }),
 	E { v?: list<T> },
 }
 ```
@@ -712,7 +712,7 @@ let field_def = name:ident '?'? ':' type:type_spec ('=' default:value);
 
 structs are defined by a struct definition.
 
-it is a decleration that consists of the struct `name` followed by optionally generic parameters then its fields inside the body.
+it is a decleration that consists of the struct `name` followed by its fields inside the body.
 
 generally the struct body is a list of fields definition inside a curly block.
 
@@ -722,7 +722,7 @@ if an optional field is not specified, it take its type default value, unless a 
 
 fields named `_` are skipped but their place in binary encoding is reserved.
 
-struct can have zero fields, and can be defined inline within other items field.
+struct can have zero fields, have generic parameters after their name, and can be defined inline within other items field.
 
 #### example
 
@@ -824,11 +824,13 @@ fixed structs are frozen in time and can not evolve.
 #### example
 
 ```
+// align: 4, size: 10
 struct Parent {
 	a: u16,
 	b: Fixed,
 	c: u16,
 }
+// align: 4, size: 6
 fixed struct Fixed {
 	a: u32,
 	b: u16
@@ -892,48 +894,132 @@ Node {
 
 ## unions
 
+unions are sum data type that can be one of multiple variants.
+
+each variants has its own tag based on its decleration order, and can be of multiple kind:
+
+- **unit variant**: a unit value with no fields.
+- **fielded variant**: having its own field, just like a struct.
+- **tagged variant**: a variant wrapping a value.
+
+unions translate to tagged unions, dicriminated unions, enumerations.... in other languages.
+
+unions has default value of null pointer if it is not fixed, fixed ones doesnt have one.
+
+unions can be nested inside themself.
+
+#### example
+
+```gramex
+union Union {
+	A, B, C,
+	D(u32),
+	F {
+		a: u32,
+		b?: u32
+	}
+}
+
+list<Union> [
+	Union.A, .B,
+	.D 123,
+	.F { a: 123 }
+]
+```
+
 ### definition
+
+```gramex
+let union_def = "fixed"? "union" name:ident generic_params? union_body;
+let union_body = union_tag? '{' list<variant> '}';
+let union_tag = (' ("u8" | "u16" | "u32" | "u64") ')';
+let variant = "fixed"? name:ident struct_body?;
+```
+
+unions are defined by union definition.
+
+it is a decleration that consists of the union `name` followed by its variants list enclosed in a curly block.
+
+each variant is defined by an identifier, optionally followed by a struct body and can be prefixed with `fixed` modifier.
+
+variants with `_` are skipped, but thier tag is counted.
+
+unions can define their tag type inside a parenthesis after the name.
+
+the tag can be one of `u8`, `u16`, `u32`, and `u64`, if not specified it is the smallest one sufficient for all variants.
+
+unions can have generic parameters after their name, andcan be defined inline within other items field.
+
+#### example
+
+```gramex
+union Union<T>(u16) {
+	A, B, C, _,
+	D(union { A, B, C(T) }),
+	fixed E {
+		name: str,
+		children: list<Union<T>>
+	},
+}
+```
 
 ### object value
 
+```gramex
+let union_value = '.' variant:ident struct_value?;
+```
+
+union value is a dot followed by the variant name, and a struct value if it is a fielded or tagged variant.
+
+variants support all the syntax of structs.
+
+type specifier can be ommited if the union can be infered.
+
+#### example
+
+```structom
+list<Union<str>> [
+	Union.A, .B,
+	.D .C "abc",
+	E { name: "e1" } [
+		.C,
+		.E { name: "e2" },
+	],
+]
+```
+
 ### binary encoding
 
-### fixed union
+unions are encoded as a `tag` field of its defined type specifing the variant, followed by a shared space of encoding changing with each variant.
 
-# collections
+this space is, based on variant type:
 
-## str
+- **unit variants**: none.
+- **tagged variants**: the encoding of the inner type.
+- **non fixed fielded variants**: a pointer to a struct object containing its fields.
+- **fixed fielded variants**: a fixed struct containing its fields.
 
-## array
+the size of the shared space is the size of the largest variant encoding.
 
-## list
+the union alignment is the maximum of all variants fields and the `tag` aligments.
 
-## map
+#### example
 
-# rich types
+```structom
+// align: 4, size: 8
+struct Union {
+	A, _,
+	B(u16),
+	C { a: u64, b: i16 },
+	fixed D {
+		c: u32,
+		d?: u16,
+	}
+}
+```
 
-## uuid
+![union example](./union_example.svg)
 
-## inst
+![union example C](./union_example_C.svg)
 
-## duration
-
-## url
-
-## bigint
-
-## decimal
-
-## bytes
-
-## color
-
-## semver
-
-# apendix
-
-## standared metadata
-
-## evolution guide
-
-## typeid maps
+# collections types

@@ -237,6 +237,35 @@ const encodings = {
 		encoding: [u16('a'), u16('c'), u32('b.a'), u16('b.b')],
 	},
 	tagged_struct_example: [u32('2', 'len'), u32('123', 'A(u32)'), u32('456', 'B(A(u32))')],
+
+	union_example: {
+		lanes: 4,
+		margin: { left: 15 },
+		label: { left: ['A', 'B', 'C', 'D'] },
+		encoding: [
+			u8('00', 'tag'),
+			pad(7),
+
+			u8('02', 'tag'),
+			pad(1),
+			u16('inner'),
+			pad(4),
+
+			u8('03', 'tag'),
+			pad(3),
+			u32('ptr'),
+
+			u8('04', 'tag'),
+			u8('bl1'),
+			u16('d'),
+			u32('c'),
+		],
+	},
+	union_example_C: {
+		margin: { left: 15 },
+		label: { left: 'C' },
+		encoding: [u32('len'), i16('b'), pad(2), u32('a')],
+	},
 };
 
 for (const [name, encoding] of Object.entries(encodings)) {
