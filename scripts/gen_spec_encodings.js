@@ -164,6 +164,79 @@ const encodings = {
 	...builtin('bool', 2),
 	...object('any', 1, [u32('len'), u32('typeid', ''), { bits: 10, name: 'value' }, rest]),
 	...builtin('far', 3, [u32('section'), u32('offset')]),
+	struct_example: {
+		lanes: 7,
+		margin: { left: 90 },
+		label: {
+			left: [
+				'init',
+				'allocate a',
+				'allocate b',
+				'allocate c',
+				'allocate d',
+				'allocate e',
+				'allocate g',
+			],
+		},
+		encoding: [
+			u32('len'),
+			pad(20),
+
+			u32('len'),
+			u32('a'),
+			pad(16),
+
+			u32('len'),
+			u32('a'),
+			u8('b'),
+			pad(15),
+
+			u32('len'),
+			u32('a'),
+			u8('b'),
+			pad(7),
+			u64('c'),
+
+			u32('len'),
+			u32('a'),
+			u8('b'),
+			pad(1),
+			u16('d'),
+			pad(4),
+			u64('c'),
+
+			u32('len'),
+			u32('a'),
+			u8('b'),
+			u8('bt1'),
+			u16('d'),
+			u16('e'),
+			pad(2),
+			u64('c'),
+
+			u32('len'),
+			u32('a'),
+			u8('b'),
+			u8('bt1'),
+			u16('d'),
+			u16('e'),
+			u8('g'),
+			pad(1),
+			u64('c'),
+		],
+	},
+	struct_example_bt1: {
+		lanes: 2,
+		label: {
+			left: ['after e', 'after f'],
+		},
+		encoding: [u8('e?', ''), pad(7), u8('e?', ''), u8('f', ''), pad(6)],
+	},
+	fixed_struct_example: {
+		label: { left: 'Parent' },
+		encoding: [u16('a'), u16('c'), u32('b.a'), u16('b.b')],
+	},
+	tagged_struct_example: [u32('2', 'len'), u32('123', 'A(u32)'), u32('456', 'B(A(u32))')],
 };
 
 for (const [name, encoding] of Object.entries(encodings)) {
