@@ -132,7 +132,7 @@ data is encoded in little endian format aligned to their natural alignment, with
 
 data is encoded as signed / unsigned integers of `n` bits, specified through `u/in` field type.
 
-array like data is encoded as a field encoding the length, followed by the items fields, they are always `0`-indexed.
+array like data is encoded as a field encoding the length, followed by the items fields or a pointer to them, they are always `0`-indexed.
 
 pointers are `u32` fields encoding forward byte offsets relative to the pointer position, pointing to objects in the curent segment.
 
@@ -579,8 +579,6 @@ let any_value = value;
 
 ![any object](./any_object.svg)
 
-**align**: 1
-
 `any` is encoded as a pointer to an object encoding the `value` with its `typeid`.
 
 the `value` doesnt encoded its `len` field.
@@ -791,6 +789,8 @@ non pointer optional fields allocate aditional bit field after them, if it is `1
 
 non specified pointer optional fields are encoded as null pointer.
 
+there can be at most `65536 (2^16)` fields in a struct spanning at most `4294967296 (2^32)` bytes.
+
 #### example
 
 ```structom
@@ -817,9 +817,9 @@ a struct with the `fixed` modifier are encoded inlined in the parent struct dire
 
 fixed struct is encoded as one big field encoding all its fields using the regular struct encoding with no `len` field.
 
-this big field has alignment of the maximum of the fields alignment, and a size fitting all the fields and aligned to the alignment.
+this big field has alignment of the maximum of the fields alignment, and a size fitting all the fields.
 
-fixed structs are frozen in time and can not evolve.
+fixed structs are frozen in time and can not evolve, and are suposed to the same limits of regular structs.
 
 #### example
 
@@ -1003,6 +1003,8 @@ the size of the shared space is the size of the largest variant encoding.
 
 the union alignment is the maximum of all variants fields and the `tag` aligments.
 
+unions are suposed to the same limits of structs.
+
 #### example
 
 ```structom
@@ -1023,3 +1025,210 @@ struct Union {
 ![union example C](./union_example_C.svg)
 
 # collections types
+
+## `arr`
+
+the `arr` type represent a homogenous ordered collection of values of fixed size.
+
+the default value is `arr` of default value of the item type.
+
+### object notation
+
+```gramex
+let arr_type = "arr" '<' item:type_spec ',' size:nb '>';
+let arr_value = '[' list<value> ']';
+```
+
+`arr` type specifier takes 2 generic arguments, the `item` type specifier and the `size` of the `arr`.
+
+`size` can be at most `65536 (2^16)`.
+
+its value is a list of `size` values enclosed inside a bracket.
+
+#### byte literal
+
+```gramex
+let byte_literal = "0x" '"' (ws? hex[2])* ws? '"';
+```
+
+the byte literal is a list of whitespace separated hex bytes that get transformed into `arr<u8, N>` and `list<u8>`.
+
+```structom
+0x"01 23 45 67 89 ab cd ef"
+```
+
+### binary encoding
+
+![arr typeid](./arr_typeid.svg)
+
+![arr value](./arr_value.svg)
+
+`arr` typeid take additional `item` `typeid` and `u16` `len` parameters.
+
+`arr` is encoded as `len` sequence of `item` fields aligned to their natural aligment with some padding if needed.
+
+its is also aligned to `item` alignment.
+
+#### example
+
+```structom
+fixed struct A { a: u16, b: u8 }
+arr<A, 2> [A { a: 1, b: 2 }, A { a: 3, b: 4 }]
+```
+
+![arr example](./arr_example.svg)
+
+## `list`
+
+the `list` type represent a homogenous ordered collection of values of variable size.
+
+the default value is `list` is empty list.
+
+`list` can contain at most `4294967296 (2^32)` items spanning `4294967296 (2^32)` bytes.
+
+### object notation
+
+```gramex
+let list_type = "list" '<' item:type_spec '>';
+let list_value = '[' list<value> ']';
+```
+
+`list` type specifier takes the `item` type specifier.
+
+its value is a list of values enclosed inside a bracket.
+
+if no type is specified / infered, the default is `list<any>`.
+
+### binary encoding
+
+![list typeid](./list_typeid.svg)
+
+![list value](./list_value.svg)
+
+![list object](./list_object.svg)
+
+`list` typeid take additional `item` `typeid` parameter.
+
+`list` is encoded as a `u32` `len` and pointer pair.
+
+the pointer points to an object containing a `len` sequence of aligned `item` fields.
+
+if the length is zero, the pointer is null.
+
+#### example
+
+```structom
+fixed struct A { a: u16, b: u8 }
+list<A> [A { a: 1, b: 2 }, A { a: 3, b: 4 }]
+```
+
+![list example](./list_example.svg)
+
+## `str`
+
+the `str` type represent a utf-8 string.
+
+the default value is an empty string.
+
+`str` can be at most `4294967296 (2^32)` bytes.
+
+### object notation
+
+```gramex
+let str_type = "str";
+let str_value = '"' (escape_code | !'"')* '"';
+let escape_code = '\\' (
+	'\\' | '"' | 'n' | 't' | 'r' |
+	'x' hex hex | 'u' '{' hex ('_'? hex)* '}'
+);
+```
+
+the `str` value is a sequence of charcters and escape codes enclosed inside quotes.
+
+the escape codes are:
+
+- `\\`: backslash (`\`).
+- `\"`: double quote (`"`).
+- `\n`: new line (`\n`).
+- `\t`: horizontal tab (`\t`).
+- `\r`: carriage return (`\r`).
+- `\xXX`: a byte of value `XX`.
+- `\u{xxx}`: a unicode code point of 1..6 hex digits `xxx` value separated by underscores.
+
+### binary encoding
+
+![str typeid](./str_typeid.svg)
+
+`str` uses the `list<u8>` encoding, where the string is stored as a list of utf-8 bytes.
+
+#### example
+
+```structom
+"abc \n\"\\ \u{12_34}"
+```
+
+## `map`
+
+the `map` type represent an unordered keyed collection of values of variable size.
+
+the default value is an empty `map`.
+
+`map` can contain at most `4294967296 (2^32)` items spanning `4294967296 (2^32)` bytes.
+
+keys are compared both equallity and ordering based on their types:
+
+- **`bool`**: `false` < `true`.
+- **ints**: by their numeric values.
+- **floats**: according to IEEE 754 total order, no `nan` keys.
+- **`list`, `arr`**: by their items in lexicographic order.
+- **`str`**: as a `list<u8>`.
+- **`map`**: as `list<(key, value)>` shorted by `key`.
+- **structs**: by their fields in decleration order.
+- **unions**: by their tags then their fields in decleration order.
+- **`any`**: by their typeid (base then paremeters, `ns` then `id`) then their values.
+- **`far`**: by its pointed value.
+- **rich types**: as their raw values.
+
+### object notation
+
+```gramex
+let map_type = "map" '<' key:type_spec ',' value:type_spec '>';
+let map_value = '{' list<key:value ':' value>? '}';
+```
+
+the `map` type specifier takes 2 generic arguments, the `key` and the `value` type specifiers.
+
+its value is a list of `:` separated key value pairs enclosed inside curly block.
+
+if no type is specified / infered, the default is `map<any, any>`.
+
+### object notation
+
+![map typeid](./map_typeid.svg)
+
+![map value](./map_value.svg)
+
+![map object](./map_object.svg)
+
+`map` typeid take additional `key` and `value` `typeid` parameters.
+
+`map` is encoded as a `u32` `len` and a pointer pair.
+
+the pointer points to an object containing a `len` sequence of aligned `key` then `value` fields sorted by `key`.
+
+if the length is zero, the pointer is null.
+
+#### example
+
+```structom
+fixed struct A {
+	a: u8, b: bool,
+}
+map<A, f32> {
+	A { a: 1, b: true }: 0.5,
+	A { a: 1, b: false }: 1,
+	A { a: 3, b: true }: 1.5,
+}
+```
+
+![map example](./map_example.svg)

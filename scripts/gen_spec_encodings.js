@@ -42,14 +42,17 @@ function typeid(ns, id) {
 	return [u16(ns, 'ns'), u16(id, 'id')];
 }
 function builtin(name, id, encoding) {
-	let first_word = (id % 256).toString(16).padStart(2, '0');
-	let second_word = Math.floor(id / 256)
-		.toString(16)
-		.padStart(2, '0');
+	if (typeof id === 'number') {
+		let first_word = (id % 256).toString(16).padStart(2, '0');
+		let second_word = Math.floor(id / 256)
+			.toString(16)
+			.padStart(2, '0');
+		id = typeid(`${first_word} ${second_word}`);
+	}
 	let res = {
 		[`${name}_typeid`]: {
 			margin: { left: 55 },
-			encoding: typeid(`${first_word} ${second_word}`),
+			encoding: id,
 			label: { left: 'typeid' },
 		},
 	};
@@ -63,8 +66,9 @@ function builtin(name, id, encoding) {
 	return res;
 }
 
-function object(name, id, encoding) {
-	let res = builtin(name, id, [u32('ptr')]);
+function object(name, id, value, encoding) {
+	[value, encoding] = encoding ? [value, encoding] : [[u32('ptr')], value];
+	let res = builtin(name, id, value);
 	res[`${name}_object`] = {
 		margin: { left: 55 },
 		encoding,
@@ -266,6 +270,56 @@ const encodings = {
 		label: { left: 'C' },
 		encoding: [u32('len'), i16('b'), pad(2), u32('a')],
 	},
+	...builtin(
+		'arr',
+		[...typeid(`20 00`), u32('item', 'typeid'), u16('len')],
+		[u32('itemn', 'item * len')],
+		[u32('len')],
+	),
+	arr_example: [
+		u16('01 00', '0.a'),
+		u8('02', '0.b'),
+		pad(1),
+		u16('03 00', '1.a'),
+		u8('04', '1.b'),
+		pad(1),
+	],
+	...object(
+		'list',
+		[...typeid(`21 00`), u32('item', 'typeid')],
+		[u32('len'), u32('ptr')],
+		[u64('itemn', 'item * len')],
+	),
+	list_example: [
+		u32('02 00 00 00', 'len'),
+		u16('01 00', '0.a'),
+		u8('02', '0.b'),
+		pad(1),
+		u16('03 00', '1.a'),
+		u8('04', '1.b'),
+		pad(1),
+	],
+	...builtin('str', 0x22),
+	...object(
+		'map',
+		[...typeid(`23 00`), u32('key', 'typeid'), u32('value', 'typeid')],
+		[u32('len'), u32('ptr')],
+		[
+			u32('key0', 'key'),
+			u32('value0', 'value'),
+			rest,
+			u32('keyn', 'key'),
+			u32('valuen', 'value'),
+		],
+	),
+	map_example: [
+		u32('{a:1,b:false}', '0.key'),
+		u32('1.0', '0.value'),
+		u32('{a:1,b:true}', '1.key'),
+		u32('0.5', '1.value'),
+		u32('{a:3,b:true}', '2.key'),
+		u32('1.5', '2.value'),
+	],
 };
 
 for (const [name, encoding] of Object.entries(encodings)) {
