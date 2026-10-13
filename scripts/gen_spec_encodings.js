@@ -320,6 +320,12 @@ const encodings = {
 		u32('{a:3,b:true}', '2.key'),
 		u32('1.5', '2.value'),
 	],
+	...builtin('inst', 0x80),
+	...builtin('dur', 0x81),
+	...builtin('bint', 0x82),
+	...builtin('dec', 0x83),
+	...builtin('uuid', 0x84),
+	...builtin('color', 0x85),
 };
 
 for (const [name, encoding] of Object.entries(encodings)) {

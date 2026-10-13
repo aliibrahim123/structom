@@ -42,7 +42,7 @@ the object notation uses the utf-8 encoding, and the first [`BYTE ORDER MARK (U+
 whitespace is insignificant and ignored, used only in token separation.
 
 ```gramex
-let ws = ' ' | '\t' | '\n' | '\r';
+let ws = (' ' | '\t' | '\n' | '\r')*;
 ```
 
 identifiers are case sensitive names of things: types, fields, namespaces, variants, and metadata.
@@ -106,7 +106,7 @@ let value = type?:type_spec /* see the value type for the syntax */;
 
 ```structom
 #!version("0.1.2")
-#!import_rich([path])
+#!import_rich([inst])
 
 import "./schema.stomd"
 import "../extensions.stomd" as ext
@@ -115,7 +115,7 @@ struct Tagged (u32)
 
 Root {
 	a: 123,
-	b: path "./build/",
+	b: inst "2022-01-01T00:00:00Z",
 	c: Tagged 3
 }
 ```
@@ -932,7 +932,7 @@ list<Union> [
 ```gramex
 let union_def = "fixed"? "union" name:ident generic_params? union_body;
 let union_body = union_tag? '{' list<variant> '}';
-let union_tag = (' ("u8" | "u16" | "u32" | "u64") ')';
+let union_tag = (' ("u8" | "u16" | "u32") ')';
 let variant = "fixed"? name:ident struct_body?;
 ```
 
@@ -946,7 +946,7 @@ variants with `_` are skipped, but thier tag is counted.
 
 unions can define their tag type inside a parenthesis after the name.
 
-the tag can be one of `u8`, `u16`, `u32`, and `u64`, if not specified it is the smallest one sufficient for all variants.
+the tag can be one of `u8`, `u16`, and `u32`, if not specified it is the smallest one sufficient for all variants.
 
 unions can have generic parameters after their name, andcan be defined inline within other items field.
 
@@ -1048,7 +1048,7 @@ its value is a list of `size` values enclosed inside a bracket.
 #### byte literal
 
 ```gramex
-let byte_literal = "0x" '"' (ws? hex[2])* ws? '"';
+let byte_literal = "0x" '"' (ws hex[2])* ws '"';
 ```
 
 the byte literal is a list of whitespace separated hex bytes that get transformed into `arr<u8, N>` and `list<u8>`.
@@ -1187,7 +1187,7 @@ keys are compared both equallity and ordering based on their types:
 - **unions**: by their tags then their fields in decleration order.
 - **`any`**: by their typeid (base then paremeters, `ns` then `id`) then their values.
 - **`far`**: by its pointed value.
-- **rich types**: as their raw values.
+- **rich types**: as their raw values, ones with unsupported syntax get dumped at last in any order.
 
 ### object notation
 
@@ -1232,3 +1232,327 @@ map<A, f32> {
 ```
 
 ![map example](./map_example.svg)
+
+# rich types
+
+rich types are types having 2 forms:
+
+- **raw value** as base value in both declerations, object value and binary encoding.
+- **rich notation**: additional object values forms for parsers that support it.
+
+rich notations are optional, supported parsers can use them to provide richer user experience, and nonsupported ones should dump them directly.
+
+`import_rich` is a top level metadata that defines a list of builtin rich types used inside the file though a `list` of type specifiers.
+
+`rich` is an item level metadata that markes an item as a rich type, if a mismatching value syntax is provided, it is dumped instead of erroring.
+
+#### example
+
+```structom
+#!import_rich([uuid, inst])
+
+#rich #bitfield({ a: 3, b: 2, c: 3 })
+struct BitField(u8)
+
+{
+	a: uuid "01234567-1234-1234-1234-123456789abc",
+	b: inst "2000-01-01T00:00:00Z",
+	c: BitField { a: 0b101, b: 0b10, c: 0b101 },
+}
+```
+
+## `inst`
+
+```structom
+fixed struct inst {
+	secs: i64,
+	nanos: u32,
+}
+```
+
+![inst typeid](./inst_typeid.svg)
+
+the `inst` type represent an instance of time in nanoseconds since unix epoch (`1970-01-01T00:00:00Z`) in UTC time zone.
+
+`inst` is composed rawly of 2 fields: `secs` seconds + `nanos` nanoseconds from the unix epoch.
+
+`inst` has a rich notation of rfc-3339 date string normalized to UTC.
+
+#### example
+
+```structom
+inst "2000-01-01T00:00:00.123456789Z"
+inst "2000-01-01 00:00:00.123456789Z"
+inst { secs: 946684800, nanos: 123456789 }
+```
+
+## `dur`
+
+```structom
+fixed struct dur {
+	secs: i64,
+	nanos: u32,
+}
+```
+
+![dur typeid](./dur_typeid.svg)
+
+the `dur` type represents a duration of time in nanoseconds.
+
+`dur` is composed rawly of 2 fields: `secs` seconds + `nanos` nanoseconds.
+
+`dur` has a rich notation of unit field string of time units.
+
+```structom
+#unitfield({
+	// non leap year = 365day
+	["y", "yr", "year"]: { mult: 31_536_000_000_000_000 },
+	// 24hr
+	["d", "day"]: { mult: 86_400_000_000_000, max: 364 },
+	["h", "hr", "hour"]: { mult: 3_600_000_000_000, max: 23 },
+	["m", "min", "minute"]: { mult: 60_000_000_000, max: 59 },
+	["s", "sec", "second"]: { mult: 1_000_000_000, max: 59 },
+	["ms", "milli", "millisecond"]: { mult: 1000_000, max: 999 },
+	["us", "micro", "microsecond"]: { mult: 1000, max: 999 },
+	["ns", "nano", "nanosecond"]: { mult: 1, max: 999 },
+})
+```
+
+#### example
+
+```structom
+dur "1234.5678s"
+dur "20m 23s 567ms 800us"
+dur "20min 23sec 567milli 800micro 0nano"
+dur { secs: 1234, nanos: 567800000 }
+```
+
+## `bint`
+
+```structom
+struct bint(list<u8>)
+```
+
+![bint typeid](./bint_typeid.svg)
+
+the `bint` type represent an arbitrary precision signed integer.
+
+`bint` is composed rawly of a list of bytes of little endian 2 complement minimal length format, with hard limit of `2^32` bytes.
+
+`bint` has a rich notation of number string with the same format as integers.
+
+#### example
+
+```structom
+bint "36893488147419103232"
+bint "+0x1_ff_ff_ff_ff_ff_ff_ff_ff"
+bint 0x"ff ff ff ff ff ff ff ff 01"
+```
+
+## `dec`
+
+```structom
+fixed struct dec {
+	exp: i32,
+	mant: bigint
+}
+```
+
+![dec typeid](./dec_typeid.svg)
+
+the `dec` type represent an arbitrary precision decimal number of exact value.
+
+`dec` is composed rawly of a non divisible by `10` `bigint` `mant` mantissa and an `i32` `exp` exponent.
+
+`dec` has a rich notation of number string with the same format as floats without the special values.
+
+#### example
+
+```structom
+dec "3.1415"
+dec "+31415e-4"
+dec { exp: -4, mant: bint 0x"b7 7a" }
+```
+
+## `uuid`
+
+```structom
+struct uuid(arr<u8, 16>)
+```
+
+![uuid typeid](./uuid_typeid.svg)
+
+the `uuid` type represent a 128 bit globally unique identifier.
+
+`uuid` is composed rawly of 16 big endian bytes.
+
+`uuid` has a rich notation of uuid string of the form `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx` where `x` is a hex digit.
+
+```gramex
+let uuid_str = hex[8] '-' hex[4] '-' hex[4] '-' hex[4] '-' hex[12];
+```
+
+#### example
+
+```structom
+uuid "01234567-0123-0123-0123-0123456789ab"
+uuid 0x"01 23 45 67 01 23 01 23 01 23 01 23 45 67 89 ab"
+```
+
+## `color`
+
+```structom
+fixed struct color {
+	r: u8,
+	g: u8,
+	b: u8,
+	a: u8,
+}
+```
+
+![color typeid](./color_typeid.svg)
+
+the `color` type represent a rgba color.
+
+`color` is composed rawly of red, green, blue and alpha `u8` components.
+
+`color` has a rich notation of hex color string of the form `#rrggbbaa` where `r`, `g`, `b` and optional `a` are hex digits.
+
+```gramex
+let color_str = '#' (red = hex[2]) (green = hex[2]) (blue = hex[2]) (alpha? = hex[2]);
+```
+
+#### example
+
+```structom
+color "#ff0000"
+color "#ff0000ff"
+color { r: 255, g: 0, b: 0, a: 255 }
+```
+
+## `bitfield`
+
+`bitfield` is a metadata that defines a bitfield rich notation for an tem.
+
+it can be attached to structs and variants tagging `u8`, `u16`, `u32`, `u64` and `arr<u8>`. in addition to all unit variants unions to specify there `size`.
+
+`bitfield` takes an optional int `size` parameter for the bitfield size, by default the whole container.
+
+it also take the layout as a `map<ident, int | type_spec>` of the fields identifiers and their type which can be:
+
+- `bool` for 1 bit fields.
+- raw fields of bit sizes determined by an int literial.
+- nested bitfield type specified through a type specifier.
+- all unit variant union specified by type specifier and encoded as a tag field.
+
+fields get allocated according to the decleration order, starting from the least significant bit.
+
+fields named `_` are skipped but there place is reserved.
+
+bitfield items accept a `map` of the defined fields and their values as a rich notation.
+
+#### example
+
+```structom
+#bitfield(2)
+fixed union Union {
+	A, B, C, D
+}
+
+#bitfield(2, { a: bool, b: bool })
+struct Inner(u8)
+
+#bitfield({
+	a: Union,
+	b: Inner,
+	c: 4,
+})
+struct Struct(u8)
+
+// same as Struct 0b1010_11_01
+Struct {
+	a: .B,
+	b: { a: true, b: true },
+	c: 0b1010
+}
+```
+
+## `unitfield`
+
+`unitfield` is a metadata that defines a unit field string rich notations for items.
+
+unit field is a string of a series of united numbers, the result value is the summation of all numbers multiplied by their unit value.
+
+`unitfield` can be attached to structs and variants tagging ints, floats, `bigint` and `dec`.
+
+### parameters
+
+`unitfield` takes a `map<str | str[], { min?: value, max?: value, mult: value }>` parameter specifing the units and their properties.
+
+units has the folowing properties:
+
+- **name**: either one `str` name or an `arr<str>` of names.
+- **mult**: the unit multiplier.
+- **min**: an optional inclusive lower bound.
+- **max**: an optional inclusive upper bound.
+
+### value
+
+```gramex
+let unitfield_str = '-'? ((int_value | float_value) unit)+ | '0';
+```
+
+the series can have any number of numbers that are unique in unit, bounded if not the first, and ordered according to unit decleration order.
+
+the result can be negated with a leading `-`, and could be zero if just literal `0` is passed with no lower bound specified.
+
+integer unitfields can have float numbers if their product is a whole integer.
+
+whitespace is ignored between the numbers.
+
+#### example
+
+```structom
+#unitfield({
+	["GB", "gb"]: { mult: 1_073_741_824 },
+	["MB", "mb"]: { mult: 1_048_576, max: 1023 },
+	["KB", "kb"]: { mult: 1_024, max: 1023 },
+	["B", "b"]: { mult: 1, max: 1023 },
+})
+struct Bytes(u64)
+[
+	Bytes "1.5MB"
+	Bytes "1mb 512kb"
+	Bytes "1536kb0b"
+	Bytes 1572864
+]
+```
+
+# apendix
+
+## standared metadata
+
+## evolution guide
+
+## typeid map
+
+#### `ns` = `0`, `id.high_byte` = `0`
+
+| high | `0`    | `1`    | `2`    | `3`   | `4`    | `5`     | `6`   | `7`   | `8`   | `9`   | `a`   | `b` | `c` | `d` | `e` | `f` |
+| ---- | ------ | ------ | ------ | ----- | ------ | ------- | ----- | ----- | ----- | ----- | ----- | --- | --- | --- | --- | --- |
+| `0`  | `none` | `any`  | `bool` | `far` |        |         |       |       |       |       |       |     |     |     |     |     |
+| `1`  | `u8`   | `u16`  | `u32`  | `u64` | `i8`   | `i16`   | `i32` | `i64` | `f32` | `f64` | `f16` |     |     |     |     |     |
+| `2`  | `arr`  | `list` | `str`  | `map` |        |         |       |       |       |       |       |     |     |     |     |     |
+| `3`  |        |        |        |       |        |         |       |       |       |       |       |     |     |     |     |     |
+| `4`  |        |        |        |       |        |         |       |       |       |       |       |     |     |     |     |     |
+| `5`  |        |        |        |       |        |         |       |       |       |       |       |     |     |     |     |     |
+| `6`  |        |        |        |       |        |         |       |       |       |       |       |     |     |     |     |     |
+| `7`  |        |        |        |       |        |         |       |       |       |       |       |     |     |     |     |     |
+| `8`  | `inst` | `dur`  | `bint` | `dec` | `uuid` | `color` |       |       |       |       |       |     |     |     |     |     |
+| `9`  |        |        |        |       |        |         |       |       |       |       |       |     |     |     |     |     |
+| `a`  |        |        |        |       |        |         |       |       |       |       |       |     |     |     |     |     |
+| `b`  |        |        |        |       |        |         |       |       |       |       |       |     |     |     |     |     |
+| `c`  |        |        |        |       |        |         |       |       |       |       |       |     |     |     |     |     |
+| `d`  |        |        |        |       |        |         |       |       |       |       |       |     |     |     |     |     |
+| `e`  |        |        |        |       |        |         |       |       |       |       |       |     |     |     |     |     |
+| `f`  |        |        |        |       |        |         |       |       |       |       |       |     |     |     |     |     |
