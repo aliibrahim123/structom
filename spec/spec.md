@@ -1532,7 +1532,158 @@ struct Bytes(u64)
 
 ## standared metadata
 
+below is a list of common metadata that are highly optional but useful.
+
+### info metadata
+
+these metadata provide general info about the file and its declared items.
+
+**`doc`**: on file, items, fields and variants, accept a documentation string.
+
+**`version`**: on file, accept a string of the version of the schema.
+
+**`auther`**: on file, accept an string about the auther of the file.
+
+**`license`**: on file, accept a string of the license of the file.
+
+**`deprecated`**: on items, fields and variants, mark the thing as deprecated, not recommended to use.
+
+**`hidden`**: on items, fields and variants, mark the thing as hidden, not shown generally.
+
+**`class`**: define classes for items, it can be on:
+
+- root, accept the class string and list of type specifiers of types belonging to the class.
+- items, accept the class string and mark the item as belonging to the class.
+- `any`, accept the class string and mark any only accepting values of types belonging to the class.
+
+**`label`**: on items, fields and variants, accept a string of human readable label for it shown in tooling and ui.
+
+**`default`**: on items, accept a value used as a defalut for the item.
+
+**`range`**: on types, accept 2 value parameters `min` and `max` specifing lower and upper inclusive limits for the type, `none` imply no unbound.
+
+**`multiple_of`**: on types, accept a value that the type must be a multiple of.
+
+**`len_range`**: on types, accept 2 value parameters `min` and `max` specifing lower and upper inclusive limits for the length of the type, `none` imply no unbound.
+
+**`unique_items`**: on types, mark the type as accepting only unique items.
+
+**`sorted`**: on types, mark the type as accepting only sorted items.
+
+**`prefer_fmt`**: on types, hint the preferred format for the type.
+
+**`regex_pat`**: on `str`, accept only values satisfying the regex pattern.
+
+**`grammar_pat`**: on `str`, accept only values satisfying the gramex grammar expression.
+
+**`semver`**: on `str`, accept only semantic version strings values.
+
+**`url`**: on `str`, accept only url strings values.
+
+**`path`**: on `str`, hint the kind to be of filesystem path, optionally accept an `str` of the base path relative to the directory of the value file.
+
 ## evolution guide
+
+bidirectional compatibility is a key feature of structom. it is the ability of readers to read values generated from any version of the schema.
+
+this section discuss the evolution guideline for binary encoding, object notation is inherently more resilient.
+
+generally readers should fail safely on missing fields and assume unencoded data zero, and writers must write padding all zero.
+
+metadata can be changed in anyway, and items, fields and variants can be renamed if object notation stability is not important.
+
+files paths must be stable, items decleration order must be preserved, and items must be deprecated instead of removal.
+
+for structs, field order must be preserved, and fields must be added at the end, and be deprecated instead of removal.
+
+fields can not change types and optionality, but can change their default values.
+
+reserved fields can be repurposed if they were not used before.
+
+fixed structs alongside tagged structs are fixed in time and can not change.
+
+variants can be added to unions while tag capacity is not exhasted, old variant order is preserved, and the variant encoding fit inside the union one.
+
+the non unit variants are supposed to the same guideline as their struct counterpart.
+
+```structom
+// original: file_a.stomd
+struct Struct1 {
+	a: i32,
+	b: u32,
+	c: bool,
+}
+
+fixed struct Struct2 {
+	a: i32,
+	b: u32,
+}
+
+union Union(u8) {
+	A,
+	B(i64),
+	C {
+		_: i32,
+		b: u32,
+	}
+}
+```
+
+```structom
+// unsafe evolution: file_b.stomd
+struct StructA {
+	a2: i32,
+	b: bool,
+	d: i32,
+	c?: bool
+}
+
+union Union(u8) {
+	A,
+	B(arr<u8, 16>),
+	D,
+	C {
+		a: bool,
+		b: u32,
+	}
+	// ...
+	V257,
+}
+
+fixed struct Struct2 {
+	a: i32
+}
+```
+
+```structom
+// safe evolution: file_a.stomd
+struct Struct1 {
+	a: i32,
+	_: u32,
+	c: bool,
+	d?: u32
+}
+
+fixed struct Struct2 {
+	a: i32,
+	b: u32,
+}
+
+union Union(u8) {
+	A,
+	B(i64),
+	C {
+		a: i32,
+		b: u32,
+		c: bool
+	}
+	D(u32),
+}
+
+union Union2(u8) {
+	A, B, C, D
+}
+```
 
 ## typeid map
 
