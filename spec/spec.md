@@ -13,10 +13,10 @@ This document is the language specification for Structom. It covers the full fea
 - A rich schema system with a [module system](#imports) and forward and backward compatibility.
 - A schemaless mode with full feature support in both the object notation and the binary encoding.
 - Rich modeling constructs: [tagged unions](#unions), [tagged types](#tagged-struct), [tree structs](#tree-struct), [generics](#generics), [anonymous items](#inner-definitions), and more.
-- Zero-copy binary decoding with support for streaming and out-of-order decoding.
+- Zero-copy binary decoding with support for segment based streaming and out-of-order decoding.
 - A wide set of rich data types: [instance](#inst), [duration](#dur), [UUID](#uuid), [bigint](#bint) [bitfield](#bitfield), and more.
 - Erasable [metadata](#metadata) for better tooling, with a set of common built-in metadata.
-- A simple core with optional easy to ignore extensions implementations may choose to support.
+- many optional extensions implementations can opt to.
 
 # Foundations
 
@@ -25,6 +25,7 @@ This document is the language specification for Structom. It covers the full fea
 The object notation is Structom's human-readable, [JSON](https://www.json.org)-like format. It is designed for expressive data files edited by humans.
 
 ```structom
+#!import_rich([color])
 import "./schema.stomd"
 Root {
 	// comment
@@ -148,11 +149,11 @@ Null pointers are encoded with the value `0`.
 
 A binary file starts with a header that specifies its core attributes. The header is required for standalone files but optional for inlined blobs.
 
-The header begins with the magic number `53 54 4F 4D` (`STOM`).
+The header begins with the magic number `53 54 4F 4D` (`STOM`) followed by a `u8` `version` field, it is `1` in this version, then a pad byte.
 
 It is followed by a list of imports encoded as a `u16` length field followed by the inlined `str`s encoding the import paths.
 
-Next comes a list of segments encoded as a non-zero `u32` length field followed by the `u64` segment offsets.
+Next comes a list of segments encoded as a non-zero `u32` length field followed by the `u64` segment offsets scaled by 4 bytes.
 
 If `segments_len` is `1`, no offsets need to be specified.
 
@@ -174,13 +175,13 @@ They create a two-level address space for the file, which keeps pointers short (
 
 A segment is composed of multiple objects, each encoding a specific data structure defined by the schema.
 
-Objects are aligned to `u64` boundaries and usually start with a `u32` field encoding the object's full size.
+Objects are aligned to `u64` boundaries and usually start with a `u32` field encoding the object's full size scaled by 4 bytes.
 
 An object whose size is fixed in time does not need the size field, like boxed fixed structs in generic fields.
 
 The root value is the first object in the first segment. Parent objects always come before their children.
 
-There are at most `4294967295 (2 ^ 32 - 1)` segments spanning at most `4294967296 (2 ^ 32)` bytes each, giving a theoretical maximum of `18446744069414584320 (2 ^ 64 - 2 ^ 32)` file size.
+There are at most `4.2 billion (2 ^ 32 - 1)` segments spanning at most `16GB (2 ^ 34)` bytes each, giving a theoretical maximum of `64EB (2 ^ 66 - 2 ^ 34)` file size.
 
 # Declarations
 
@@ -189,6 +190,8 @@ Declarations are object notation constructs that act as schemas and define the s
 They are written above the root value in object files, or in dedicated files called declaration files.
 
 Local declarations can refer to each other in any order, not only to items above them.
+
+Local declerations can shadow imported items and builtins, but can shadow namespaces.
 
 #### Example
 
@@ -219,7 +222,7 @@ let import = "import" path:str ("as" ns:ident)?;
 
 Imports bring the declarations of another declaration file into scope.
 
-They are written with the `import` keyword followed by a `str` containing the URL or file-system path of the declaration file.
+They are written with the `import` keyword followed by a `str` containing the URL, file-system path or user defined id of the declaration file.
 
 If a namespace identifier (`ns`) is specified, the imported declarations are brought into their own namespace.
 
@@ -582,7 +585,7 @@ let any_value = value;
 
 ![any object](./any_object.svg)
 
-`any` is encoded as a pointer to an object that encodes the `value` together with its `typeid`.
+`any` is encoded as a pointer to an object that encodes the `value` together with its `typeid`, in addition to a `u32` `len` field scaled by 4.
 
 The `value` does not encode its `len` field.
 
@@ -603,7 +606,7 @@ Element {
 
 The `far` type is a pointer to an object in any segment.
 
-`far` is used in large files (> `4GB`), where a single segment is not enough.
+`far` is used in large files (> `16GB`), where a single segment is not enough.
 
 Its default value is a null pointer.
 
@@ -624,7 +627,7 @@ let far_value = value;
 
 **Align**: 4
 
-`far` is encoded as a fat pointer consisting of the `segment` `u32` id and an `u32` `offset` from the beginning of that segment.
+`far` is encoded as a fat pointer consisting of the `segment` id and an `u32` scaled `offset` from the beginning of that segment.
 
 A null `far` pointer has both its `segment` and `offset` set to `0`.
 
@@ -634,14 +637,21 @@ Items are schema constructs that define composite data structures with concrete 
 
 They are product types ([structs](#structs)) and sum types ([unions](#unions)) with rich semantics: [generics](#generics), [tagging](#tagged-struct), [trees](#tree-struct), [anonymous items](#inner-definitions), [fixed items](#fixed-struct), [rich notation](#rich-types), and more.
 
-Each item gets its own `0`-indexed id based on its order in the file. A single file can contain at most `65536 (2^16)` items.
+Each item gets its own `0`-indexed id based on its order in the file, and can specify its own using `#id`,
+
+ids doesnt continue after specifed ones unless no previous one is left.
+
+A single file can contain at most `65536 (2^16)` items.
 
 Items named `_` are skipped, but their ids are still counted.
 
 ### Inner definitions
 
 ```gramex
-let inner_def = "fixed"? "struct" name?:ident struct_body | "union" name?:ident union_body;
+let inner_def = ('#' id:nb)? (
+	"fixed"? "struct" name?:ident struct_body |
+	"union" name?:ident union_body
+);
 ```
 
 Items can be declared inline within the fields of other items, becoming the types of those fields.
@@ -655,12 +665,10 @@ Inner definitions can also be used inside generic parameters.
 #### Example
 
 ```structom
-// id = 0
-fixed struct Element {
+#0 fixed struct Element {
 	tag: str,
-	attr: list</* id = 1 */ struct {
-		// id = 2
-		name: struct AttrName(str),
+	attr: list<#1 struct {
+		name: #3 struct AttrName(str),
 		value: any,
 	}>,
 	children: list<Element>,
@@ -668,8 +676,7 @@ fixed struct Element {
 
 struct _ {}
 
-// id = 4
-union Union<T> {
+#5 union Union<T> {
 	A, B, C,
 	D(/* id = 5 */ union { A, B, C(T) }),
 	E { v?: list<T> },
@@ -708,7 +715,7 @@ Struct {
 let struct_def = "fixed"? "struct" name:ident generic_params? struct_body;
 let struct_body = '(' inner:type_spec ')' | '{' list<field_def>? '}';
 
-let field_def = name:ident '?'? ':' type:type_spec ('=' default:value)?;
+let field_def = ('#' tag:nb)? name:ident '?'? ':' type:type_spec ('=' default:value)?;
 ```
 
 Structs are defined by a struct definition.
@@ -721,6 +728,10 @@ Each field definition is composed of a name and a [type specifier](#type-specifi
 
 If an optional field is not specified, it takes the default value of its type, unless a default value is provided with `= value`.
 
+Each field has its own `0` based tag according to its decleration order, it can specify its own tag using `#tag`.
+
+tags doesnt continue after specifed ones unless no previous one is left, no space in tags is allowed.
+
 Fields named `_` are skipped, but their place in the binary encoding is reserved.
 
 A struct can have zero fields, can have [generic parameters](#generics) after its name, and can be [defined inline](#inner-definitions) within the field of another item.
@@ -731,7 +742,7 @@ A struct can have zero fields, can have [generic parameters](#generics) after it
 struct Struct {
 	a: str,
 	b: u16,
-	c?: list<Struct>,
+	#3 c?: list<Struct>,
 	d?: struct { min: f64, max: f64 },
 }
 ```
@@ -745,6 +756,8 @@ let field_value = name:ident ':' value;
 ```
 
 Structs are represented by a list of fields and their values inside a curly block.
+
+Unkown fields are an error.
 
 The type specifier can be omitted if it can be inferred.
 
@@ -765,7 +778,7 @@ Struct {
 
 Structs are encoded as a pointer to an object containing the struct's fields.
 
-The object starts with a `u32` length field, followed by the fields, which are allocated as follows:
+The object starts with a `u32` length field scaled by 4 bytes, followed by the fields, which are allocated as follows:
 
 - Fields are allocated in definition order. Each field takes the first padding, in ascending order, that can hold it at its natural alignment.
 - If none fits, the field is allocated at the end, aligned.
@@ -788,11 +801,11 @@ field_loop: for field in fields {
 
 Bit fields ([`bool`](#bool)s) are allocated together as `u8` fields. They fill bits `0` through `7`, and then a new byte is allocated.
 
-Optional fields that are not pointers allocate an additional bit field after them. If it is `1`, a value is given inside the field. Otherwise, the default value is used.
+Optional fields that are not non fixed structs allocate an additional bit field after them. If it is `1`, a value is given inside the field. Otherwise, the default value is used.
 
 Unspecified optional pointer fields are encoded as null pointers.
 
-A struct can have at most `65536 (2^16)` fields, spanning at most `4294967295 (2^32 - 1)` bytes.
+A struct can have at most `65536 (2^16)` fields, spanning at most `16GB (2^34 - 1)` bytes.
 
 #### Example
 
@@ -890,7 +903,7 @@ Node {
 	tag: "a",
 	attrs: { "id": "a1" },
 } [
-	Node { tag: 'b' },
+	Node { tag: "b" },
 	Node [ Node {}, Node { tag: 'c' } ],
 ]
 ```
@@ -934,7 +947,7 @@ list<Union> [
 let union_def = "fixed"? "union" name:ident generic_params? union_body;
 let union_body = union_tag? '{' list<variant> '}';
 let union_tag = '(' ("u8" | "u16" | "u32") ')';
-let variant = "fixed"? name:ident struct_body?;
+let variant = ('#' tag:nb)? "fixed"? name:ident struct_body?;
 ```
 
 Unions are defined by a union definition.
@@ -944,6 +957,8 @@ A union definition consists of the union `name` followed by its list of variants
 Each variant is defined by an identifier, optionally followed by a [struct body](#definition), and can be prefixed with the `fixed` modifier.
 
 Variants named `_` are skipped, but their tags are still counted.
+
+Each variant gets its own `0` based tag based on its declaration order, it can specify its own using `#tag`, ids continue counting after it.
 
 A union can define its tag type inside parentheses after the name.
 
@@ -1085,7 +1100,7 @@ The `list` type represents a homogeneous, ordered, variable-size collection of v
 
 Its default value is the empty list.
 
-A `list` can contain at most `4294967295 (2^32 -1)` items, spanning at most `4294967295 (2^32 -1)` bytes.
+A `list` can contain at most `4.2 billion (2^32 -1)` items, spanning at most `16GB (2^34 -1)` bytes.
 
 ### Object notation
 
@@ -1129,7 +1144,7 @@ The `str` type represents a [UTF-8](https://en.wikipedia.org/wiki/UTF-8) string.
 
 Its default value is the empty string.
 
-A `str` can be at most `4294967295 (2^32 -1)` bytes long.
+A `str` can be at most `4.2 billion (2^32 -1)` bytes long.
 
 ### Object notation
 
@@ -1138,7 +1153,7 @@ let str_type = "str";
 let str_value = '"' (escape_code | !('"' | '\\'))* '"';
 let escape_code = '\\' (
 	'\\' | '"' | 'n' | 't' | 'r' |
-	'x' hex hex | 'u' '{' hex ('_'? hex)[0..5] '}'
+	'u' '{' hex ('_'? hex)[0..5] '}'
 );
 ```
 
@@ -1171,7 +1186,7 @@ The `map` type represents an unordered, keyed, variable-size collection of value
 
 Its default value is an empty `map`.
 
-A `map` can contain at most `4294967295 (2^32 -1)` items, spanning at most `4294967295 (2^32 -1)` bytes.
+A `map` can contain at most `4.2 billion (2^32 -1)` items, spanning at most `16GB (2^34 -1)` bytes.
 
 Keys are compared for equality and ordering based on their types:
 
@@ -1360,6 +1375,8 @@ fixed struct dec {
 The `dec` type represents an arbitrary-precision decimal number with an exact value.
 
 `dec` is composed in its raw form of an `i32` exponent `exp` and a `bint` [mantissa](https://en.wikipedia.org/wiki/Significand) `mant` that is not divisible by `10`.
+
+`0` `dec` is both `mant` and `exp` `0`.
 
 `dec` has a rich notation of a number string with the same format as floats, without the special values.
 
@@ -1581,13 +1598,13 @@ Bidirectional compatibility is a key feature of Structom: readers can read value
 
 This section describes the evolution guidelines for the binary encoding. The object notation is inherently more resilient.
 
-In general, readers should fail safely on missing fields and assume unencoded data is zero, and writers must write all padding as zero.
+In general, readers should fail safely on missing fields, and writers must write all padding as zero.
 
 Metadata can be changed in any way. Items, fields, and variants can be renamed if object notation stability is not important.
 
-File paths must remain stable and item declaration order must be preserved. Items must be deprecated instead of removed.
+File paths must remain stable and item id order must be preserved. Items must be deprecated instead of removed.
 
-For structs, field order must be preserved. Fields must be added at the end and deprecated instead of removed.
+For structs, field tag order must be preserved. Fields must be added with a tag after the last, and deprecated instead of removed.
 
 Fields cannot change their types or optionality, but they can change their default values, writers must always write all specified values even if they are the default.
 
@@ -1595,7 +1612,7 @@ Reserved fields can be repurposed if they were not used before.
 
 Fixed structs and tagged structs are frozen in time and cannot change.
 
-Variants can be added to unions as long as the tag capacity is not exhausted, the order of existing variants is preserved, and the variant's encoding fits inside the union's.
+Variants can be added to unions as long as the tag capacity is not exhausted, the tag order of existing variants is preserved, and the variant's encoding fits inside the union's.
 
 Non-unit variants are subject to the same guidelines as their struct counterparts.
 
@@ -1653,8 +1670,12 @@ fixed struct Struct2 {
 struct Struct1 {
 	a: i32,
 	_: u32,
+	#3 d?: u32,
 	c: bool,
-	d?: u32,
+}
+
+#3 union Union2(u8) {
+	A, B, C, D,
 }
 
 fixed struct Struct2 {
@@ -1671,10 +1692,6 @@ union Union(u8) {
 		c: bool,
 	},
 	D(u32),
-}
-
-union Union2(u8) {
-	A, B, C, D,
 }
 ```
 
