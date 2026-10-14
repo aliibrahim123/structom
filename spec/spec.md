@@ -780,7 +780,7 @@ Structs are encoded as a pointer to an object containing the struct's fields.
 
 The object starts with a `u32` length field scaled by 4 bytes, followed by the fields, which are allocated as follows:
 
-- Fields are allocated in definition order. Each field takes the first padding, in ascending order, that can hold it at its natural alignment.
+- Fields are allocated in tag order. Each field takes the first padding, in ascending order, that can hold it at its natural alignment.
 - If none fits, the field is allocated at the end, aligned.
 
 ```
