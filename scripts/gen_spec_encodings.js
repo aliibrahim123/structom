@@ -107,7 +107,7 @@ const encodings = {
 		u8('54', ''),
 		u8('4F', ''),
 		u8('4D', ''),
-		u32('imports_len'),
+		u16('imports_len'),
 		u32('import_n', 'str * n'),
 		u32('segments_len'),
 		u64('segment_n', 'u64 * n'),
@@ -118,7 +118,8 @@ const encodings = {
 		u8('54', ''),
 		u8('4F', ''),
 		u8('4D', ''),
-		u32('01 00 00 00', 'imports_len'),
+		u16('01 00', 'imports_len'),
+		pad(2),
 		u32('06 00 00 00', 'import1_len'),
 		...Array.from('schema').map((v) => u8(v.charCodeAt(0).toString(16), '')),
 		pad(2),
@@ -137,7 +138,7 @@ const encodings = {
 	typeid_example: {
 		lanes: 2,
 		margin: { left: 90 },
-		label: { left: ['`u8`', '`Enum<u8>`'] },
+		label: { left: ['`u8`', '`Union<u8>`'] },
 		encoding: [
 			...typeid('10 00'),
 			u32('', ''),
@@ -154,7 +155,7 @@ const encodings = {
 			u32('0c 00 00 00', 'a'),
 			u16('12 34', 'b'),
 			pad(2),
-			u16('ff 00', 'c'),
+			u16('00 ff', 'c'),
 			pad(2),
 
 			u32('03 00 00 00', 'len'),
@@ -167,7 +168,7 @@ const encodings = {
 	...builtin('none', 0),
 	...builtin('bool', 2),
 	...object('any', 1, [u32('len'), u32('typeid', ''), { bits: 10, name: 'value' }, rest]),
-	...builtin('far', 3, [u32('section'), u32('offset')]),
+	...builtin('far', 3, [u32('segment'), u32('offset')]),
 	struct_example: {
 		lanes: 7,
 		margin: { left: 90 },
@@ -238,7 +239,7 @@ const encodings = {
 	},
 	fixed_struct_example: {
 		label: { left: 'Parent' },
-		encoding: [u16('a'), u16('c'), u32('b.a'), u16('b.b')],
+		encoding: [u32('len'), u16('a'), u16('c'), u32('b.a'), u16('b.b')],
 	},
 	tagged_struct_example: [u32('2', 'len'), u32('123', 'A(u32)'), u32('456', 'B(A(u32))')],
 
@@ -268,13 +269,12 @@ const encodings = {
 	union_example_C: {
 		margin: { left: 15 },
 		label: { left: 'C' },
-		encoding: [u32('len'), i16('b'), pad(2), u32('a')],
+		encoding: [u32('len'), i16('b'), pad(2), u64('a')],
 	},
 	...builtin(
 		'arr',
 		[...typeid(`20 00`), u32('item', 'typeid'), u16('len')],
 		[u32('itemn', 'item * len')],
-		[u32('len')],
 	),
 	arr_example: [
 		u16('01 00', '0.a'),
@@ -287,8 +287,7 @@ const encodings = {
 	...object(
 		'list',
 		[...typeid(`21 00`), u32('item', 'typeid')],
-		[u32('len'), u32('ptr')],
-		[u64('itemn', 'item * len')],
+		[u32('len'), u64('itemn', 'item * len')],
 	),
 	list_example: [
 		u32('02 00 00 00', 'len'),
@@ -303,8 +302,8 @@ const encodings = {
 	...object(
 		'map',
 		[...typeid(`23 00`), u32('key', 'typeid'), u32('value', 'typeid')],
-		[u32('len'), u32('ptr')],
 		[
+			u32('len'),
 			u32('key0', 'key'),
 			u32('value0', 'value'),
 			rest,
@@ -313,6 +312,7 @@ const encodings = {
 		],
 	),
 	map_example: [
+		u32('03 00 00 00', 'len'),
 		u32('{a:1,b:false}', '0.key'),
 		u32('1.0', '0.value'),
 		u32('{a:1,b:true}', '1.key'),
@@ -333,15 +333,7 @@ for (const [name, encoding] of Object.entries(encodings)) {
 		? render(encoding)
 		: render(encoding.encoding, encoding);
 
-	let rootG = diagram_raw[3];
-	for (let laneG of rootG.slice(2)) {
-		let cage = laneG[2];
-		if (cage && cage[1] && cage[1].stroke === 'black') {
-			laneG.splice(2, 0, ['rect', { class: 'bg', width: w, height: h }]);
-		}
-	}
-
 	let diagram = stringify(diagram_raw);
 
-	writeFile(`./spec/${name}.svg`, diagram);
+	await writeFile(`./spec/${name}.svg`, diagram);
 }
