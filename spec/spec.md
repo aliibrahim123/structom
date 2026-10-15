@@ -2,7 +2,7 @@
 
 Structom (short for structured atoms) is a general-purpose data exchange format designed for universal applications.
 
-Structom achieves its universality by providing rich, expressive data representation constructs that are highly efficient, lightweight, and bidirectionally compatible.
+Structom achieves its universality by providing rich, expressive data representation constructs that are highly efficient, and bidirectionally compatible.
 
 This document is the language specification for Structom. It covers the full feature set, from data layout to rich types.
 
@@ -11,7 +11,7 @@ This document is the language specification for Structom. It covers the full fea
 - An expressive object notation designed for ergonomic, human-readable data files.
 - An efficient binary encoding designed for bare-metal serialization performance.
 - A rich schema system with a [module system](#imports) and forward and backward compatibility.
-- A schemaless mode with full feature support in both the object notation and the binary encoding.
+- A schemaless mode in both the object notation and the binary encoding.
 - Rich modeling constructs: [tagged unions](#unions), [tagged types](#tagged-struct), [tree structs](#tree-struct), [generics](#generics), [anonymous items](#inner-definitions), and more.
 - Zero-copy binary decoding with support for segment based streaming and out-of-order decoding.
 - A wide set of rich data types: [instance](#inst), [duration](#dur), [UUID](#uuid), [bigint](#bint) [bitfield](#bitfield), and more.
@@ -25,14 +25,13 @@ This document is the language specification for Structom. It covers the full fea
 The object notation is Structom's human-readable, [JSON](https://www.json.org)-like format. It is designed for expressive data files edited by humans.
 
 ```structom
-#!import_rich([color])
-import "./schema.stomd"
+#!import("./schema.stomd")
 Root {
 	// comment
 	a: "hello world",
-	#metadata
+	@metadata
 	b: 123.456_789,
-	c: [true, color "#ff8800", 0x"ab cd ff"],
+	c: [true, dur "12sec 34ms", 0x"ab cd ff"],
 }
 ```
 
@@ -46,15 +45,14 @@ Whitespace is insignificant and is only used to separate tokens.
 let ws = (' ' | '\t' | '\n' | '\r')*;
 ```
 
-Identifiers are case-sensitive names for types, fields, namespaces, variants, and metadata.
+Identifiers are case-sensitive names for types, fields, namespaces, variants, directives and metadata.
 
-`keywords` are reserved by the language and forbidden as user-defined identifiers. `weak_keywords` are reserved only in the specific contexts defined by the grammar.
+`keywords` are reserved by the language and forbidden as user-defined identifiers.
 
 ```gramex
 let ident_start = 'a'..'z' | 'A'..'Z' | '_';
 let ident = ident_start (ident_start | '0'..'9')* & !keywords;
 let keywords = "struct" | "union" | "true" | "false" | "none" | "inf" | "nan";
-let weak_keywords = "import" | "as" | "fixed";
 ```
 
 `list` is a grammar construct that specifies a `,`-separated list of items with an optional trailing `,`.
@@ -67,7 +65,7 @@ let list<item> = item (',' item)* ','?;
 
 Comments are ignored and follow the C style: line comments (`//`) and block comments (`/* ... */`). Block comments can nest.
 
-In addition, unit comments (`/-`) comment out the entire item that follows them. The item can be an item definition (struct or union), an import, metadata, a type, or a value.
+In addition, unit comments (`/-`) comment out the entire item that follows them. The item can be an item definition (struct or union), a metadata, directive, a type, or a value.
 
 Unit comments can also comment out array items, map items, fields, and generic parameters, along with the `,` that follows them, if present.
 
@@ -92,25 +90,24 @@ struct Struct {
 
 ### Root structure
 
-An object file starts with zero or more [imports](#imports), optionally followed by root [metadatas](#metadata) then local [item declarations](#items), and ends with a root value.
+An object file starts with root [metadatas and directives](#metadata-and-directives) then local [item declarations](#items), and ends with a root value.
 
 Values are constructs that represent data. They have multiple syntaxes depending on their types.
 
 A value's type is inferred by default, but it can be specified explicitly when needed.
 
 ```gramex
-let file = root_metadata* import* item* root_value:value;
+let file = (root_metadata | root_directive)* item* root_value:value;
 let value = type?:type_spec /* see the value type for the syntax */;
 ```
 
 #### Example
 
 ```structom
-#!version("0.1.2")
-#!import_rich([inst])
+@!version("0.1.2")
 
-import "./schema.stomd"
-import "../extensions.stomd" as ext
+#!import("./schema.stomd")
+#!import("../extensions.stomd", as ext)
 
 struct Tagged (u32)
 
@@ -147,23 +144,28 @@ Null pointers are encoded with the value `0`.
 
 ![header](./header.svg)
 
+![header options](./header_opt.svg)
+
 A binary file starts with a header that specifies its core attributes. The header is required for standalone files but optional for inlined blobs.
 
-The header begins with the magic number `53 54 4F 4D` (`STOM`) followed by a `u8` `version` field, it is `1` in this version, then a pad byte.
+The header begins with the magic number `53 54 4F 4D` (`STOM`) followed by a `u8` `version` field, it is `1` in this version.
 
-It is followed by a list of imports encoded as a `u16` length field followed by the inlined `str`s encoding the import paths.
+Then it is followed by an `u8` `opt` option bit flags having the following flags:
 
-Next comes a list of segments encoded as a non-zero `u32` length field followed by the `u64` segment offsets scaled by 4 bytes.
+- `imp`: whether there are imports.
+- `seg`: whether there are segments.
 
-If `segments_len` is `1`, no offsets need to be specified.
+If `imp` is `1`, a list of imports is followed encoded as a `u16` length field followed by the inlined `str`s encoding the import paths.
 
-Finally, a `typeid` of the root value follows.
+If `seg` is `1`, a list of segments comes next encoded as a non-zero `u32` length field followed by the `u64` segment offsets scaled by 4 bytes.
+
+Finally, a `typeid` of the root value follows, if `imp` is `0`, it is just the `u16` `id` part, `ns` is `0` implied.
 
 #### Example
 
 ![header example](./header_example.svg)
 
-A header with 1 import (`"schema"`), 1 segment, and the root value `import("schema").first_type`.
+A header with 1 import (`"schema"`), and the root value `import("schema").first_type`.
 
 ### Segments
 
@@ -191,12 +193,12 @@ They are written above the root value in object files, or in dedicated files cal
 
 Local declarations can refer to each other in any order, not only to items above them.
 
-Local declerations can shadow imported items and builtins, but can shadow namespaces.
+Local declarations can shadow imported items and builtins, but can not shadow namespaces.
 
 #### Example
 
 ```structom
-import "./module1.stomd"
+#!import("./module1.stomd")
 
 struct Root {
 	a: u8,
@@ -217,14 +219,14 @@ union Union {
 ## Imports
 
 ```gramex
-let import = "import" path:str ("as" ns:ident)?;
+let import = '#' '!' "import" '(' path:str (',' "as" ns:ident)? ')';
 ```
 
-Imports bring the declarations of another declaration file into scope.
+Imports are directives that bring the declarations of another declaration file into scope.
 
-They are written with the `import` keyword followed by a `str` containing the URL, file-system path or user defined id of the declaration file.
+They take a `str` parameter containing the URL, file-system path or user defined id of the declaration file.
 
-If a namespace identifier (`ns`) is specified, the imported declarations are brought into their own namespace.
+They also take second optional argument `as ns`, where the imported declarations are brought into the namespace `ns`.
 
 Imports cannot be circular.
 
@@ -235,12 +237,12 @@ Imports cannot be circular.
 struct Struct { }
 
 // module2.stomd
-import "./module1.stomd"
+#!import("./module1.stomd")
 union Union { }
 
 // module3.stomd
-import "./module1.stomd"
-import "./module2.stomd" as mod2
+#!import("./module1.stomd")
+#!import("./module2.stomd", as mod2)
 
 struct Root {
 	a: Struct,
@@ -275,7 +277,7 @@ In declarations, a type specifier can also be an [inner definition](#inner-defin
 #### Example
 
 ```structom
-import "./module1.stomd" as mod1
+#!import("./module1.stomd", as mod1)
 struct Local { }
 union Generic<A, B, C> { }
 
@@ -308,7 +310,7 @@ struct Struct { }
 union Union<T> { A(T) }
 
 // value.stomo
-import "./module1.stomd"
+#!import("./module1.stomd")
 [u8 10, Union<u8>.A 1]
 ```
 
@@ -358,40 +360,47 @@ Such a field is always a `u32`, interpreted as:
 
 ![binary generic example](./binary_generic_example.svg)
 
-## Metadata
+## Metadata And Directives
 
 ```gramex
-let metadata = '#' name:ident ('(' params:list<metavalue> ')')?;
-let root_metadata = '#' '!' name:ident ('(' params:list<metavalue> ')')?;
+let directive = '#' name:ident meta_params?;
+let root_directive = '#' '!' name:ident meta_params?;
+
+let metadata = '@' name:ident meta_params?;
+let root_metadata = '@' '!' name:ident meta_params?;
+
+let meta_params = '(' params:list<metavalue> ')';
 let metavalue = type_spec | value |
 	'[' list<metavalue>? ']' |
 	'{' list<metavalue ':' metavalue>? '}'
 ;
 ```
 
+Directives are object-notation construct for adding sematic meaning without requiring a new keyword.
+
 Metadata is an object-notation-only construct for user-defined extra data.
 
 It is useful for external tooling and is ignored by the parser.
 
-Metadata is declared before items, values, types, fields, variants, and [generic parameters](#generics), using a `#` followed by the metadata name.
+Directives and Metadata are declared before items, values, types, fields, variants, and [generic parameters](#generics), using a `#` or `@` followed by the name respectively.
 
-Metadata can optionally take metavalue parameters enclosed in parentheses.
+They can optionally take metavalue parameters enclosed in parentheses.
 
 Metavalues are values, [type specifiers](#type-specifier), and [lists](#list) and [maps](#map) of them.
 
-Metadata that applies to the whole file is declared before any items, using `#!name`.
+Directives and metadata that applies to the whole file are declared before any items, using a `!` before the name.
 
 #### Example
 
 ```structom
-#!version("0.1.2")
-#!import_rich([uuid])
+@!version("0.1.2")
 
-#doc("user info")
+@doc("user info")
+#default({ name: "guest", id: UserId "00000000-0000-0000-0000-000000000000" })
 struct User {
-	#pattern("[a-zA-Z0-9]+")
+	@regex_pat("[a-zA-Z0-9]+")
 	name: str,
-	id: #private_constructor
+	id: @private_constructor
 		struct UserId(uuid),
 }
 ```
@@ -402,7 +411,7 @@ struct User {
 
 The `none` type is a special type that has no value.
 
-It decays to the default value in [optional fields](#definition).
+It decays to the absent case in [optional fields](#definition).
 
 ### Object notation
 
@@ -520,7 +529,7 @@ Their default value is `0.0`.
 ### Object notation
 
 ```gramex
-let dec_part = dec ('_' dec)*;
+let dec_part = dec ('_'? dec)*;
 let float_expr = ('e' | 'E') sign? dec_part;
 let float_nb = sign? (dec_part? '.' dec_part | dec_part) float_expr?;
 
@@ -645,18 +654,20 @@ A single file can contain at most `65536 (2^16)` items.
 
 Items named `_` are skipped, but their ids are still counted.
 
+Items can define their default values through the `default` directive.
+
 ### Inner definitions
 
 ```gramex
 let inner_def = ('#' id:nb)? (
-	"fixed"? "struct" name?:ident struct_body |
+	"struct" name?:ident struct_body |
 	"union" name?:ident union_body
 );
 ```
 
 Items can be declared inline within the fields of other items, becoming the types of those fields.
 
-They can be anonymous (no name given), and they inherit the [`fixed`](#fixed-struct) modifier and the [generics](#generics) of their parent item.
+They can be anonymous (no name given), and they inherit the [`fixed`](#fixed-struct) directive and the [generics](#generics) of their parent item.
 
 They receive the ids directly after their parent's id, in declaration order, and this carries over to nested definitions.
 
@@ -665,7 +676,7 @@ Inner definitions can also be used inside generic parameters.
 #### Example
 
 ```structom
-#0 fixed struct Element {
+#0 #fixed struct Element {
 	tag: str,
 	attr: list<#1 struct {
 		name: #3 struct AttrName(str),
@@ -676,9 +687,10 @@ Inner definitions can also be used inside generic parameters.
 
 struct _ {}
 
+#default(.B)
 #5 union Union<T> {
 	A, B, C,
-	D(/* id = 5 */ union { A, B, C(T) }),
+	D(/* id = 6 */ union { A, B, C(T) }),
 	E { v?: list<T> },
 }
 ```
@@ -712,7 +724,7 @@ Struct {
 ### Definition
 
 ```gramex
-let struct_def = "fixed"? "struct" name:ident generic_params? struct_body;
+let struct_def = "struct" name:ident generic_params? struct_body;
 let struct_body = '(' inner:type_spec ')' | '{' list<field_def>? '}';
 
 let field_def = ('#' tag:nb)? name:ident '?'? ':' type:type_spec ('=' default:value)?;
@@ -726,9 +738,9 @@ Generally, the struct body is a list of field definitions inside a curly block.
 
 Each field definition is composed of a name and a [type specifier](#type-specifier). A field can be made optional with `?`.
 
-If an optional field is not specified, it takes the default value of its type, unless a default value is provided with `= value`.
+Optional field can be provided a default value through `= value`.
 
-Each field has its own `0` based tag according to its decleration order, it can specify its own tag using `#tag`.
+Each field has its own `0` based tag according to its declaration order, it can specify its own tag using `#tag`.
 
 tags doesnt continue after specifed ones unless no previous one is left, no space in tags is allowed.
 
@@ -801,7 +813,7 @@ field_loop: for field in fields {
 
 Bit fields ([`bool`](#bool)s) are allocated together as `u8` fields. They fill bits `0` through `7`, and then a new byte is allocated.
 
-Optional fields that are not non fixed structs allocate an additional bit field after them. If it is `1`, a value is given inside the field. Otherwise, the default value is used.
+Optional fields that are not non fixed structs allocate an additional bit field after them. If it is `1`, a value is given inside the field. Otherwise, the default value / absent case is used.
 
 Unspecified optional pointer fields are encoded as null pointers.
 
@@ -829,11 +841,11 @@ struct Struct {
 
 ### Fixed struct
 
-A struct with the `fixed` modifier is encoded inline in its parent struct.
+A struct with the `fixed` directive is encoded inline in its parent struct.
 
 A fixed struct is encoded as one big field containing all its fields, using the regular struct encoding without the `len` field.
 
-This big field is aligned to the maximum alignment of its fields and is sized to fit them all.
+This big field is aligned to the maximum alignment of its fields and is sized to fit them all, not neccessary aligned.
 
 Fixed structs are frozen in time and cannot evolve. They are subject to the same limits as regular structs.
 
@@ -847,7 +859,7 @@ struct Parent {
 	c: u16,
 }
 // align: 4, size: 6
-fixed struct Fixed {
+#fixed struct Fixed {
 	a: u32,
 	b: u16,
 }
@@ -904,7 +916,7 @@ Node {
 	attrs: { "id": "a1" },
 } [
 	Node { tag: "b" },
-	Node [ Node {}, Node { tag: 'c' } ],
+	Node [ Node {}, Node { tag: "c" } ],
 ]
 ```
 
@@ -920,7 +932,7 @@ Each variant has its own tag, based on its declaration order, and can be one of 
 
 Unions translate to tagged unions, discriminated unions, enumerations, and similar constructs in other languages.
 
-A union does not have a default value.
+A union does not have a default value unless manually specified using `default` directive.
 
 #### Example
 
@@ -944,17 +956,17 @@ list<Union> [
 ### Definition
 
 ```gramex
-let union_def = "fixed"? "union" name:ident generic_params? union_body;
+let union_def = "union" name:ident generic_params? union_body;
 let union_body = union_tag? '{' list<variant> '}';
 let union_tag = '(' ("u8" | "u16" | "u32") ')';
-let variant = ('#' tag:nb)? "fixed"? name:ident struct_body?;
+let variant = ('#' tag:nb)? name:ident struct_body?;
 ```
 
 Unions are defined by a union definition.
 
 A union definition consists of the union `name` followed by its list of variants enclosed in a curly block.
 
-Each variant is defined by an identifier, optionally followed by a [struct body](#definition), and can be prefixed with the `fixed` modifier.
+Each variant is defined by an identifier, optionally followed by a [struct body](#definition), and can be prefixed with the `fixed` directive.
 
 Variants named `_` are skipped, but their tags are still counted.
 
@@ -972,7 +984,7 @@ Unions can have [generic parameters](#generics) after their name and can be [def
 union Union<T>(u16) {
 	A, B, C, _,
 	D(union { A, B, C(T) }),
-	fixed E {
+	#fixed E {
 		name: str,
 		children: list<Union<T>>,
 	},
@@ -1006,7 +1018,7 @@ list<Union<str>> [
 
 ### Binary encoding
 
-Unions are encoded as a `tag` field of the defined tag type, which specifies the variant, followed by a shared space whose encoding changes with each variant.
+Unions are encoded as a `tag` field of the defined tag type, which specifies the variant, followed directly by a shared space whose encoding changes with each variant.
 
 Depending on the variant kind, this space is:
 
@@ -1029,7 +1041,7 @@ union Union {
 	A, _,
 	B(u16),
 	C { a: u64, b: i16 },
-	fixed D {
+	#fixed D {
 		c: u32,
 		d?: u16,
 	},
@@ -1088,7 +1100,7 @@ The `arr` itself is aligned to the `item` alignment.
 #### Example
 
 ```structom
-fixed struct A { a: u16, b: u8 }
+#fixed struct A { a: u16, b: u8 }
 arr<A, 2> [A { a: 1, b: 2 }, A { a: 3, b: 4 }]
 ```
 
@@ -1127,12 +1139,14 @@ The `list` typeid takes an additional `item` `typeid` parameter.
 
 A `list` is encoded as a pointer to an object containing a `u32` `len` field followed by a sequence of `len` aligned `item` fields.
 
+if the item type is non fixed struct, an additional `item_len` `u32` field scaled by 4 bytes representing a shared `len` field between items is added after the `len` field.
+
 If the length is zero, the pointer is null.
 
 #### Example
 
 ```structom
-fixed struct A { a: u16, b: u8 }
+#fixed struct A { a: u16, b: u8 }
 list<A> [A { a: 1, b: 2 }, A { a: 3, b: 4 }]
 ```
 
@@ -1150,7 +1164,9 @@ A `str` can be at most `4.2 billion (2^32 -1)` bytes long.
 
 ```gramex
 let str_type = "str";
-let str_value = '"' (escape_code | !('"' | '\\'))* '"';
+let str_value = str_escaped | str_multiline;
+let str_escaped = '"' (escape_code | !('"' | '\\'))* '"';;
+let str_multiline = '"'[3] (escape_code | !('"'[3] | '\\'))* '"'[3];
 let escape_code = '\\' (
 	'\\' | '"' | 'n' | 't' | 'r' |
 	'u' '{' hex ('_'? hex)[0..5] '}'
@@ -1168,6 +1184,13 @@ The escape codes are:
 - `\r`: carriage return (`\r`).
 - `\u{xxx}`: a Unicode [code point](https://en.wikipedia.org/wiki/Code_point) given as 1 to 6 hex digits `xxx`, optionally separated by underscores.
 
+`str` also have a multiline version where:
+
+- the opening and closing quotes are tripled.
+- `"` and `""` are allowed unescaped
+- from the start till after indentation of the first line is stripped.
+- the indentation is stripped from the start of each line passed on what the clossing `"""` has.
+
 ### Binary encoding
 
 ![str typeid](./str_typeid.svg)
@@ -1177,7 +1200,12 @@ The escape codes are:
 #### Example
 
 ```structom
-"abc \n\"\\ \u{12_34}"
+"abc \"\\\n \u{12_34}"
+"""
+    abc "\\
+	 \u{12_34}
+"""
+
 ```
 
 ## `map`
@@ -1188,19 +1216,18 @@ Its default value is an empty `map`.
 
 A `map` can contain at most `4.2 billion (2^32 -1)` items, spanning at most `16GB (2^34 -1)` bytes.
 
-Keys are compared for equality and ordering based on their types:
+Keys are compared for equality based on their types:
 
-- **`bool`**: `false` < `true`.
-- **Integers**: by their numeric values.
+- **Integers, `bool`s**: by their numeric values.
 - **Floats**: by the IEEE 754 [total order](https://en.wikipedia.org/wiki/IEEE_754#Total-ordering_predicate), `nan` keys are not allowed.
-- **`list`, `arr`**: by their items, in [lexicographic order](https://en.wikipedia.org/wiki/Lexicographic_order).
+- **`list`, `arr`**: by their items.
 - **`str`**: as a `list<u8>`.
-- **`map`**: as a `list<(key, value)>` sorted by `key`.
-- **Structs**: by their fields, in declaration order.
+- **`map`**: as a `list<(key, value)>`.
+- **Structs**: by their fields.
 - **Unions**: by their tags, then by their fields in declaration order.
-- **`any`**: by their typeid (base, then parameters, `ns`, then `id`), then by their values.
+- **`any`**: by their typeid and their values.
 - **`far`**: by the value it points to.
-- **Rich types**: as their raw values. Values using unsupported syntax are placed last, in any order.
+- **Rich types**: as their raw values.
 
 ### Object notation
 
@@ -1225,14 +1252,14 @@ If no type is specified or inferred, the default is `map<any, any>`.
 
 The `map` typeid takes additional `key` and `value` `typeid` parameters.
 
-A `map` is encoded as a pointer to an object containing a `u32` `len` field followed by a sequence of `len` aligned `key` then `value` fields, sorted by `key`.
+A `map` is encoded as a pointer to an object containing a `u32` `len` field followed by a sequence of `len` aligned `key` then `value` fields.
 
 If the length is zero, the pointer is null.
 
 #### Example
 
 ```structom
-fixed struct A {
+#fixed struct A {
 	a: u8,
 	b: bool,
 }
@@ -1254,15 +1281,13 @@ Rich types are types that have two forms:
 
 Rich notations are optional. Parsers that support them can use them to provide a richer user experience, while parsers that do not should dump them as-is.
 
-`import_rich` is a top-level [metadata](#metadata) that declares, as a `list` of type specifiers, the built-in rich types used inside the file.
+if the type is infered, the type specifier can be omitted.
 
-`rich` is an item-level metadata that marks an item as a rich type. If a mismatching value syntax is provided, the value is dumped instead of raising an error.
+`rich` is an item-level [directive](#metadata-and-directives) that marks an item as a rich type. If a mismatching value syntax is provided, the value is dumped instead of raising an error.
 
 #### Example
 
 ```structom
-#!import_rich([uuid, inst])
-
 #rich #bitfield({ a: 3, b: 2, c: 3 })
 struct BitField(u8)
 
@@ -1276,7 +1301,7 @@ struct BitField(u8)
 ## `inst`
 
 ```structom
-fixed struct inst {
+#fixed struct inst {
 	secs: i64,
 	nanos: u32,
 }
@@ -1301,7 +1326,7 @@ inst { secs: 946684800, nanos: 123456789 }
 ## `dur`
 
 ```structom
-fixed struct dur {
+#fixed struct dur {
 	secs: i64,
 	nanos: u32,
 }
@@ -1364,7 +1389,7 @@ bint 0x"ff ff ff ff ff ff ff ff 01"
 ## `dec`
 
 ```structom
-fixed struct dec {
+#fixed struct dec {
 	exp: i32,
 	mant: bint,
 }
@@ -1416,7 +1441,7 @@ uuid 0x"01 23 45 67 01 23 01 23 01 23 01 23 45 67 89 ab"
 ## `color`
 
 ```structom
-fixed struct color {
+#fixed struct color {
 	r: u8,
 	g: u8,
 	b: u8,
@@ -1446,7 +1471,7 @@ color { r: 255, g: 0, b: 0, a: 255 }
 
 ## `bitfield`
 
-`bitfield` is a [metadata](#metadata) that defines a bit field rich notation for an item.
+`bitfield` is a [directive](#metadata-and-directives) that defines a bit field rich notation for an item.
 
 It can be attached to [structs](#tagged-struct) and [variants](#unions) that tag `u8`, `u16`, `u32`, `u64`, or `arr<u8>`. It can also be attached to [unions](#unions) whose variants are all unit variants, in which case it specifies their `size`.
 
@@ -1469,7 +1494,7 @@ Items with a `bitfield` accept as their rich notation a `map` of the defined fie
 
 ```structom
 #bitfield(2)
-fixed union Union {
+union Union {
 	A, B, C, D,
 }
 
@@ -1493,7 +1518,7 @@ Struct {
 
 ## `unitfield`
 
-`unitfield` is a [metadata](#metadata) that defines a unit field string as the rich notation of an item.
+`unitfield` is a [directive](#metadata-and-directives) that defines a unit field string as the rich notation of an item.
 
 A unit field is a string of a series of numbers, each followed by a unit. The resulting value is the sum of all the numbers multiplied by the multipliers of their units.
 
@@ -1537,16 +1562,82 @@ struct Bytes(u64)
 [
 	Bytes "1.5MB",
 	Bytes "1mb 512kb",
-	Bytes "1536kb0b",
+	Bytes "1536kb 0b",
 	Bytes 1572864,
 ]
 ```
 
 # Appendix
 
+## Profile
+
+```gramex
+let profile = feature_group ('_' feature_group)*;
+let feature_group = group:ident ('{' list<feature:ident> '}')?;
+```
+
+A profile is a string that identifies the features and extensions supported by an implementation.
+
+Not all features are required, implementations can choose to support only what they need.
+
+A profile string is composed of several feature groups separated by '\_'.
+
+Each group is composed of a base and optional extensions specified inside a comma separated list enclosed in curly block.
+
+The groups and their extensions are:
+
+- `obj`: the object notation, schemaless mode (builtin types and `any`).
+
+- `bin`: the binary encoding, schemaless mode (builtin types and `any`), having the following extensions:
+    - `seg`: segments and large files support.
+
+- `decl`: declarations and user defined items, include module system and schema mode of object notation and binary encoding, having the following extensions:
+    - `gen`: generics support for user defined items.
+
+- `rich`: rich notation, enable the raw values of builtin rich types, having the following extensions:
+    - `uuid`: [`uuid`](#uuid) rich notation.
+    - `inst`: [`inst`](#inst) rich notation.
+    - `dur`: [`dur`](#dur) rich notation.
+    - `bint`: [`bint`](#bint) rich notation.
+    - `dec`: [`dec`](#dec) rich notation.
+    - `color`: [`color`](#color) rich notation.
+    - `bitfield`: the [`bitfield`](#bitfield) directive.
+    - `unitfield`: the [`unitfield`](#unitfield) directive.
+
+The `profile` root directive defines the features and extensions the file uses.
+
+#### example
+
+```structom
+#!profile("obj_decl_rich{dur}")
+
+struct User {
+	name: str,
+	id: struct UserId(uuid),
+}
+```
+
+## Directive list
+
+Below is a list of [directives](#metadata-and-directives) defined by the language:
+
+- [`import`](#imports): bring the declarations of another declaration file into scope.
+
+- [`fixed`](#fixed-struct): make the struct or variant encoded inlined.
+
+- [`default`](#items): define a default value for an item.
+
+- [`profile`](#profile): define the features and extensions used by the file.
+
+- [`rich`](#rich-types): declare an item as having a rich notation.
+
+- [`bitfield`](#bitfield): define a bit field rich notation.
+
+- [`unitfield`](#unitfield): define a unit field rich notation.
+
 ## Standard metadata
 
-Below is a list of common [metadata](#metadata). They are entirely optional and commonly used.
+Below is a list of common [metadata](#metadata-and-directives). They are entirely optional and commonly used.
 
 **`doc`**: on files, items, fields, and variants. Accepts a documentation string.
 
@@ -1567,8 +1658,6 @@ Below is a list of common [metadata](#metadata). They are entirely optional and 
 - `any`: accepts a class string and restricts the `any` to values of types belonging to that class.
 
 **`label`**: on items, fields, and variants. Accepts a human-readable label shown in tooling and UIs.
-
-**`default`**: on items. Accepts a value to use as the default for the item.
 
 **`range`**: on types. Accepts 2 value parameters, `min` and `max`, that specify inclusive lower and upper limits for the type. `none` means unbounded.
 
@@ -1600,7 +1689,9 @@ This section describes the evolution guidelines for the binary encoding. The obj
 
 In general, readers should fail safely on missing fields, and writers must write all padding as zero.
 
-Metadata can be changed in any way. Items, fields, and variants can be renamed if object notation stability is not important.
+Metadata can be changed in any way, but directives not.
+
+Items, fields, and variants can be renamed if object notation stability is not important.
 
 File paths must remain stable and item id order must be preserved. Items must be deprecated instead of removed.
 
@@ -1624,7 +1715,7 @@ struct Struct1 {
 	c: bool,
 }
 
-fixed struct Struct2 {
+#fixed struct Struct2 {
 	a: i32,
 	b: u32,
 }
@@ -1660,7 +1751,7 @@ union Union(u8) {
 	V257,
 }
 
-fixed struct Struct2 {
+#fixed struct Struct2 {
 	a: i32,
 }
 ```
@@ -1678,7 +1769,7 @@ struct Struct1 {
 	A, B, C, D,
 }
 
-fixed struct Struct2 {
+#fixed struct Struct2 {
 	a: i32,
 	b: u32,
 }
