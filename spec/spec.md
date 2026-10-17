@@ -727,7 +727,7 @@ Struct {
 let struct_def = "struct" name:ident generic_params? struct_body;
 let struct_body = '(' inner:type_spec ')' | '{' list<field_def>? '}';
 
-let field_def = ('#' tag:nb)? name:ident '?'? ':' type:type_spec ('=' default:value)?;
+let field_def = ('#' id:nb)? name:ident '?'? ':' type:type_spec ('=' default:value)?;
 ```
 
 Structs are defined by a struct definition.
@@ -740,9 +740,9 @@ Each field definition is composed of a name and a [type specifier](#type-specifi
 
 Optional field can be provided a default value through `= value`.
 
-Each field has its own `0` based tag according to its declaration order, it can specify its own tag using `#tag`.
+Each field has its own `0` based id according to its declaration order, it can specify its own id using `#id`.
 
-tags doesnt continue after specifed ones unless no previous one is left, no space in tags is allowed.
+ids doesnt continue after specifed ones unless no previous one is left, no space in ids is allowed.
 
 Fields named `_` are skipped, but their place in the binary encoding is reserved.
 
@@ -792,11 +792,11 @@ Structs are encoded as a pointer to an object containing the struct's fields.
 
 The object starts with a `u32` length field scaled by 4 bytes, followed by the fields, which are allocated as follows:
 
-- Fields are allocated in tag order. Each field takes the first padding, in ascending order, that can hold it at its natural alignment.
+- Fields are allocated in id order. Each field takes the first padding, in ascending order, that can hold it at its natural alignment.
 - If none fits, the field is allocated at the end, aligned.
 
 ```
-field_loop: for field in fields {
+field_loop: for field in fields.sort(field => field.id) {
 	for pad in padding {
 		let offset = pad.start.align_to(field.align)
 		if offset + field.size <= pad.end {
