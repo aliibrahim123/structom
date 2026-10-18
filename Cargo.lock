@@ -13,9 +13,9 @@ dependencies = [
 
 [[package]]
 name = "gramex"
-version = "0.2.4"
+version = "0.2.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a3dc68ddea8d1e80ce7b3865ebbbcbd1f3a603b34bc5ca68f391dd75820ff040"
+checksum = "ac8e60be565d3dd17d775ddefb41d1a71548471a11afd66184b4df4c1cb4849d"
 dependencies = [
  "lean_string",
  "rustc-hash",

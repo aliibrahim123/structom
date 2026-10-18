@@ -2,3 +2,6 @@
 members = ["rust"]
 resolver = "3"
 exclude = ['tests']
+
+[workspace.lints.clippy]
+pedantic = "deny"
