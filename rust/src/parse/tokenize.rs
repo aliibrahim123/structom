@@ -1,10 +1,6 @@
-use core::{
-	cell::OnceCell,
-	fmt::Display,
-	mem::{replace, swap},
-};
+use core::{cell::OnceCell, mem::replace};
 
-use alloc_crate::{fmt::Write, format, string::String, vec::Vec};
+use alloc_crate::{format, string::String, vec::Vec};
 use gramex::{
 	Matcher,
 	cursor::Cursor as _,
@@ -12,66 +8,13 @@ use gramex::{
 	str::{bin, dec, hex},
 };
 
-use crate::{parse::error::Error, utils::StrExt};
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Source<'a> {
-	pub str: &'a str,
-	pub path: &'a str,
-	pub line_poses: OnceCell<Vec<usize>>,
-}
-impl Source<'_> {
-	pub fn new<'a>(str: &'a str, path: &'a str) -> Source<'a> {
-		Source { str, path, line_poses: OnceCell::new() }
-	}
-	pub fn source_of(&self, span: Span) -> &str {
-		&self.str[span.start()..span.end()]
-	}
-	fn init_line_poses(&self) -> Vec<usize> {
-		self.str.match_indices('\n').map(|(ind, _)| ind).collect()
-	}
-	pub fn pos_of(&self, ind: usize) -> (usize, usize) {
-		let Source { str: src, line_poses, .. } = self;
-		let line_poses = line_poses.get_or_init(|| self.init_line_poses());
-		let nl_before = line_poses.partition_point(|&p| p < ind);
-		if nl_before == 0 {
-			(1, src[..ind].chars().count() + 1)
-		} else {
-			(nl_before + 1, src[line_poses[nl_before - 1]..ind].chars().count())
-		}
-	}
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default, Hash)]
-pub struct Span {
-	#[cfg(not(feature = "large-span"))]
-	pub(crate) start: u32,
-	#[cfg(not(feature = "large-span"))]
-	pub(crate) end: u32,
-	#[cfg(feature = "large-span")]
-	pub(crate) start: u64,
-	#[cfg(feature = "large-span")]
-	pub(crate) end: u64,
-}
-
-impl Span {
-	pub const EMPTY: Span = Span { start: 0, end: 0 };
-	pub(crate) fn new(start: usize, end: usize) -> Self {
-		Self { start: start as _, end: end as _ }
-	}
-	pub fn start(&self) -> usize {
-		self.start as usize
-	}
-	pub fn end(&self) -> usize {
-		self.end as usize
-	}
-	pub fn is_point(&self) -> bool {
-		self.start + 1 == self.end
-	}
-	pub fn point(pos: usize) -> Self {
-		Self::new(pos, pos + 1)
-	}
-}
+use crate::{
+	parse::{
+		error::Error,
+		source::{Source, Span},
+	},
+	utils::StrExt,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IntBase {
@@ -402,6 +345,27 @@ fn parse_str(cur: &mut Cursor, kind: StrKind, tokens: &mut Vec<Token>, start: us
 	tokens.push(Token { kind: Str { kind }, span: Span::new(start, cur.off()) });
 }
 
+fn parse_ident(cur: &mut Cursor, tokens: &mut Vec<Token>, start: usize) {
+	cur.off -= 1;
+	let ident = cur.try_eat_ident().unwrap();
+	cur.off += ident.len();
+	let span = Span::new(start, cur.off());
+	match ident {
+		"true" => tokens.push(Token { kind: True, span }),
+		"false" => tokens.push(Token { kind: False, span }),
+		"struct" => tokens.push(Token { kind: Struct, span }),
+		"union" => tokens.push(Token { kind: Union, span }),
+		"none" => tokens.push(Token { kind: None, span }),
+		"nan" => tokens
+			.push(Token { kind: Float { kind: FloatKind::Nan, has_dash: false }, span }),
+		"inf" => tokens.push(Token {
+			kind: Float { kind: FloatKind::PosInf, has_dash: false },
+			span,
+		}),
+		_ => tokens.push(Token { kind: Ident, span }),
+	}
+}
+
 pub fn tokenize(source: &mut Source, errors: &mut Vec<Error>) -> Result<Vec<Token>, ()> {
 	if cfg!(not(feature = "large-span")) && source.str.len() >= u32::MAX as usize {
 		let msg = "file too large, turn on `large-span` feature".into();
@@ -434,28 +398,7 @@ pub fn tokenize(source: &mut Source, errors: &mut Vec<Error>) -> Result<Vec<Toke
 			'@' => tokens.push(Token { kind: Alt, span }),
 			'!' => tokens.push(Token { kind: Bang, span }),
 
-			'a'..='z' | 'A'..='Z' | '_' => {
-				cur.off -= 1;
-				let ident = cur.try_eat_ident().unwrap();
-				cur.off += ident.len();
-				let span = Span::new(start, cur.off());
-				match ident {
-					"true" => tokens.push(Token { kind: True, span }),
-					"false" => tokens.push(Token { kind: False, span }),
-					"struct" => tokens.push(Token { kind: Struct, span }),
-					"union" => tokens.push(Token { kind: Union, span }),
-					"none" => tokens.push(Token { kind: None, span }),
-					"nan" => tokens.push(Token {
-						kind: Float { kind: FloatKind::Nan, has_dash: false },
-						span,
-					}),
-					"inf" => tokens.push(Token {
-						kind: Float { kind: FloatKind::PosInf, has_dash: false },
-						span,
-					}),
-					_ => tokens.push(Token { kind: Ident, span }),
-				}
-			}
+			'a'..='z' | 'A'..='Z' | '_' => parse_ident(cur, &mut tokens, start),
 
 			'+' | '-' => handle_sign(cur, char, &mut tokens, start),
 			'0'..='9' => parse_int(cur, &mut tokens, Sign::None, start),

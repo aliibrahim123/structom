@@ -6,7 +6,7 @@ use alloc_crate::{
 	string::String,
 };
 
-use crate::parse::tokenize::{Source, Span};
+use crate::parse::source::{Source, Span};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Error {

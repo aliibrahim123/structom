@@ -648,7 +648,7 @@ They are product types ([structs](#structs)) and sum types ([unions](#unions)) w
 
 Each item gets its own `0`-indexed id based on its order in the file, and can specify its own using `#id`,
 
-ids doesnt continue after specifed ones unless no previous one is left.
+ids doesnt continue after specifed ones unless no previous unassigned id is left.
 
 A single file can contain at most `65536 (2^16)` items.
 
@@ -676,13 +676,13 @@ Inner definitions can also be used inside generic parameters.
 #### Example
 
 ```structom
-#0 #fixed struct Element {
+#0 #fixed #tree(elements) struct Element {
 	tag: str,
 	attr: list<#1 struct {
 		name: #3 struct AttrName(str),
 		value: any,
 	}>,
-	children: list<Element>,
+	elements: list<Element>,
 }
 
 struct _ {}
@@ -742,7 +742,7 @@ Optional field can be provided a default value through `= value`.
 
 Each field has its own `0` based id according to its declaration order, it can specify its own id using `#id`.
 
-ids doesnt continue after specifed ones unless no previous one is left, no space in ids is allowed.
+ids doesnt continue after specifed ones unless no previous unassigned id is left, no space in ids is allowed.
 
 Fields named `_` are skipped, but their place in the binary encoding is reserved.
 
@@ -896,15 +896,16 @@ struct B<T>(T)
 let tree_value = fields_value? '[' children:list<value>? ']';
 ```
 
-Tree structs are object notation sugar for structs with a tree-like shape.
+The `tree` directive marks a struct as a tree struct providing it a nicer syntax.
 
-A struct is tree-like if it has a `children` field whose type is an `arr`, a `list`, or a tagged struct wrapping one of them.
+`tree` accept a `children` identifier parameter that specifies the field containing the list of children, its type can be an `arr`, a `list`, or a tagged struct wrapping one of them.
 
-A bracket-enclosed list of values can be provided after the fields block as the value of the `children` field. In that case, the fields block becomes optional.
+A bracket-enclosed list of values can be provided after the fields block as the value of the children field. In that case, the fields block becomes optional.
 
 #### Example
 
 ```structom
+#tree(children)
 struct Node {
 	tag: str = "node",
 	attrs?: map<str, any>,
@@ -970,7 +971,7 @@ Each variant is defined by an identifier, optionally followed by a [struct body]
 
 Variants named `_` are skipped, but their tags are still counted.
 
-Each variant gets its own `0` based tag based on its declaration order, it can specify its own using `#tag`, ids continue counting after it.
+Each variant gets its own `0` based tag based on its declaration order, it can specify its own using `#tag`, ids continue counting after it, and skipped assigned ones.
 
 A union can define its tag type inside parentheses after the name.
 
@@ -984,7 +985,7 @@ Unions can have [generic parameters](#generics) after their name and can be [def
 union Union<T>(u16) {
 	A, B, C, _,
 	D(union { A, B, C(T) }),
-	#fixed E {
+	#fixed #tree(children) E {
 		name: str,
 		children: list<Union<T>>,
 	},
@@ -1283,7 +1284,7 @@ Rich notations are optional. Parsers that support them can use them to provide a
 
 if the type is infered, the type specifier can be omitted.
 
-`rich` is an item-level [directive](#metadata-and-directives) that marks an item as a rich type. If a mismatching value syntax is provided, the value is dumped instead of raising an error.
+`rich` is an item/variant-level [directive](#metadata-and-directives) that marks an item as a rich type. If a mismatching value syntax is provided, the value is dumped instead of raising an error.
 
 #### Example
 
@@ -1480,7 +1481,7 @@ It can be attached to [structs](#tagged-struct) and [variants](#unions) that tag
 It also takes the layout as a `map<ident, int | type_spec>` of field identifiers and their types, which can be:
 
 - `bool` for 1-bit fields.
-- Raw fields, with the bit size given by an integer literal.
+- atomic fields, with the bit size given by an integer literal.
 - Nested bit fields, specified by a type specifier.
 - Unions whose variants are all unit variants, specified by a type specifier and encoded as a tag field.
 
@@ -1626,6 +1627,8 @@ Below is a list of [directives](#metadata-and-directives) defined by the languag
 - [`fixed`](#fixed-struct): make the struct or variant encoded inlined.
 
 - [`default`](#items): define a default value for an item.
+
+- [`tree`](#tree-struct): add a tree structure object value.
 
 - [`profile`](#profile): define the features and extensions used by the file.
 

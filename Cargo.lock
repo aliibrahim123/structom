@@ -17,7 +17,7 @@ version = "0.2.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ac8e60be565d3dd17d775ddefb41d1a71548471a11afd66184b4df4c1cb4849d"
 dependencies = [
- "lean_string",
+ "lean_string 0.7.0",
  "rustc-hash",
 ]
 
@@ -32,6 +32,17 @@ name = "lean_string"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d8899d72720b5241f886495ea979d9641ebeec862248f5b65236c659670df9e6"
+dependencies = [
+ "castaway",
+ "itoa",
+ "zmij",
+]
+
+[[package]]
+name = "lean_string"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "814388560189061a39bf531f64afd9a036371e58edaf8566bd9ac4b8b0b823f0"
 dependencies = [
  "castaway",
  "itoa",
@@ -55,7 +66,16 @@ name = "structom"
 version = "0.3.0"
 dependencies = [
  "gramex",
+ "lean_string 0.8.0",
+ "rustc-hash",
+ "thin-vec",
 ]
+
+[[package]]
+name = "thin-vec"
+version = "0.2.21"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d6a4b9ba8738cb4a4f399d37e266becfd475e75eb73425b87a05a2f2039ba63e"
 
 [[package]]
 name = "zmij"
