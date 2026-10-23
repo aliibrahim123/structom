@@ -110,11 +110,12 @@ impl Fields {
 	pub fn field_by_name(&self, name: &str) -> Option<&Field> {
 		self.fields.get_by_name(name)
 	}
-	pub fn iter(&self) -> impl Iterator<Item = &Field> {
-		self.fields.items.iter()
+	pub fn fields(&self) -> &[Field] {
+		&self.fields.items
 	}
 	pub fn finalize(&mut self) -> Result<(), ConstructError> {
-		let max_id = self.iter().map(|field| field.id.0 as i32).max().unwrap_or(-1);
+		let max_id =
+			self.fields.items.iter().map(|field| field.id.0 as i32).max().unwrap_or(-1);
 		match self.fields.items.len() as i32 == max_id + 1 {
 			true => Ok(()),
 			false => Err(ConstructError::UnassignedSpace),

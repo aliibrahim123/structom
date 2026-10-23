@@ -7,3 +7,5 @@ impl StrExt for str {
 		self.get(ind..)?.chars().next()
 	}
 }
+
+pub type HashMap<K, V> = hashbrown::HashMap<K, V, rustc_hash::FxBuildHasher>;

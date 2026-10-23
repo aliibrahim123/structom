@@ -118,7 +118,7 @@ impl Union {
 	pub fn variant_by_tag(&self, tag: VariantTag) -> Option<&Variant> {
 		self.variants.get_by_id(tag.0)
 	}
-	pub fn variants(&self) -> impl Iterator<Item = &Variant> {
-		self.variants.items.iter()
+	pub fn variants(&self) -> &[Variant] {
+		&self.variants.items
 	}
 }

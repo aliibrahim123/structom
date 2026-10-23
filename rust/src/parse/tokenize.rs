@@ -10,7 +10,7 @@ use gramex::{
 
 use crate::{
 	parse::{
-		error::Error,
+		error::ParseError,
 		source::{Source, Span},
 	},
 	utils::StrExt,
@@ -123,7 +123,7 @@ impl Token {
 struct Cursor<'src, 'err> {
 	src: &'src Source<'src>,
 	off: usize,
-	errors: &'err mut Vec<Error>,
+	errors: &'err mut Vec<ParseError>,
 }
 impl<'src> gramex::cursor::Cursor<'src> for Cursor<'src, '_> {
 	type MatchAble = str;
@@ -152,7 +152,7 @@ impl<'src> gramex::cursor::Cursor<'src> for Cursor<'src, '_> {
 			}
 			_ => unreachable!(),
 		};
-		self.errors.push(Error::new(msg, span, self.src));
+		self.errors.push(ParseError::new(msg, span, self.src));
 	}
 }
 impl<'a> Cursor<'a, '_> {
@@ -182,7 +182,7 @@ impl<'a> Cursor<'a, '_> {
 		_ = <Self as gramex::cursor::Cursor>::expected::<()>(self, expected);
 	}
 	fn error(&mut self, msg: String, span: Span) {
-		self.errors.push(Error::new(msg, span, self.src));
+		self.errors.push(ParseError::new(msg, span, self.src));
 	}
 }
 
@@ -366,10 +366,12 @@ fn parse_ident(cur: &mut Cursor, tokens: &mut Vec<Token>, start: usize) {
 	}
 }
 
-pub fn tokenize(source: &mut Source, errors: &mut Vec<Error>) -> Result<Vec<Token>, ()> {
+pub fn tokenize(
+	source: &mut Source, errors: &mut Vec<ParseError>,
+) -> Result<Vec<Token>, ()> {
 	if cfg!(not(feature = "large-span")) && source.str.len() >= u32::MAX as usize {
 		let msg = "file too large, turn on `large-span` feature".into();
-		errors.push(Error::new(msg, Span::EMPTY, source));
+		errors.push(ParseError::new(msg, Span::EMPTY, source));
 		return Err(());
 	}
 

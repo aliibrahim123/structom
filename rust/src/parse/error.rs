@@ -9,13 +9,13 @@ use alloc_crate::{
 use crate::parse::source::{Source, Span};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Error {
+pub struct ParseError {
 	full: Box<str>,
 	span: Span,
 	msg_len: u32,
 	file_len: u32,
 }
-impl Error {
+impl ParseError {
 	pub fn new(mut msg: String, span: Span, src: &Source) -> Self {
 		let msg_len = msg.len() as _;
 		msg.push_str(MSG_FILE_SEP);
@@ -43,9 +43,9 @@ impl Error {
 	}
 }
 const MSG_FILE_SEP: &str = "\n  --> ";
-impl Display for Error {
+impl Display for ParseError {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 		write!(f, "{}", self.full)
 	}
 }
-impl core::error::Error for Error {}
+impl core::error::Error for ParseError {}

@@ -2,9 +2,11 @@ use core::sync::atomic::{AtomicU64, Ordering};
 
 use alloc_crate::vec::Vec;
 use lean_string::LeanStr;
-use rustc_hash::FxHashMap;
 
-use crate::decl::{ConstructError, typeid::raw};
+use crate::{
+	decl::{ConstructError, typeid::raw},
+	utils::HashMap,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct DeclNs(pub(crate) u64);
@@ -68,26 +70,28 @@ pub(crate) fn check_ident(name: &LeanStr) -> Result<(), ConstructError> {
 #[derive(Debug)]
 enum IdIndex {
 	Sparse(Vec<u32>),
-	Map(FxHashMap<u32, u32>),
+	Map(HashMap<u32, u32>),
 }
 
 #[derive(Debug)]
 pub(crate) struct ItemStore<T, const MAX_ID: u32, const COUNT_AFTER: bool> {
 	pub items: Vec<T>,
 	id_index: IdIndex,
-	name_index: FxHashMap<LeanStr, u32>,
+	name_index: HashMap<LeanStr, u32>,
 	pub id_counter: u32,
+}
+impl<T, const MAX: u32, const COUNT_AFTER: bool> Default
+	for ItemStore<T, MAX, COUNT_AFTER>
+{
+	fn default() -> Self {
+		Self::new()
+	}
 }
 impl<T, const MAX: u32, const COUNT_AFTER: bool> ItemStore<T, MAX, COUNT_AFTER> {
 	const UNASSIGNED_INDEX: u32 = u32::MAX;
 	const HASHMAP_THRESHOLD: u32 = 64;
 	pub fn new() -> Self {
-		Self {
-			items: Vec::new(),
-			name_index: FxHashMap::default(),
-			id_index: IdIndex::Sparse(Vec::new()),
-			id_counter: 0,
-		}
+		Self::default()
 	}
 	pub fn has_index(&self, id: u32) -> bool {
 		match &self.id_index {
@@ -110,7 +114,7 @@ impl<T, const MAX: u32, const COUNT_AFTER: bool> ItemStore<T, MAX, COUNT_AFTER> 
 					let map = map.iter().enumerate().filter_map(|(id, ind)| {
 						(*ind != Self::UNASSIGNED_INDEX).then_some((id as u32, *ind))
 					});
-					let mut map = FxHashMap::from_iter(map);
+					let mut map = HashMap::from_iter(map);
 					map.insert(id, index);
 					self.id_index = IdIndex::Map(map);
 				} else {

@@ -2,10 +2,10 @@ use core::fmt::Display;
 #[cfg(feature = "rich-unitfield")]
 use core::ops::Index;
 
-use alloc_crate::{boxed::Box, vec::Vec};
-use lean_string::LeanStr;
 #[cfg(feature = "rich-unitfield")]
-use rustc_hash::FxHashMap;
+use crate::utils::HashMap;
+use alloc_crate::vec::Vec;
+use lean_string::LeanStr;
 use thin_vec::ThinVec;
 
 use crate::{
@@ -83,8 +83,8 @@ impl RichNotation {
 		Ok(())
 	}
 
-	pub fn iter(&self) -> impl Iterator<Item = &Form> {
-		self.0.iter()
+	pub fn forms(&self) -> &[Form] {
+		&self.0
 	}
 }
 
@@ -217,12 +217,12 @@ impl Unit {
 #[derive(Debug)]
 pub struct UnitField {
 	units: Vec<Unit>,
-	name_index: FxHashMap<LeanStr, u32>,
+	name_index: HashMap<LeanStr, u32>,
 }
 #[cfg(feature = "rich-unitfield")]
 impl UnitField {
 	pub fn new() -> Self {
-		Self { units: Vec::new(), name_index: FxHashMap::default() }
+		Self { units: Vec::new(), name_index: HashMap::default() }
 	}
 	pub fn add(&mut self, unit: Unit) -> Result<(), ConstructError> {
 		if unit.names.iter().any(|name| self.name_index.contains_key(name)) {

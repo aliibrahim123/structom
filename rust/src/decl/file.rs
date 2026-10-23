@@ -1,6 +1,6 @@
-use core::mem;
+use core::{mem, ops::Deref};
 
-use alloc_crate::sync::Arc;
+use alloc_crate::{boxed::Box, sync::Arc};
 use lean_string::LeanStr;
 
 use crate::{
@@ -81,21 +81,43 @@ impl Item {
 }
 
 #[derive(Debug)]
-struct DeclFileInner {
+pub struct DeclFile {
 	ns: DeclNs,
+	pub(crate) path: LeanStr,
 	items: ItemStore<Item, { u16::MAX as u32 }, false>,
+	metadata: Metadata,
+}
+impl DeclFile {
+	pub fn ns(&self) -> DeclNs {
+		self.ns
+	}
+	pub fn path(&self) -> &str {
+		&self.path
+	}
+	pub fn item_by_name(&self, name: &str) -> Option<&Item> {
+		self.items.get_by_name(name)
+	}
+	pub fn item_by_id(&self, id: ItemId) -> Option<&Item> {
+		self.items.get_by_id(id.0 as u32)
+	}
+	pub fn items(&self) -> &[Item] {
+		&self.items.items
+	}
+	pub fn metadata(&self) -> &Metadata {
+		&self.metadata
+	}
 }
 
 #[derive(Debug)]
-pub struct DeclFileBuilder(DeclFileInner);
-impl Default for DeclFileBuilder {
-	fn default() -> Self {
-		Self(DeclFileInner { ns: DeclNs::new(), items: ItemStore::new() })
-	}
-}
+pub struct DeclFileBuilder(DeclFile);
 impl DeclFileBuilder {
-	pub fn new() -> Self {
-		Self::default()
+	pub fn new(path: &str) -> Self {
+		Self(DeclFile {
+			ns: DeclNs::new(),
+			path: path.into(),
+			items: ItemStore::new(),
+			metadata: Metadata::new(),
+		})
 	}
 	pub fn add_item(&mut self, item: Item) -> Result<ItemId, ConstructError> {
 		self.0.items.add(item.name.clone(), item).map(|(item, id)| {
@@ -136,36 +158,36 @@ impl DeclFileBuilder {
 		Ok(())
 	}
 	pub fn ns(&self) -> DeclNs {
-		self.0.ns
+		self.0.ns()
+	}
+	pub fn path(&self) -> &str {
+		&self.0.path
 	}
 	pub fn item_by_name(&self, name: &str) -> Option<&Item> {
-		self.0.items.get_by_name(name)
+		self.0.item_by_name(name)
 	}
 	pub fn item_by_id(&self, id: ItemId) -> Option<&Item> {
-		self.0.items.get_by_id(id.0 as u32)
+		self.0.item_by_id(id)
 	}
-	pub fn items(&self) -> impl Iterator<Item = &Item> {
-		self.0.items.items.iter()
+	pub fn items(&self) -> &[Item] {
+		self.0.items()
 	}
-
-	pub fn finalize(self) -> DeclFile {
-		DeclFile(Arc::new(self.0))
+	pub fn metadata(&self) -> &Metadata {
+		&self.0.metadata
+	}
+	pub fn metadata_mut(&mut self) -> &mut Metadata {
+		&mut self.0.metadata
+	}
+	pub fn finalize(self) -> DeclFileBox {
+		DeclFileBox(Arc::new(self.0))
 	}
 }
 
 #[derive(Debug, Clone)]
-pub struct DeclFile(Arc<DeclFileInner>);
-impl DeclFile {
-	pub fn ns(&self) -> DeclNs {
-		self.0.ns
-	}
-	pub fn item_by_name(&self, name: &str) -> Option<&Item> {
-		self.0.items.get_by_name(name)
-	}
-	pub fn item_by_id(&self, id: ItemId) -> Option<&Item> {
-		self.0.items.get_by_id(id.0 as u32)
-	}
-	pub fn items(&self) -> impl Iterator<Item = &Item> {
-		self.0.items.items.iter()
+pub struct DeclFileBox(pub(crate) Arc<DeclFile>);
+impl Deref for DeclFileBox {
+	type Target = DeclFile;
+	fn deref(&self) -> &Self::Target {
+		&self.0
 	}
 }
