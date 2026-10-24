@@ -1,93 +1,15 @@
 use core::{mem, ops::Deref};
 
-use alloc_crate::{boxed::Box, sync::Arc, vec::Vec};
+use alloc_crate::sync::Arc;
 use lean_string::LeanStr;
-use thin_vec::ThinVec;
 
-use crate::{
-	decl::{
-		ConstructError, DeclNs,
-		id::ItemStore,
-		items::{Body, GenericParams, ItemId, TypeId, Union},
-		rich::{Metadata, RichNotation},
-	},
-	value::Value,
+use crate::decl::{
+	ConstructError, DeclNs,
+	id::ItemStore,
+	item::{Item, ItemKind},
+	items::ItemId,
+	rich::Metadata,
 };
-
-#[derive(Debug)]
-pub enum ItemKind {
-	Struct(Body),
-	Union(Union),
-	#[doc(hidden)]
-	Reserved,
-}
-
-#[derive(Debug)]
-pub struct Item {
-	name: LeanStr,
-	id: ItemId,
-	kind: ItemKind,
-	default_value: Option<Value>,
-	rich_notation: RichNotation,
-	metadata: Metadata,
-	generic_params: GenericParams,
-}
-impl Item {
-	pub fn struct_(name: &str, body: impl Into<Body>) -> Result<Self, ConstructError> {
-		let mut body = body.into();
-		if let Body::Fields(fields) = &mut body {
-			fields.finalize()?;
-		}
-		Ok(Self::new_lean(LeanStr::from(name), ItemKind::Struct(body)))
-	}
-	pub fn union(name: &str, union: Union) -> Self {
-		Self::new_lean(LeanStr::from(name), ItemKind::Union(union))
-	}
-	pub(crate) fn new_lean(name: LeanStr, kind: ItemKind) -> Self {
-		Self {
-			name,
-			id: ItemId::UNASSIGNED,
-			kind,
-			default_value: None,
-			rich_notation: RichNotation::new(),
-			metadata: Metadata::new(),
-			generic_params: GenericParams::new(),
-		}
-	}
-	pub fn set_default_value(&mut self, default_value: Value) {
-		self.default_value = Some(default_value);
-	}
-	pub fn name(&self) -> &str {
-		&self.name
-	}
-	pub fn id(&self) -> ItemId {
-		self.id
-	}
-	pub fn kind(&self) -> &ItemKind {
-		&self.kind
-	}
-	pub fn default_value(&self) -> Option<&Value> {
-		self.default_value.as_ref()
-	}
-	pub fn generic_params(&self) -> &GenericParams {
-		&self.generic_params
-	}
-	pub fn generic_params_mut(&mut self) -> &mut GenericParams {
-		&mut self.generic_params
-	}
-	pub fn rich_notation(&self) -> &RichNotation {
-		&self.rich_notation
-	}
-	pub fn rich_notation_mut(&mut self) -> &mut RichNotation {
-		&mut self.rich_notation
-	}
-	pub fn metadata(&self) -> &Metadata {
-		&self.metadata
-	}
-	pub fn metadata_mut(&mut self) -> &mut Metadata {
-		&mut self.metadata
-	}
-}
 
 #[derive(Debug)]
 pub struct DeclFile {
@@ -187,8 +109,11 @@ impl DeclFileBuilder {
 	pub fn metadata_mut(&mut self) -> &mut Metadata {
 		&mut self.0.metadata
 	}
-	pub fn finalize(self) -> DeclFileBox {
-		DeclFileBox(Arc::new(self.0))
+	pub fn finalize(self) -> Result<DeclFileBox, ConstructError> {
+		if self.0.items.items.iter().any(|item| matches!(item.kind, ItemKind::Reserved)) {
+			return Err(ConstructError::UnassignedId);
+		}
+		Ok(DeclFileBox(Arc::new(self.0)))
 	}
 }
 

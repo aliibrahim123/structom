@@ -1,6 +1,7 @@
 mod body;
 mod file;
 mod id;
+mod item;
 pub mod provider;
 pub mod rich;
 mod schema_space;
@@ -15,8 +16,9 @@ pub use crate::decl::{
 
 pub mod items {
 	pub use super::body::*;
-	pub use super::file::*;
+	pub use super::file::DeclFileBuilder;
 	pub use super::id::{FieldId, ItemId, VariantTag};
+	pub use super::item::*;
 	pub use super::typeid::*;
 	pub use super::union::*;
 }

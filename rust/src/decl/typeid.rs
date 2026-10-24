@@ -1,9 +1,8 @@
 use core::hash::{Hash, Hasher};
 
-use lean_string::LeanStr;
 use thin_vec::ThinVec;
 
-use crate::decl::{ConstructError, DeclNs, items::ItemId, rich::Metadata};
+use crate::decl::{DeclNs, items::ItemId, rich::Metadata};
 
 #[derive(Debug, Clone)]
 pub struct TypeId {
@@ -129,49 +128,4 @@ pub(crate) mod raw {
 	pub const DEC: u16 = 0x83;
 	pub const UUID: u16 = 0x84;
 	pub const COLOR: u16 = 0x85;
-}
-
-#[derive(Debug, Clone)]
-pub struct GenericParam {
-	name: LeanStr,
-	id: ItemId,
-}
-impl GenericParam {
-	pub fn name(&self) -> &str {
-		self.name.as_str()
-	}
-	pub fn id(&self) -> ItemId {
-		self.id
-	}
-	pub fn as_typeid(&self) -> TypeId {
-		TypeId::new(DeclNs::GENERIC_PARAMS, self.id)
-	}
-}
-
-#[derive(Debug, Clone)]
-pub struct GenericParams(ThinVec<GenericParam>);
-impl GenericParams {
-	pub(crate) fn new() -> Self {
-		Self(ThinVec::new())
-	}
-	pub fn len(&self) -> usize {
-		self.0.len()
-	}
-	pub fn add(&mut self, name: &str) -> Result<ItemId, ConstructError> {
-		if self.0.iter().any(|param| param.name == name) {
-			return Err(ConstructError::DuplicateName);
-		}
-		let id = ItemId(self.0.len() as u16);
-		self.0.push(GenericParam { name: LeanStr::from(name), id });
-		Ok(id)
-	}
-	pub fn get_by_id(&self, id: ItemId) -> Option<&GenericParam> {
-		self.0.get(id.0 as usize)
-	}
-	pub fn get_by_name(&self, name: &str) -> Option<&GenericParam> {
-		self.0.iter().find(|param| param.name == name)
-	}
-	pub fn as_slice(&self) -> &[GenericParam] {
-		&self.0
-	}
 }

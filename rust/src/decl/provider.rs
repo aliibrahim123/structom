@@ -1,5 +1,3 @@
-#[cfg(feature = "fs-provider")]
-use core::cell::Ref;
 use core::{
 	cell::{RefCell, UnsafeCell},
 	fmt::Debug,
@@ -198,7 +196,7 @@ impl DeclProv for GrowableList {
 }
 
 #[cfg(feature = "fs-provider")]
-pub use alloc_crate::{
+use alloc_crate::{
 	fs::{canonicalize, read_to_string},
 	io::{Error as IoError, ErrorKind},
 	path::{Path, PathBuf},

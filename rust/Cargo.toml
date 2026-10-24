@@ -21,6 +21,7 @@ thin-vec = "0.2.21"
 [features]
 default = ["std"]
 std = []
+bin = []
 parse = ["dep:gramex"]
 large-span = []
 stringify = []

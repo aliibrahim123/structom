@@ -7,6 +7,7 @@ extern crate std as alloc_crate;
 
 pub mod decl;
 mod error;
+pub mod profile;
 mod utils;
 pub mod value;
 
