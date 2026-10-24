@@ -9,7 +9,7 @@ use core::{
 use alloc_crate::{boxed::Box, collections::HashMap, string::ToString, vec::Vec};
 use lean_string::LeanStr;
 
-use crate::decl::{ConstructError, DeclFileBox, DeclNs, file::DeclFile};
+use crate::decl::{ConstructError, DeclFile, DeclFileBox, DeclNs};
 #[cfg(feature = "fs-provider")]
 use crate::parse::parse_decl_file;
 
@@ -48,7 +48,8 @@ impl Debug for ImportResult<'_> {
 
 pub trait DeclProv {
 	fn import_file<'file>(&'file self, path: &str) -> ImportResult<'file>;
-	fn get_file(&self, id: DeclNs) -> Option<DeclFileBox>;
+	fn get_file(&self, id: DeclNs) -> Option<&DeclFile>;
+	fn get_file_box(&self, id: DeclNs) -> Option<DeclFileBox>;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -59,7 +60,10 @@ impl DeclProv for Void {
 			"the `Void` provider doesnt provide anything".into(),
 		))
 	}
-	fn get_file(&self, _id: DeclNs) -> Option<DeclFileBox> {
+	fn get_file(&self, _id: DeclNs) -> Option<&DeclFile> {
+		None
+	}
+	fn get_file_box(&self, _id: DeclNs) -> Option<DeclFileBox> {
 		None
 	}
 }
@@ -105,67 +109,91 @@ impl DeclProv for List {
 			None => ImportResult::Err(ImportError::NotFound),
 		}
 	}
-	fn get_file(&self, id: DeclNs) -> Option<DeclFileBox> {
+	fn get_file(&self, id: DeclNs) -> Option<&DeclFile> {
+		self.ns_index.get(&id).map(|&index| self.files[index].deref())
+	}
+	fn get_file_box(&self, id: DeclNs) -> Option<DeclFileBox> {
 		self.ns_index.get(&id).map(|&index| self.files[index].clone())
 	}
 }
 
-#[derive(Default)]
-pub struct Router {
-	providers: HashMap<LeanStr, Box<dyn DeclProv>>,
-	file_index: RefCell<HashMap<DeclNs, DeclFileBox>>,
+#[derive(Debug, Default, Clone)]
+struct ListIndex {
+	name_index: HashMap<LeanStr, usize>,
+	ns_index: HashMap<DeclNs, usize>,
 }
-impl Debug for Router {
-	fn fmt(&self, f: &mut alloc_crate::fmt::Formatter<'_>) -> alloc_crate::fmt::Result {
-		f.debug_struct("Router")
-			.field("providers", &self.providers.keys().collect::<Vec<_>>())
-			.finish()
+
+#[derive(Debug, Default)]
+pub struct GrowableList {
+	files: UnsafeCell<Vec<DeclFileBox>>,
+	index: RefCell<ListIndex>,
+}
+impl Clone for GrowableList {
+	fn clone(&self) -> Self {
+		Self {
+			files: UnsafeCell::new(unsafe { (*self.files.get()).clone() }),
+			index: self.index.clone(),
+		}
 	}
 }
-impl Router {
-	pub fn new() -> Router {
+impl GrowableList {
+	pub fn new() -> GrowableList {
 		Self::default()
 	}
-	pub fn add_provider(
-		&mut self, prefix: &str, provider: Box<dyn DeclProv>,
-	) -> Result<(), ConstructError> {
-		if self.providers.contains_key(prefix) {
+	pub fn add(&self, file: DeclFileBox) -> Result<(), ConstructError> {
+		let mut index = self.index.borrow_mut();
+		if index.name_index.contains_key(file.path()) {
 			return Err(ConstructError::DuplicateName);
 		}
-		self.providers.insert(LeanStr::from(prefix), provider);
+		if index.ns_index.contains_key(&file.ns()) {
+			return Err(ConstructError::AddedBefore);
+		}
+		let len = unsafe { (*self.files.get()).len() };
+		index.name_index.insert(file.0.path.clone(), len);
+		index.ns_index.insert(file.ns(), len);
+		unsafe { (*self.files.get()).push(file) }
 		Ok(())
 	}
-	pub fn get_provider(&self, path: &str) -> Option<&dyn DeclProv> {
-		let (prefix, _) = path.split_once('/')?;
-		self.providers.get(prefix).map(|b| b.as_ref())
+	pub fn add_multiple(
+		&self, files: impl IntoIterator<Item = DeclFileBox>,
+	) -> Result<(), ConstructError> {
+		for file in files {
+			self.add(file)?;
+		}
+		Ok(())
+	}
+	fn index_file(&self, ind: usize) -> Option<&DeclFileBox> {
+		unsafe { (&*self.files.get()).get(ind) }
+	}
+	pub fn files(&self) -> impl Iterator<Item = &DeclFile> {
+		struct Iter<'a> {
+			list: &'a GrowableList,
+			ind: usize,
+		}
+		impl<'a> Iterator for Iter<'a> {
+			type Item = &'a DeclFile;
+			fn next(&mut self) -> Option<Self::Item> {
+				let file = self.list.index_file(self.ind).map(|v| v.deref());
+				file.inspect(|_| self.ind += 1)
+			}
+		}
+		Iter { list: self, ind: 0 }
 	}
 }
-impl DeclProv for Router {
+impl DeclProv for GrowableList {
 	fn import_file<'file>(&'file self, path: &str) -> ImportResult<'file> {
-		let Some((prefix, rest)) = path.split_once('/') else {
-			return ImportResult::Err(ImportError::NotFound);
-		};
-		match self.get_provider(prefix) {
-			Some(provider) => match provider.import_file(rest) {
-				ImportResult::Ok(file) => {
-					self.file_index.borrow_mut().insert(file.ns(), file.clone());
-					ImportResult::Ok(file)
-				}
-				other @ _ => other,
-			},
+		match self.index.borrow().name_index.get(path) {
+			Some(&index) => ImportResult::Ok(self.index_file(index).unwrap().clone()),
 			None => ImportResult::Err(ImportError::NotFound),
 		}
 	}
-	fn get_file(&self, id: DeclNs) -> Option<DeclFileBox> {
-		if let Some(file) = self.file_index.borrow().get(&id) {
-			return Some(file.clone());
-		}
-		for provider in self.providers.values() {
-			if let Some(file) = provider.get_file(id) {
-				return Some(file);
-			}
-		}
-		None
+	fn get_file(&self, id: DeclNs) -> Option<&DeclFile> {
+		let ns_index = &self.index.borrow().ns_index;
+		ns_index.get(&id).map(|&index| self.index_file(index).unwrap().deref())
+	}
+	fn get_file_box(&self, id: DeclNs) -> Option<DeclFileBox> {
+		let ns_index = &self.index.borrow().ns_index;
+		ns_index.get(&id).map(|&index| self.index_file(index).unwrap().clone())
 	}
 }
 
@@ -190,24 +218,24 @@ pub enum FsLoadError {
 #[derive(Debug, Clone)]
 pub struct FsProv {
 	root: PathBuf,
-	list: RefCell<List>,
+	list: GrowableList,
 }
 #[cfg(feature = "fs-provider")]
 impl FsProv {
 	pub fn new(root: impl AsRef<Path>) -> Result<FsProv, IoError> {
 		let root = canonicalize(root)?;
-		Ok(Self { root, list: RefCell::new(List::new()) })
+		Ok(Self { root, list: GrowableList::new() })
 	}
 	pub fn root(&self) -> &Path {
 		&self.root
 	}
-	pub fn files(&self) -> impl Deref<Target = [DeclFileBox]> {
-		Ref::map(self.list.borrow(), |list| list.files())
+	pub fn files(&self) -> impl Iterator<Item = &DeclFile> {
+		self.list.files()
 	}
 	pub fn load(&self, path: &str) -> Result<DeclFileBox, FsLoadError> {
 		let path = self.root.join(path);
 		let Some(path_str) = path.to_str() else { return Err(FsLoadError::NonUtf8Path) };
-		if let ImportResult::Ok(file) = self.list.borrow().import_file(path_str) {
+		if let ImportResult::Ok(file) = self.list.import_file(path_str) {
 			return Ok(file);
 		}
 
@@ -225,7 +253,7 @@ impl FsProv {
 		let src = read_to_string(path).map_err(FsLoadError::Io)?;
 		let file = parse_decl_file(&src, path_str).map_err(FsLoadError::Parse)?;
 
-		_ = self.list.borrow_mut().add(file.clone());
+		_ = self.list.add(file.clone());
 		Ok(file)
 	}
 }
@@ -247,7 +275,10 @@ impl DeclProv for FsProv {
 			Err(FsLoadError::Parse(err)) => ImportResult::Err(ImportError::Parse(err)),
 		}
 	}
-	fn get_file(&self, id: DeclNs) -> Option<DeclFileBox> {
-		self.list.borrow().get_file(id)
+	fn get_file_box(&self, id: DeclNs) -> Option<DeclFileBox> {
+		self.list.get_file_box(id)
+	}
+	fn get_file(&self, id: DeclNs) -> Option<&DeclFile> {
+		self.list.get_file(id)
 	}
 }

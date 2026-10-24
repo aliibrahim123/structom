@@ -12,7 +12,7 @@ documentation = "https://docs.rs/structom/"
 doctest = true
 
 [dependencies]
-gramex = { version = "0.2.6", features = ["str"], optional = true }
+gramex = { version = "0.2.6", features = ["str", "macros"], optional = true }
 hashbrown = "0.17.1"
 lean_string = "0.8.0"
 rustc-hash = "2.1.3"

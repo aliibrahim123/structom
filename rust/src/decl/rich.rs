@@ -13,8 +13,22 @@ use crate::{
 	value::Value,
 };
 
+#[derive(Debug, Clone)]
+pub struct MetadataItem {
+	name: LeanStr,
+	value: Value,
+}
+impl MetadataItem {
+	pub fn name(&self) -> &str {
+		self.name.as_str()
+	}
+	pub fn value(&self) -> &Value {
+		&self.value
+	}
+}
+
 #[derive(Debug, Clone, Default)]
-pub struct Metadata(ThinVec<(LeanStr, Value)>);
+pub struct Metadata(ThinVec<MetadataItem>);
 impl Metadata {
 	pub fn new() -> Self {
 		Self::new_const()
@@ -24,32 +38,37 @@ impl Metadata {
 	}
 }
 impl Metadata {
-	pub fn add(&mut self, str: &str, value: Value) -> Result<(), ConstructError> {
-		self.add_lean(LeanStr::from(str), value)
+	pub fn len(&self) -> usize {
+		self.0.len()
+	}
+	pub fn add(&mut self, name: &str, value: Value) -> Result<(), ConstructError> {
+		self.add_lean(LeanStr::from(name), value)
 	}
 	pub(crate) fn add_lean(
-		&mut self, str: LeanStr, value: Value,
+		&mut self, name: LeanStr, value: Value,
 	) -> Result<(), ConstructError> {
-		check_ident(&str)?;
-		self.0.push((str, value));
+		check_ident(&name)?;
+		self.0.push(MetadataItem { name, value });
 		Ok(())
 	}
-	pub fn get(&self, str: &str) -> Option<&Value> {
-		self.0.iter().find_map(|(s, v)| (s == str).then_some(v))
+	pub fn get(&self, name: &str) -> Option<&Value> {
+		self.0.iter().find_map(|item| (item.name == name).then_some(&item.value))
 	}
-	pub fn get_multiple(&self, str: &str) -> impl Iterator<Item = &Value> {
-		self.0.iter().filter_map(move |(s, v)| (s == str).then_some(v))
+	pub fn get_multiple(&self, name: &str) -> impl Iterator<Item = &Value> {
+		self.0.iter().filter_map(move |item| (item.name == name).then_some(&item.value))
 	}
-	pub fn remove(&mut self, str: &str) {
-		self.0.retain(|(s, _)| s != str);
+	pub fn remove(&mut self, name: &str) {
+		self.0.retain(|item| item.name != name);
 	}
-	pub fn iter(&self) -> impl Iterator<Item = (&str, &Value)> {
-		self.0.iter().map(|(s, v)| (s.as_str(), v))
+	pub fn as_slice(&self) -> &[MetadataItem] {
+		&self.0
 	}
 }
 impl<'a> FromIterator<(&'a str, Value)> for Metadata {
 	fn from_iter<T: IntoIterator<Item = (&'a str, Value)>>(iter: T) -> Self {
-		Self(ThinVec::from_iter(iter.into_iter().map(|(s, v)| (LeanStr::from(s), v))))
+		Self(ThinVec::from_iter(
+			iter.into_iter().map(|(n, value)| MetadataItem { name: n.into(), value }),
+		))
 	}
 }
 
@@ -83,6 +102,9 @@ impl RichNotation {
 		Ok(())
 	}
 
+	pub fn form_count(&self) -> usize {
+		self.0.len()
+	}
 	pub fn forms(&self) -> &[Form] {
 		&self.0
 	}
@@ -99,6 +121,11 @@ pub enum Form {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Reader(LeanStr);
+impl Reader {
+	pub fn as_str(&self) -> &str {
+		self.0.as_str()
+	}
+}
 impl From<LeanStr> for Reader {
 	fn from(s: LeanStr) -> Self {
 		Self(s)
@@ -130,7 +157,7 @@ pub struct BitField {
 }
 #[cfg(feature = "rich-bitfield")]
 impl BitField {
-	pub fn new(size: u8) -> Self {
+	fn new(size: u8) -> Self {
 		Self { size, fields: Vec::new() }
 	}
 	pub fn add(&mut self, name: &str, field: BitFieldType) -> Result<(), ConstructError> {
@@ -145,6 +172,9 @@ impl BitField {
 	}
 	pub fn size(&self) -> u8 {
 		self.size
+	}
+	pub fn field_count(&self) -> usize {
+		self.fields.len()
 	}
 	pub fn fields(&self) -> impl Iterator<Item = (&str, &BitFieldType)> {
 		self.fields.iter().map(|(name, field)| (name.as_str(), field))
@@ -221,7 +251,7 @@ pub struct UnitField {
 }
 #[cfg(feature = "rich-unitfield")]
 impl UnitField {
-	pub fn new() -> Self {
+	fn new() -> Self {
 		Self { units: Vec::new(), name_index: HashMap::default() }
 	}
 	pub fn add(&mut self, unit: Unit) -> Result<(), ConstructError> {
@@ -233,6 +263,9 @@ impl UnitField {
 		}
 		self.units.push(unit);
 		Ok(())
+	}
+	pub fn unit_count(&self) -> usize {
+		self.units.len()
 	}
 	pub fn units(&self) -> &[Unit] {
 		&self.units

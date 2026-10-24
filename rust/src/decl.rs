@@ -3,10 +3,15 @@ mod file;
 mod id;
 pub mod provider;
 pub mod rich;
+mod schema_space;
 mod typeid;
 mod union;
 
-pub use crate::decl::{file::DeclFileBox, id::DeclNs, provider::DeclProv};
+pub use crate::decl::{
+	file::{DeclFile, DeclFileBox},
+	id::DeclNs,
+	provider::DeclProv,
+};
 
 pub mod items {
 	pub use super::body::*;

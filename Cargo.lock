@@ -18,6 +18,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "chunked-quote"
+version = "0.1.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3973eb556ddca7211d1b114c62949cf3a3268b3c6462886d98dc2e2a15bea30d"
+dependencies = [
+ "chunked-quote-impl",
+ "proc-macro2",
+ "quote",
+]
+
+[[package]]
+name = "chunked-quote-impl"
+version = "0.1.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4231c68ce80ca76add974470f4cd76ffaf8b15c430e7cb5b3d91f0f3eea19988"
+dependencies = [
+ "proc-macro2",
+ "quote",
+]
+
+[[package]]
 name = "equivalent"
 version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -35,7 +56,20 @@ version = "0.2.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ac8e60be565d3dd17d775ddefb41d1a71548471a11afd66184b4df4c1cb4849d"
 dependencies = [
+ "gramex-macro",
  "lean_string 0.7.0",
+ "rustc-hash",
+]
+
+[[package]]
+name = "gramex-macro"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "98688f625269a370098ca85f9fcf726fd48a8e7324d1952c3f29debed2b69875"
+dependencies = [
+ "chunked-quote",
+ "proc-macro2",
+ "quote",
  "rustc-hash",
 ]
 
@@ -79,6 +113,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "proc-macro2"
+version = "1.0.107"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "985e7ec9bb745e6ce6535b544d84d6cd6f7ad8bd711c398938ae983b91a766d9"
+dependencies = [
+ "unicode-ident",
+]
+
+[[package]]
+name = "quote"
+version = "1.0.47"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1fbf4db142a473a8d80c26bbf18454ed458bf8d26c8219c331daecfdbd079001"
+dependencies = [
+ "proc-macro2",
+]
+
+[[package]]
 name = "rustc-hash"
 version = "2.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -106,6 +158,12 @@ name = "thin-vec"
 version = "0.2.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d6a4b9ba8738cb4a4f399d37e266becfd475e75eb73425b87a05a2f2039ba63e"
+
+[[package]]
+name = "unicode-ident"
+version = "1.0.27"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a2c754d6c33795a1c324727428e5a7dedb5b06195f9890bdbcba760d3e246563"
 
 [[package]]
 name = "zmij"

@@ -110,7 +110,10 @@ impl Fields {
 	pub fn field_by_name(&self, name: &str) -> Option<&Field> {
 		self.fields.get_by_name(name)
 	}
-	pub fn fields(&self) -> &[Field] {
+	pub fn len(&self) -> usize {
+		self.fields.items.len()
+	}
+	pub fn as_slice(&self) -> &[Field] {
 		&self.fields.items
 	}
 	pub fn finalize(&mut self) -> Result<(), ConstructError> {

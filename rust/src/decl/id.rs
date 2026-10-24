@@ -14,7 +14,7 @@ impl DeclNs {
 	pub const BUILT_INS: DeclNs = DeclNs(0);
 	pub const GENERIC_PARAMS: DeclNs = DeclNs(1);
 	pub(crate) fn new() -> Self {
-		static ID_COUNTER: AtomicU64 = AtomicU64::new(3);
+		static ID_COUNTER: AtomicU64 = AtomicU64::new(2);
 		DeclNs(ID_COUNTER.fetch_add(1, Ordering::Relaxed))
 	}
 	pub fn value(self) -> u64 {

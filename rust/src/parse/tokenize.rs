@@ -71,6 +71,14 @@ impl Block {
 	}
 }
 
+/*
+#[derive(Debug)]
+pub struct Tokens<'a>(&'a [Token]);
+derive_slice_matchable!(Tokens(&[Token]), matchers: true, expected: Debug);
+
+#[derive_enum_matcher(for Tokens<'slice>, field = .kind)]
+*/
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TokenKind {
 	Ident,

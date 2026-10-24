@@ -1,13 +1,14 @@
 use core::{mem, ops::Deref};
 
-use alloc_crate::{boxed::Box, sync::Arc};
+use alloc_crate::{boxed::Box, sync::Arc, vec::Vec};
 use lean_string::LeanStr;
+use thin_vec::ThinVec;
 
 use crate::{
 	decl::{
 		ConstructError, DeclNs,
 		id::ItemStore,
-		items::{Body, ItemId, Union},
+		items::{Body, GenericParams, ItemId, TypeId, Union},
 		rich::{Metadata, RichNotation},
 	},
 	value::Value,
@@ -29,6 +30,7 @@ pub struct Item {
 	default_value: Option<Value>,
 	rich_notation: RichNotation,
 	metadata: Metadata,
+	generic_params: GenericParams,
 }
 impl Item {
 	pub fn struct_(name: &str, body: impl Into<Body>) -> Result<Self, ConstructError> {
@@ -49,6 +51,7 @@ impl Item {
 			default_value: None,
 			rich_notation: RichNotation::new(),
 			metadata: Metadata::new(),
+			generic_params: GenericParams::new(),
 		}
 	}
 	pub fn set_default_value(&mut self, default_value: Value) {
@@ -65,6 +68,12 @@ impl Item {
 	}
 	pub fn default_value(&self) -> Option<&Value> {
 		self.default_value.as_ref()
+	}
+	pub fn generic_params(&self) -> &GenericParams {
+		&self.generic_params
+	}
+	pub fn generic_params_mut(&mut self) -> &mut GenericParams {
+		&mut self.generic_params
 	}
 	pub fn rich_notation(&self) -> &RichNotation {
 		&self.rich_notation

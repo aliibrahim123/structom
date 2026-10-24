@@ -118,6 +118,9 @@ impl Union {
 	pub fn variant_by_tag(&self, tag: VariantTag) -> Option<&Variant> {
 		self.variants.get_by_id(tag.0)
 	}
+	pub fn variant_count(&self) -> usize {
+		self.variants.items.len()
+	}
 	pub fn variants(&self) -> &[Variant] {
 		&self.variants.items
 	}
