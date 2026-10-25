@@ -16,14 +16,17 @@ use crate::{
 #[derive(Debug, Clone)]
 pub struct MetadataItem {
 	name: LeanStr,
-	value: Value,
+	params: ThinVec<Value>,
 }
 impl MetadataItem {
 	pub fn name(&self) -> &str {
 		self.name.as_str()
 	}
-	pub fn value(&self) -> &Value {
-		&self.value
+	pub fn params_count(&self) -> usize {
+		self.params.len()
+	}
+	pub fn params(&self) -> &[Value] {
+		&self.params
 	}
 }
 
@@ -41,21 +44,23 @@ impl Metadata {
 	pub fn len(&self) -> usize {
 		self.0.len()
 	}
-	pub fn add(&mut self, name: &str, value: Value) -> Result<(), ConstructError> {
-		self.add_lean(LeanStr::from(name), value)
+	pub fn add(
+		&mut self, name: &str, params: ThinVec<Value>,
+	) -> Result<(), ConstructError> {
+		self.add_lean(LeanStr::from(name), params)
 	}
 	pub(crate) fn add_lean(
-		&mut self, name: LeanStr, value: Value,
+		&mut self, name: LeanStr, params: impl IntoIterator<Item = Value>,
 	) -> Result<(), ConstructError> {
 		check_ident(&name)?;
-		self.0.push(MetadataItem { name, value });
+		self.0.push(MetadataItem { name, params: ThinVec::from_iter(params) });
 		Ok(())
 	}
-	pub fn get(&self, name: &str) -> Option<&Value> {
-		self.0.iter().find_map(|item| (item.name == name).then_some(&item.value))
+	pub fn get(&self, name: &str) -> Option<&MetadataItem> {
+		self.0.iter().find(|item| item.name == name)
 	}
-	pub fn get_multiple(&self, name: &str) -> impl Iterator<Item = &Value> {
-		self.0.iter().filter_map(move |item| (item.name == name).then_some(&item.value))
+	pub fn get_multiple(&self, name: &str) -> impl Iterator<Item = &MetadataItem> {
+		self.0.iter().filter(move |item| item.name == name)
 	}
 	pub fn remove(&mut self, name: &str) {
 		self.0.retain(|item| item.name != name);
@@ -64,11 +69,12 @@ impl Metadata {
 		&self.0
 	}
 }
-impl<'a> FromIterator<(&'a str, Value)> for Metadata {
-	fn from_iter<T: IntoIterator<Item = (&'a str, Value)>>(iter: T) -> Self {
-		Self(ThinVec::from_iter(
-			iter.into_iter().map(|(n, value)| MetadataItem { name: n.into(), value }),
-		))
+impl<'a, G: IntoIterator<Item = Value>> FromIterator<(&'a str, G)> for Metadata {
+	fn from_iter<T: IntoIterator<Item = (&'a str, G)>>(iter: T) -> Self {
+		Self(ThinVec::from_iter(iter.into_iter().map(|(name, params)| MetadataItem {
+			name: name.into(),
+			params: ThinVec::from_iter(params),
+		})))
 	}
 }
 

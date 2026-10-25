@@ -3,10 +3,15 @@ use core::fmt;
 use alloc_crate::{
 	boxed::Box,
 	fmt::{Display, Write},
+	format,
 	string::String,
 };
+use gramex::result::{MatchError, MatchErrorKind};
 
-use crate::parse::source::{Source, Span};
+use crate::{
+	parse::tokens::{Source, Span},
+	utils::StrExt,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ParseError {
@@ -16,7 +21,23 @@ pub struct ParseError {
 	file_len: u32,
 }
 impl ParseError {
-	pub fn new(mut msg: String, span: Span, src: &Source) -> Self {
+	pub(crate) fn from_match_error(err: MatchError, src: &Source) -> Self {
+		let (msg, span) = match err.kind {
+			MatchErrorKind::MisMatch(expected) => {
+				let char = src.str.char_at(err.off).unwrap();
+				(
+					format!("expected {expected}, found `{char}`",),
+					Span::new(err.off, err.off + char.len_utf8()),
+				)
+			}
+			MatchErrorKind::InComplete(expected) => {
+				(format!("incomplete input, expected {expected}"), Span::EMPTY)
+			}
+			_ => unreachable!(),
+		};
+		Self::new(msg, span, src)
+	}
+	pub(crate) fn new(mut msg: String, span: Span, src: &Source) -> Self {
 		let msg_len = msg.len() as _;
 		msg.push_str(MSG_FILE_SEP);
 		msg.push_str(src.path);

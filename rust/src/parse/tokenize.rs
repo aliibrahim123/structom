@@ -1,198 +1,22 @@
-use core::{cell::OnceCell, mem::replace};
+use core::mem::replace;
 
-use alloc_crate::{format, string::String, vec::Vec};
+use alloc_crate::{format, vec::Vec};
 use gramex::{
 	Matcher,
-	cursor::Cursor as _,
-	result::{Expected, MatchErrorKind},
 	str::{bin, dec, hex},
 };
 
 use crate::{
 	parse::{
 		error::ParseError,
-		source::{Source, Span},
+		str_cursor::*,
+		tokens::{
+			Block, FloatKind, IntBase, Sign, Source, Span, StrKind, Token,
+			TokenKind::{self, *},
+		},
 	},
 	utils::StrExt,
 };
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum IntBase {
-	Dec,
-	Bin,
-	Hex,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Sign {
-	None,
-	Pos,
-	Neg,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FloatKind {
-	Normal,
-	PosInf,
-	NegInf,
-	Nan,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum StrKind {
-	Normal,
-	Multiline,
-	Bytes,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Block {
-	Brace,
-	Bracket,
-	Paren,
-	Angle,
-}
-impl Block {
-	fn delims(&self) -> (char, char) {
-		match self {
-			Block::Brace => ('{', '}'),
-			Block::Bracket => ('[', ']'),
-			Block::Paren => ('(', ')'),
-			Block::Angle => ('<', '>'),
-		}
-	}
-	fn end(&self) -> TokenKind {
-		match self {
-			Block::Brace => BraceClose,
-			Block::Bracket => BracketClose,
-			Block::Paren => ParenClose,
-			Block::Angle => AngleClose,
-		}
-	}
-}
-
-/*
-#[derive(Debug)]
-pub struct Tokens<'a>(&'a [Token]);
-derive_slice_matchable!(Tokens(&[Token]), matchers: true, expected: Debug);
-
-#[derive_enum_matcher(for Tokens<'slice>, field = .kind)]
-*/
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TokenKind {
-	Ident,
-	Str { kind: StrKind },
-	Int { sign: Sign, base: IntBase, has_dash: bool },
-	Float { kind: FloatKind, has_dash: bool },
-
-	True,
-	False,
-	Struct,
-	Union,
-	None,
-
-	BraceOpen,
-	BracketOpen,
-	ParenOpen,
-	AngleOpen,
-
-	BraceClose,
-	BracketClose,
-	ParenClose,
-	AngleClose,
-
-	Comma,
-	Colon,
-	Dot,
-	Question,
-	Equal,
-	Hash,
-	Alt,
-	Bang,
-
-	UnitComment,
-
-	Dummy,
-	Eof,
-}
-use TokenKind::*;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Token {
-	pub kind: TokenKind,
-	pub span: Span,
-}
-impl Token {
-	const DUMMY: Token = Token { kind: Dummy, span: Span::EMPTY };
-}
-
-#[derive(Debug)]
-struct Cursor<'src, 'err> {
-	src: &'src Source<'src>,
-	off: usize,
-	errors: &'err mut Vec<ParseError>,
-}
-impl<'src> gramex::cursor::Cursor<'src> for Cursor<'src, '_> {
-	type MatchAble = str;
-	type Error = ();
-
-	fn input(&self) -> &'src str {
-		self.src.str
-	}
-	fn off(&self) -> usize {
-		self.off
-	}
-	fn off_mut(&mut self) -> &mut usize {
-		&mut self.off
-	}
-	fn map_error(&mut self, err: gramex::result::MatchError) -> Self::Error {
-		let (msg, span) = match err.kind {
-			MatchErrorKind::MisMatch(expected) => {
-				let char = self.src.str.char_at(err.off).unwrap();
-				(
-					format!("expected {expected}, found `{char}`",),
-					Span::new(err.off, err.off + char.len_utf8()),
-				)
-			}
-			MatchErrorKind::InComplete(expected) => {
-				(format!("incomplete input, expected {expected}"), Span::EMPTY)
-			}
-			_ => unreachable!(),
-		};
-		self.errors.push(ParseError::new(msg, span, self.src));
-	}
-}
-impl<'a> Cursor<'a, '_> {
-	fn try_char(&mut self, char: char) -> bool {
-		self.try_eat(char).is_some()
-	}
-	fn test_next(&self, offset: usize, matcher: impl Matcher<str>) -> bool {
-		matcher.test(self.src.str, &mut (self.off + offset))
-	}
-	fn try_until(&mut self, char: char) -> bool {
-		let res = self.src.str[self.off..].find(char);
-		self.off = res.map_or(self.src.str.len(), |i| self.off + i + char.len_utf8());
-		res.is_some()
-	}
-	fn try_until_str(&mut self, chars: &str) -> bool {
-		let res = self.src.str[self.off..].find(chars);
-		self.off = res.map_or(self.src.str.len(), |i| self.off + i + chars.len());
-		res.is_some()
-	}
-	fn try_eat_ident(&mut self) -> Option<&'a str> {
-		let len = self.src.str[self.off..]
-			.find(|c: char| !matches!(c, 'a'..='z' | 'A'..='Z' | '0'..='9' | '_'))
-			.map_or(self.src.str.len(), |i| self.off + i);
-		(len > 0).then(|| &self.src.str[self.off..len])
-	}
-	fn expected(&mut self, expected: impl Into<Expected>) {
-		_ = <Self as gramex::cursor::Cursor>::expected::<()>(self, expected);
-	}
-	fn error(&mut self, msg: String, span: Span) {
-		self.errors.push(ParseError::new(msg, span, self.src));
-	}
-}
 
 fn parse_comment(cur: &mut Cursor, tokens: &mut Vec<Token>, start: usize) {
 	if cur.try_char('-') {
@@ -350,7 +174,7 @@ fn parse_str(cur: &mut Cursor, kind: StrKind, tokens: &mut Vec<Token>, start: us
 		}
 	}
 
-	tokens.push(Token { kind: Str { kind }, span: Span::new(start, cur.off()) });
+	tokens.push(Token { kind: StrTk { kind }, span: Span::new(start, cur.off()) });
 }
 
 fn parse_ident(cur: &mut Cursor, tokens: &mut Vec<Token>, start: usize) {
@@ -359,11 +183,11 @@ fn parse_ident(cur: &mut Cursor, tokens: &mut Vec<Token>, start: usize) {
 	cur.off += ident.len();
 	let span = Span::new(start, cur.off());
 	match ident {
-		"true" => tokens.push(Token { kind: True, span }),
-		"false" => tokens.push(Token { kind: False, span }),
-		"struct" => tokens.push(Token { kind: Struct, span }),
-		"union" => tokens.push(Token { kind: Union, span }),
-		"none" => tokens.push(Token { kind: None, span }),
+		"true" => tokens.push(Token { kind: KwTrue, span }),
+		"false" => tokens.push(Token { kind: KwFalse, span }),
+		"struct" => tokens.push(Token { kind: KwStruct, span }),
+		"union" => tokens.push(Token { kind: KwUnion, span }),
+		"none" => tokens.push(Token { kind: KwNone, span }),
 		"nan" => tokens
 			.push(Token { kind: Float { kind: FloatKind::Nan, has_dash: false }, span }),
 		"inf" => tokens.push(Token {
@@ -456,6 +280,5 @@ pub fn tokenize(
 	if filter_dummy {
 		tokens.retain(|token| *token != Token::DUMMY)
 	}
-	tokens.push(Token { kind: Eof, span: Span::EMPTY });
 	Ok(tokens)
 }
