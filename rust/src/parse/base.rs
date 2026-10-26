@@ -6,7 +6,7 @@ use crate::{
 	parse::{
 		Span,
 		token_cursor::*,
-		tokens::{Block, alt, bang, hash, paren_open},
+		tokens::{Block, alt, bang, comma, hash, paren_close, paren_open},
 		value::parse_value,
 	},
 };
@@ -73,7 +73,7 @@ fn try_directive(cur: &mut Cursor, in_root: bool) -> Option<(Directive, Span)> {
 			cur.off -= 1;
 			return None;
 		}
-		let Ok(ident) = cur.ident() else { return None };
+		let Some(ident) = cur.ident() else { return None };
 		let directive = match ident.val.as_str() {
 			"import" => Directive::Import,
 			"profile" => Directive::Profile,
@@ -99,13 +99,28 @@ pub fn meta_loop(
 	try_directive(cur, in_root)
 }
 
-pub struct Imports<'src>(Vec<(Cow<'src, str>, Ident)>);
+#[derive(Debug, Default)]
+pub struct Imports<'src>(Vec<(Str<'src>, Option<Ident>)>);
+
+fn parse_import<'src>(cur: &mut Cursor<'src, '_>) -> Option<(Str<'src>, Option<Ident>)> {
+	cur.eat_delim(paren_open, paren_close, |cur| {
+		let path = cur.str_normal()?;
+		cur.comma_unless_end();
+		let ns = cur.try_ident_kw("as").then(|| cur.ident()).flatten();
+		Some((path, ns))
+	})
+}
 
 pub fn parse_head<'src>(cur: &mut Cursor<'src, '_>) -> (Imports<'src>, Metadata) {
 	let mut metadata = Metadata::new();
+	let mut imports = Imports::default();
 	while let Some((directive, span)) = meta_loop(cur, true, &mut metadata) {
 		match directive {
-			Directive::Import => {}
+			Directive::Import => {
+				if let Some((path, ns)) = parse_import(cur) {
+					imports.0.push((path, ns));
+				}
+			}
 			Directive::Profile => {}
 			_ => cur.error(directive.invalid_place().to_string(), span),
 		}

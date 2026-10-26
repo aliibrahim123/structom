@@ -150,6 +150,15 @@ impl Token {
 			_ => None,
 		}
 	}
+	pub fn is_block_closer(&self) -> bool {
+		match self.kind {
+			TokenKind::ParenClose => true,
+			TokenKind::BraceClose => true,
+			TokenKind::BracketClose => true,
+			TokenKind::AngleClose => true,
+			_ => false,
+		}
+	}
 	pub fn set_close_off(&mut self, off: usize) {
 		let off = off.try_into().ok();
 		match &mut self.kind {

@@ -84,21 +84,25 @@ impl<'src> gramex::cursor::Cursor<'src> for Cursor<'src, '_> {
 	}
 }
 impl<'src> Cursor<'src, '_> {
-	pub fn ident(&mut self) -> Result<Ident, ()> {
-		let token = self.eat(ident)?;
-		Ok(Ident { val: self.src.source_of(token.span).into(), span: token.span })
+	pub fn ident(&mut self) -> Option<Ident> {
+		let token = self.eat(ident).ok()?;
+		Some(Ident { val: self.src.source_of(token.span).into(), span: token.span })
 	}
 	pub fn try_ident(&mut self) -> Option<Ident> {
 		let token = self.try_eat(ident)?;
 		Some(Ident { val: self.src.source_of(token.span).into(), span: token.span })
 	}
+	pub fn try_ident_kw(&mut self, name: &str) -> bool {
+		self.try_eat(ident).is_some_and(|token| self.src.source_of(token.span) == name)
+	}
 	pub fn try_symbol(&mut self, matcher: impl Matcher<Tokens<'src>>) -> bool {
 		self.try_eat(matcher).is_some()
 	}
-	pub fn try_str_single(&mut self) -> Option<Str<'src>> {
+	pub fn str_normal(&mut self) -> Option<Str<'src>> {
 		let Some(Token { kind: TokenKind::StrTk { kind: StrKind::Normal }, span }) =
 			self.peek().copied()
 		else {
+			self.expected("a string");
 			return None;
 		};
 		let mut buf = None;
@@ -108,6 +112,11 @@ impl<'src> Cursor<'src, '_> {
 		match buf {
 			Some(buf) => Some(Str { val: Cow::Owned(buf), span }),
 			None => Some(Str { val: Cow::Borrowed(self.src.source_of(span)), span }),
+		}
+	}
+	pub fn comma_unless_end(&mut self) {
+		if !self.try_symbol(comma) && !self.peek().unwrap().is_block_closer() {
+			self.expected(comma.expected());
 		}
 	}
 	pub fn skip_block(&mut self, block: Block) {
@@ -172,6 +181,17 @@ impl<'src> Cursor<'src, '_> {
 			}
 		}
 		items
+	}
+	pub fn eat_delim<T>(
+		&mut self, open: impl Matcher<Tokens<'src>>, close: impl Matcher<Tokens<'src>>,
+		mut item: impl FnMut(&mut Self) -> Option<T>,
+	) -> Option<T> {
+		self.eat(open).ok();
+		let item = item(self);
+		if self.eat(&close).is_err() {
+			self.skip_until(|cur| cur.try_symbol(&close));
+		}
+		item
 	}
 	pub fn expected(&mut self, expected: impl Into<Expected>) {
 		_ = <Self as gramex::cursor::Cursor>::expected::<()>(self, expected);
