@@ -11,8 +11,7 @@ use crate::{
 		error::ParseError,
 		str_cursor::*,
 		tokens::{
-			Block, FloatKind, IntBase, Sign, Source, Span, StrKind, Token,
-			TokenKind::{self, *},
+			Block, FloatKind, IntBase, Sign, Source, Span, StrKind, Token, TokenKind::*,
 		},
 	},
 	utils::StrExt,
@@ -63,7 +62,9 @@ fn close_delim(
 		cur.error(format!("unclosed `{}`", block.delims().0), span);
 	}
 
-	block_stack.pop();
+	let Some((_, open_ind)) = block_stack.pop() else { unreachable!() };
+	let close_off = tokens.len() - open_ind;
+	tokens[open_ind].set_close_off(close_off);
 	tokens.push(Token { kind: block.end(), span });
 }
 
@@ -74,16 +75,16 @@ fn skip_underscores(cur: &mut Cursor, dg: impl Matcher<str> + Copy) {
 	}
 }
 
-fn parse_digits(cur: &mut Cursor, dg: impl Matcher<str> + Copy) -> (bool, bool) {
-	let mut has_dg = cur.eat(dg).is_ok();
+pub fn parse_digits(cur: &mut Cursor, dg: impl Matcher<str> + Copy) -> (u32, bool) {
+	let mut dg_count = if cur.eat(dg).is_ok() { 1 } else { 0 };
 	let mut has_dash = cur.try_char('_');
 	skip_underscores(cur, dg);
 	while cur.try_eat(dg).is_some() {
-		has_dg = true;
+		dg_count += 1;
 		has_dash |= cur.try_char('_');
 		skip_underscores(cur, dg);
 	}
-	(has_dg, has_dash)
+	(dg_count, has_dash)
 }
 fn parse_int(cur: &mut Cursor, tokens: &mut Vec<Token>, sign: Sign, start: usize) {
 	if sign == Sign::None {
@@ -103,7 +104,7 @@ fn parse_int(cur: &mut Cursor, tokens: &mut Vec<Token>, sign: Sign, start: usize
 		(IntBase::Dec, has_dg, has_dash)
 	};
 
-	if !has_dg {
+	if has_dg == 0 {
 		return;
 	}
 
@@ -208,7 +209,7 @@ pub fn tokenize(
 	}
 
 	let mut tokens = Vec::new();
-	let cur = &mut Cursor { src: source, off: 0, errors };
+	let cur = &mut Cursor { src: source, off: 0, errors, end_span: Span::EMPTY };
 	let mut filter_dummy = false;
 	let block_stack = &mut Vec::new();
 
@@ -248,19 +249,19 @@ pub fn tokenize(
 
 			'(' => {
 				block_stack.push((Block::Paren, tokens.len()));
-				tokens.push(Token { kind: ParenOpen, span });
+				tokens.push(Token { kind: ParenOpen { close_off: None }, span });
 			}
 			'[' => {
 				block_stack.push((Block::Bracket, tokens.len()));
-				tokens.push(Token { kind: BracketOpen, span });
+				tokens.push(Token { kind: BracketOpen { close_off: None }, span });
 			}
 			'{' => {
 				block_stack.push((Block::Brace, tokens.len()));
-				tokens.push(Token { kind: BraceOpen, span });
+				tokens.push(Token { kind: BraceOpen { close_off: None }, span });
 			}
 			'<' => {
 				block_stack.push((Block::Angle, tokens.len()));
-				tokens.push(Token { kind: AngleOpen, span });
+				tokens.push(Token { kind: AngleOpen { close_off: None }, span });
 			}
 			')' => close_delim(Block::Paren, cur),
 			']' => close_delim(Block::Bracket, cur),
@@ -273,8 +274,11 @@ pub fn tokenize(
 		}
 	}
 
-	for (block, ind) in block_stack.iter().rev() {
-		cur.error(format!("unclosed `{}`", block.delims().0), tokens[*ind].span);
+	for (block, open_ind) in block_stack.iter().rev() {
+		let close_off = tokens.len() - open_ind;
+		let open = &mut tokens[*open_ind];
+		open.set_close_off(close_off);
+		cur.error(format!("unclosed `{}`", block.delims().0), open.span);
 		tokens.push(Token { kind: block.end(), span: Span::EMPTY });
 	}
 	if filter_dummy {

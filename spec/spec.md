@@ -1190,7 +1190,7 @@ The escape codes are:
 - the opening and closing quotes are tripled.
 - `"` and `""` are allowed unescaped
 - from the start till after indentation of the first line is stripped.
-- the indentation is stripped from the start of each line passed on what the clossing `"""` has.
+- the indentation is stripped from the start of each line based on what the clossing `"""` has, mismatched line starts are ignored.
 
 ### Binary encoding
 

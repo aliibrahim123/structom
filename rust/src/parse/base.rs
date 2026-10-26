@@ -1,4 +1,4 @@
-use alloc_crate::format;
+use alloc_crate::{borrow::Cow, format, string::ToString, vec::Vec};
 use thin_vec::ThinVec;
 
 use crate::{
@@ -21,6 +21,34 @@ pub enum Directive {
 	Rich,
 	Bitfield,
 	Unitfield,
+}
+impl Directive {
+	fn invalid_place(self) -> &'static str {
+		match self {
+			Directive::Import => {
+				"the \"import\" directive can only be applied at the root level"
+			}
+			Directive::Profile => {
+				"the \"profile\" directive can only be applied at the root level"
+			}
+			Directive::Fixed => {
+				"the \"fixed\" directive can only be applied to a fielded structs or variants"
+			}
+			Directive::Default => {
+				"the \"default\" directive can only be applied to items"
+			}
+			Directive::Tree => "the \"tree\" directive can only be applied to fields",
+			Directive::Rich => {
+				"the \"rich\" directive can only be applied to items and variants"
+			}
+			Directive::Bitfield => {
+				"the \"bitfield\" directive can only be applied to tagged structs, variants and unit only unions"
+			}
+			Directive::Unitfield => {
+				"the \"unitfield\" directive can only be applied to tagged structs and variants"
+			}
+		}
+	}
 }
 
 fn try_metadata(cur: &mut Cursor, in_root: bool, metadata: &mut Metadata) {
@@ -69,4 +97,21 @@ pub fn meta_loop(
 ) -> Option<(Directive, Span)> {
 	try_metadata(cur, in_root, metadata);
 	try_directive(cur, in_root)
+}
+
+pub struct Imports<'src>(Vec<(Cow<'src, str>, Ident)>);
+
+pub fn parse_head<'src>(cur: &mut Cursor<'src, '_>) -> (Imports<'src>, Metadata) {
+	let mut metadata = Metadata::new();
+	while let Some((directive, span)) = meta_loop(cur, true, &mut metadata) {
+		match directive {
+			Directive::Import => {}
+			Directive::Profile => {}
+			_ => cur.error(directive.invalid_place().to_string(), span),
+		}
+	}
+	// imports
+	// metadata
+	// profile
+	todo!()
 }

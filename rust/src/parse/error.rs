@@ -1,4 +1,4 @@
-use core::fmt;
+use core::fmt::{self, Arguments};
 
 use alloc_crate::{
 	boxed::Box,
@@ -7,6 +7,7 @@ use alloc_crate::{
 	string::String,
 };
 use gramex::result::{MatchError, MatchErrorKind};
+use lean_string::LeanString;
 
 use crate::{
 	parse::tokens::{Source, Span},
@@ -21,17 +22,18 @@ pub struct ParseError {
 	file_len: u32,
 }
 impl ParseError {
-	pub(crate) fn from_match_error(err: MatchError, src: &Source) -> Self {
-		let (msg, span) = match err.kind {
+	pub(crate) fn from_match_error<'src>(
+		err: &MatchError, src: &Source, end_span: Span,
+		found: impl Fn(&mut String) -> Span,
+	) -> Self {
+		let (msg, span) = match &err.kind {
 			MatchErrorKind::MisMatch(expected) => {
-				let char = src.str.char_at(err.off).unwrap();
-				(
-					format!("expected {expected}, found `{char}`",),
-					Span::new(err.off, err.off + char.len_utf8()),
-				)
+				let mut msg = format!("expected {expected}, found ");
+				let span = found(&mut msg);
+				(msg, span)
 			}
 			MatchErrorKind::InComplete(expected) => {
-				(format!("incomplete input, expected {expected}"), Span::EMPTY)
+				(format!("incomplete input, expected {expected}"), end_span)
 			}
 			_ => unreachable!(),
 		};

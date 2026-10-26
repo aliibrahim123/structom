@@ -62,6 +62,9 @@ impl Span {
 	pub fn point(pos: usize) -> Self {
 		Self::new(pos, pos + 1)
 	}
+	pub fn len(&self) -> usize {
+		(self.end - self.start) as usize
+	}
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -107,10 +110,10 @@ pub enum TokenKind {
 	KwUnion,
 	KwNone,
 
-	BraceOpen,
-	BracketOpen,
-	ParenOpen,
-	AngleOpen,
+	BraceOpen { close_off: Option<u32> },
+	BracketOpen { close_off: Option<u32> },
+	ParenOpen { close_off: Option<u32> },
+	AngleOpen { close_off: Option<u32> },
 
 	BraceClose,
 	BracketClose,
@@ -140,17 +143,36 @@ impl Token {
 	pub const DUMMY: Token = Token { kind: TokenKind::Dummy, span: Span::EMPTY };
 	pub fn is_block_opener(&self) -> Option<Block> {
 		match self.kind {
-			TokenKind::ParenOpen => Some(Block::Paren),
-			TokenKind::BraceOpen => Some(Block::Brace),
-			TokenKind::BracketOpen => Some(Block::Bracket),
-			TokenKind::AngleOpen => Some(Block::Angle),
+			TokenKind::ParenOpen { .. } => Some(Block::Paren),
+			TokenKind::BraceOpen { .. } => Some(Block::Brace),
+			TokenKind::BracketOpen { .. } => Some(Block::Bracket),
+			TokenKind::AngleOpen { .. } => Some(Block::Angle),
 			_ => None,
+		}
+	}
+	pub fn set_close_off(&mut self, off: usize) {
+		let off = off.try_into().ok();
+		match &mut self.kind {
+			TokenKind::ParenOpen { close_off } => *close_off = off,
+			TokenKind::BraceOpen { close_off } => *close_off = off,
+			TokenKind::BracketOpen { close_off } => *close_off = off,
+			TokenKind::AngleOpen { close_off } => *close_off = off,
+			_ => panic!("not a block opener"),
+		}
+	}
+	pub fn get_close_off(&self) -> Option<u32> {
+		match self.kind {
+			TokenKind::ParenOpen { close_off } => close_off,
+			TokenKind::BraceOpen { close_off } => close_off,
+			TokenKind::BracketOpen { close_off } => close_off,
+			TokenKind::AngleOpen { close_off } => close_off,
+			_ => panic!("not a block opener"),
 		}
 	}
 }
 
 #[derive(Debug, PartialEq, Clone, Copy)]
-pub struct Tokens<'a>(&'a [Token]);
+pub struct Tokens<'a>(pub(crate) &'a [Token]);
 derive_slice_matchable!(Tokens(&[Token]), matchers: true, expected: Debug);
 
 fn tk_kind_to_expected(kind: &'static str) -> Expected {
