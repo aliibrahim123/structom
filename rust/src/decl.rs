@@ -4,7 +4,6 @@ mod id;
 mod item;
 pub mod provider;
 pub mod rich;
-mod schema_space;
 mod typeid;
 mod union;
 

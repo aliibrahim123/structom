@@ -4,8 +4,8 @@ use lean_string::LeanStr;
 
 use crate::{
 	parse::{
-		ParseError, ParseOptions, Span, str_cursor,
-		str_cursor::Cursor as StrCursor,
+		ParseError, ParseOptions, Span,
+		str_cursor::{self, Cursor as StrCursor, Ident},
 		tokenize::parse_digits,
 		tokens::{
 			Block, Source, StrKind, Token, TokenKind, Tokens, angle_close, angle_open,
@@ -18,26 +18,9 @@ use crate::{
 pub use gramex::cursor::Cursor as _;
 
 #[derive(Debug, Clone)]
-pub struct Ident {
-	pub val: LeanStr,
-	pub span: Span,
-}
-
-#[derive(Debug, Clone)]
 pub struct Str<'src> {
 	pub val: Cow<'src, str>,
 	pub span: Span,
-}
-
-impl PartialEq<str> for Ident {
-	fn eq(&self, other: &str) -> bool {
-		self.val == other
-	}
-}
-impl PartialEq<LeanStr> for Ident {
-	fn eq(&self, other: &LeanStr) -> bool {
-		self.val == *other
-	}
 }
 
 pub struct Cursor<'src, 'other> {
@@ -84,13 +67,13 @@ impl<'src> gramex::cursor::Cursor<'src> for Cursor<'src, '_> {
 	}
 }
 impl<'src> Cursor<'src, '_> {
-	pub fn ident(&mut self) -> Option<Ident> {
-		let token = self.eat(ident).ok()?;
-		Some(Ident { val: self.src.source_of(token.span).into(), span: token.span })
+	pub fn ident(&mut self) -> Option<Ident<'src>> {
+		let span = self.eat(ident).ok()?.span;
+		Some(Ident { val: self.src.source_of(span), span })
 	}
-	pub fn try_ident(&mut self) -> Option<Ident> {
-		let token = self.try_eat(ident)?;
-		Some(Ident { val: self.src.source_of(token.span).into(), span: token.span })
+	pub fn try_ident(&mut self) -> Option<Ident<'src>> {
+		let span = self.try_eat(ident)?.span;
+		Some(Ident { val: self.src.source_of(span), span })
 	}
 	pub fn try_ident_kw(&mut self, name: &str) -> bool {
 		self.try_eat(ident).is_some_and(|token| self.src.source_of(token.span) == name)
@@ -98,7 +81,7 @@ impl<'src> Cursor<'src, '_> {
 	pub fn try_symbol(&mut self, matcher: impl Matcher<Tokens<'src>>) -> bool {
 		self.try_eat(matcher).is_some()
 	}
-	pub fn str_normal(&mut self) -> Option<Str<'src>> {
+	pub fn str(&mut self) -> Option<Str<'src>> {
 		let Some(Token { kind: TokenKind::StrTk { kind: StrKind::Normal }, span }) =
 			self.peek().copied()
 		else {
@@ -106,13 +89,23 @@ impl<'src> Cursor<'src, '_> {
 			return None;
 		};
 		let mut buf = None;
-		let mut cur =
-			StrCursor::new(self.src, span.start(), self.errors, Span::point(span.end()));
+		let range = Some(Span::new(span.start() + 1, span.end() - 1));
+		let mut cur = StrCursor::new(self.src, range, self.errors);
 		resolve_escapes(&mut cur, &mut buf);
 		match buf {
 			Some(buf) => Some(Str { val: Cow::Owned(buf), span }),
 			None => Some(Str { val: Cow::Borrowed(self.src.source_of(span)), span }),
 		}
+	}
+	pub fn enter_str(&mut self) -> Option<StrCursor<'src, '_>> {
+		let Some(Token { kind: TokenKind::StrTk { kind: StrKind::Normal }, span }) =
+			self.peek().copied()
+		else {
+			self.expected("a string");
+			return None;
+		};
+		let range = Some(Span::new(span.start() + 1, span.end() - 1));
+		Some(StrCursor::new(self.src, range, self.errors))
 	}
 	pub fn comma_unless_end(&mut self) {
 		if !self.try_symbol(comma) && !self.peek().unwrap().is_block_closer() {
@@ -226,18 +219,17 @@ impl Block {
 		}
 	}
 }
-
 fn parse_unicode_escape(cur: &mut StrCursor, start: usize) -> Result<char, ()> {
 	cur.eat('{')?;
 	let (dg_count, has_dash) = parse_digits(cur, hex);
-	let span = Span::new(start, cur.off);
 	cur.eat('}');
+	let span = Span::new(start, cur.off);
 	if dg_count > 6 {
 		cur.error("unicode escape can only have 1..6 hex digits".into(), span);
 		return Err(());
 	}
-	let code = cur.src.source_of(span);
-	let code = if has_dash { &code[..code.len() - 1] } else { code };
+	let code = &cur.src.source_of(span)[3..span.len() - 1];
+	let code = if has_dash { &code.replace('_', "") } else { code };
 	let code = u32::from_str_radix(code, 16).unwrap();
 	let Some(code) = char::from_u32(code) else {
 		cur.error("invalid unicode escape".into(), span);
@@ -249,7 +241,7 @@ fn parse_unicode_escape(cur: &mut StrCursor, start: usize) -> Result<char, ()> {
 fn resolve_escapes(cur: &mut StrCursor, buf: &mut Option<String>) {
 	let mut last_ind = cur.off;
 	while cur.try_until('\\') {
-		let start = cur.off;
+		let start = cur.off - 1;
 		let buf = buf.get_or_insert_default();
 		buf.push_str(&cur.src.str[last_ind..cur.off - 1]);
 		cur.skip();

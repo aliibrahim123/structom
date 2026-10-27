@@ -68,7 +68,7 @@ impl Profile {
 			| if cfg!(feature = "rich-unitfield") { fields::RICH_UNITFIELD } else { 0 };
 		Self(value)
 	}
-	fn supports(self, required: Profile) -> bool {
+	pub fn supports(self, required: Profile) -> bool {
 		self.0 & required.0 == required.0
 	}
 
@@ -176,6 +176,11 @@ macro_rules! group {
 			type Output = Self;
 			fn bitor(self, rhs: Self) -> Self::Output {
 				Self(self.0 | rhs.0)
+			}
+		}
+		impl BitOrAssign for $name {
+			fn bitor_assign(&mut self, rhs: $name) {
+				self.0 |= rhs.0
 			}
 		}
 		impl BitOr<$name> for Profile {

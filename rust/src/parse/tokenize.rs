@@ -9,7 +9,7 @@ use gramex::{
 use crate::{
 	parse::{
 		error::ParseError,
-		str_cursor::*,
+		str_cursor::{self, *},
 		tokens::{
 			Block, FloatKind, IntBase, Sign, Source, Span, StrKind, Token, TokenKind::*,
 		},
@@ -27,12 +27,12 @@ fn parse_comment(cur: &mut Cursor, tokens: &mut Vec<Token>, start: usize) {
 		while depth > 0 {
 			let last_stop = cur.off();
 			if cur.try_until_str("*/") {
-				let body = &cur.src.str[last_stop..cur.off() - 2];
+				let body = &cur.slice[last_stop..cur.off() - 2];
 				depth = depth + body.matches("/*").count() - 1;
 			} else {
 				cur.error(
 					"unterminated block comment".into(),
-					Span::new(start, cur.src.str.len()),
+					Span::new(start, cur.slice.len()),
 				);
 				break;
 			}
@@ -141,14 +141,14 @@ fn handle_sign(cur: &mut Cursor, char: char, tokens: &mut Vec<Token>, start: usi
 		parse_int(cur, tokens, sign, start);
 	} else if cur.test('.') && cur.test_next(1, dec) {
 		parse_float(cur, tokens, false, start);
-	} else if cur.try_eat_ident() == Some("inf") {
-		cur.off += 3;
+	} else if cur.try_ident().is_some_and(|ident| ident == "inf") {
 		let kind = if char == '+' { FloatKind::PosInf } else { FloatKind::NegInf };
 		tokens.push(Token {
 			kind: Float { kind, has_dash: false },
 			span: Span::new(start, cur.off()),
 		})
 	} else {
+		cur.off = start + 1;
 		cur.error(
 			format!("expected one of `.`, `inf` or a decimal digit after `{char}`",),
 			Span::point(start),
@@ -164,12 +164,12 @@ fn parse_str(cur: &mut Cursor, kind: StrKind, tokens: &mut Vec<Token>, start: us
 	loop {
 		let last_quote = cur.off;
 		if !cur.try_until_str(quotes) {
-			cur.error("unterminated string".into(), Span::new(start, cur.src.str.len()));
+			cur.error("unterminated string".into(), Span::new(start, cur.slice.len()));
 			break;
 		}
 		let pre_offsets = (last_quote..cur.off() - quotes.len()).rev();
 		let slashes =
-			pre_offsets.take_while(|&i| cur.src.str.char_at(i) == Some('\\')).count();
+			pre_offsets.take_while(|&i| cur.slice.char_at(i) == Some('\\')).count();
 		if slashes % 2 == 0 {
 			break;
 		}
@@ -178,11 +178,9 @@ fn parse_str(cur: &mut Cursor, kind: StrKind, tokens: &mut Vec<Token>, start: us
 	tokens.push(Token { kind: StrTk { kind }, span: Span::new(start, cur.off()) });
 }
 
-fn parse_ident(cur: &mut Cursor, tokens: &mut Vec<Token>, start: usize) {
+fn parse_ident(cur: &mut Cursor, tokens: &mut Vec<Token>) {
 	cur.off -= 1;
-	let ident = cur.try_eat_ident().unwrap();
-	cur.off += ident.len();
-	let span = Span::new(start, cur.off());
+	let str_cursor::Ident { val: ident, span } = cur.try_ident().unwrap();
 	match ident {
 		"true" => tokens.push(Token { kind: KwTrue, span }),
 		"false" => tokens.push(Token { kind: KwFalse, span }),
@@ -200,16 +198,16 @@ fn parse_ident(cur: &mut Cursor, tokens: &mut Vec<Token>, start: usize) {
 }
 
 pub fn tokenize(
-	source: &mut Source, errors: &mut Vec<ParseError>,
+	src: &mut Source, errors: &mut Vec<ParseError>,
 ) -> Result<Vec<Token>, ()> {
-	if cfg!(not(feature = "large-span")) && source.str.len() >= u32::MAX as usize {
+	if cfg!(not(feature = "large-span")) && src.str.len() >= u32::MAX as usize {
 		let msg = "file too large, turn on `large-span` feature".into();
-		errors.push(ParseError::new(msg, Span::EMPTY, source));
+		errors.push(ParseError::new(msg, Span::EMPTY, src));
 		return Err(());
 	}
 
 	let mut tokens = Vec::new();
-	let cur = &mut Cursor { src: source, off: 0, errors, end_span: Span::EMPTY };
+	let cur = &mut Cursor::new(src, None, errors);
 	let mut filter_dummy = false;
 	let block_stack = &mut Vec::new();
 
@@ -233,7 +231,7 @@ pub fn tokenize(
 			'@' => tokens.push(Token { kind: Alt, span }),
 			'!' => tokens.push(Token { kind: Bang, span }),
 
-			'a'..='z' | 'A'..='Z' | '_' => parse_ident(cur, &mut tokens, start),
+			'a'..='z' | 'A'..='Z' | '_' => parse_ident(cur, &mut tokens),
 
 			'+' | '-' => handle_sign(cur, char, &mut tokens, start),
 			'0'..='9' => parse_int(cur, &mut tokens, Sign::None, start),
@@ -270,7 +268,7 @@ pub fn tokenize(
 
 			'/' => parse_comment(cur, &mut tokens, start),
 
-			_ => cur.error(format!("unexpected token `{char}`"), span),
+			_ => cur.error(format!("invalid token `{char}`"), span),
 		}
 	}
 
