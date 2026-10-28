@@ -219,14 +219,27 @@ union Union {
 ## Imports
 
 ```gramex
-let import = '#' '!' "import" '(' path:str (',' "as" ns:ident)? ')';
+let import = '#' '!' "import" '(' path:str (',' second_param)? (',' path_meta: metamap)? ')';
+let path = url | rel_fs_path | '@' (ns = !'/'+) '/' (ns = _+);
+let second_param = "as" ns:ident | ',' '[' list<ident> ']';
 ```
 
-Imports are directives that bring the declarations of another declaration file into scope.
+Imports are directives that bring the items of another declaration file into scope.
 
-They take a `str` parameter containing the URL, file-system path or user defined id of the declaration file.
+They take a `str` parameter containing the path of the decleration file, it can be:
 
-They also take second optional argument `as ns`, where the imported declarations are brought into the namespace `ns`.
+- a URL
+- a relative file-system path
+- a user defined id specifed as `@ns/id`.
+
+They also take second optional parameter which can be:
+
+- `as` followed by a `ns` identifier, where the imported items are brought into their own namespace `ns`.
+- a bracket enclosed comma separated list of identifiers of the imported items bringed into scope unnamespaced.
+
+If the second parameter is not specifier, all the imported file items are bringed into the scope unnamespaced.
+
+Additionally, imports can have a third meta map value parameter specifing some metadata about the import, like a semver string of the required version.
 
 Imports cannot be circular.
 
@@ -234,14 +247,19 @@ Imports cannot be circular.
 
 ```structom
 // module1.stomd
-struct Struct { }
+@!version("1.2.3")
+struct Struct {
+	v: u8
+}
 
 // module2.stomd
-#!import("./module1.stomd")
-union Union { }
+#!import("./module1.stomd", { version: "1.2.0" })
+union Union {
+	A(Struct)
+}
 
 // module3.stomd
-#!import("./module1.stomd")
+#!import("./module1.stomd", [Struct])
 #!import("./module2.stomd", as mod2)
 
 struct Root {
@@ -370,9 +388,8 @@ let metadata = '@' name:ident meta_params?;
 let root_metadata = '@' '!' name:ident meta_params?;
 
 let meta_params = '(' params:list<metavalue> ')';
-let metavalue = type_spec | value |
-	'[' list<metavalue>? ']' |
-	'{' list<metavalue ':' metavalue>? '}'
+let metavalue = type_spec | value | '[' list<metavalue>? ']' | metamap;
+let metamap = '{' list<metavalue ':' metavalue>? '}'
 ;
 ```
 
@@ -386,7 +403,7 @@ Directives and Metadata are declared before items, values, types, fields, varian
 
 They can optionally take metavalue parameters enclosed in parentheses.
 
-Metavalues are values, [type specifiers](#type-specifier), and [lists](#list) and [maps](#map) of them.
+Metavalues are builtin types values, [type specifiers](#type-specifier), and [lists](#list) and [maps](#map) of them.
 
 Directives and metadata that applies to the whole file are declared before any items, using a `!` before the name.
 

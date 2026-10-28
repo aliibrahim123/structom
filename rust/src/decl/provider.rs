@@ -2,34 +2,38 @@ use core::{
 	cell::{RefCell, UnsafeCell},
 	fmt::Debug,
 	ops::Deref,
+	pin::Pin,
 };
 
-use alloc_crate::{boxed::Box, collections::HashMap, string::ToString, vec::Vec};
+use alloc_crate::{boxed::Box, string::ToString, vec::Vec};
+use hashbrown::{HashMap, hash_map::Entry};
 use lean_string::LeanStr;
 
-use crate::decl::{ConstructError, DeclFile, DeclFileBox, DeclNs};
 #[cfg(feature = "fs-provider")]
 use crate::parse::parse_decl_file;
+use crate::{
+	decl::{ConstructError, DeclFile, DeclFileBox, DeclNs},
+	value::Value,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ImportError {
 	NotFound,
 	#[cfg(feature = "parse")]
-	Parse(crate::parse::ParseError),
+	Parse(Vec<crate::parse::ParseError>),
 	Other(Box<str>),
 }
 #[cfg(feature = "parse")]
 impl From<crate::parse::ParseError> for ImportError {
 	fn from(value: crate::parse::ParseError) -> Self {
-		Self::Parse(value)
+		use alloc_crate::prelude::v1::vec;
+		Self::Parse(vec![value])
 	}
 }
 
 pub enum ImportResult<'prov> {
 	Ok(DeclFileBox),
-	Future(
-		Box<dyn Future<Output = Result<DeclFileBox, ImportError>> + 'prov + Send + Sync>,
-	),
+	Future(Pin<Box<dyn Future<Output = Result<DeclFileBox, ImportError>> + 'prov>>),
 	Err(ImportError),
 }
 impl Debug for ImportResult<'_> {
@@ -45,7 +49,9 @@ impl Debug for ImportResult<'_> {
 }
 
 pub trait DeclProv {
-	fn import_file<'file>(&'file self, path: &str) -> ImportResult<'file>;
+	fn import_file<'file>(
+		&'file self, path: &str, meta: Option<&Value>,
+	) -> ImportResult<'file>;
 	fn get_file(&self, id: DeclNs) -> Option<&DeclFile>;
 	fn get_file_box(&self, id: DeclNs) -> Option<DeclFileBox>;
 }
@@ -53,7 +59,9 @@ pub trait DeclProv {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Void {}
 impl DeclProv for Void {
-	fn import_file<'file>(&'file self, _path: &str) -> ImportResult<'file> {
+	fn import_file<'file>(
+		&'file self, _path: &str, _value: Option<&Value>,
+	) -> ImportResult<'file> {
 		ImportResult::Err(ImportError::Other(
 			"the `Void` provider doesnt provide anything".into(),
 		))
@@ -77,14 +85,14 @@ impl List {
 		Self::default()
 	}
 	pub fn add(&mut self, file: DeclFileBox) -> Result<(), ConstructError> {
-		if self.name_index.contains_key(file.path()) {
+		let Entry::Vacant(name_entry) = self.name_index.entry(file.path.clone()) else {
 			return Err(ConstructError::DuplicateName);
-		}
-		if self.ns_index.contains_key(&file.ns()) {
+		};
+		let Entry::Vacant(ns_entry) = self.ns_index.entry(file.ns()) else {
 			return Err(ConstructError::AddedBefore);
-		}
-		self.name_index.insert(file.0.path.clone(), self.files.len());
-		self.ns_index.insert(file.ns(), self.files.len());
+		};
+		name_entry.insert_entry(self.files.len());
+		ns_entry.insert_entry(self.files.len());
 		self.files.push(file);
 		Ok(())
 	}
@@ -101,7 +109,9 @@ impl List {
 	}
 }
 impl DeclProv for List {
-	fn import_file<'file>(&'file self, path: &str) -> ImportResult<'file> {
+	fn import_file<'file>(
+		&'file self, path: &str, _value: Option<&Value>,
+	) -> ImportResult<'file> {
 		match self.name_index.get(path) {
 			Some(&index) => ImportResult::Ok(self.files[index].clone()),
 			None => ImportResult::Err(ImportError::NotFound),
@@ -139,16 +149,16 @@ impl GrowableList {
 		Self::default()
 	}
 	pub fn add(&self, file: DeclFileBox) -> Result<(), ConstructError> {
-		let mut index = self.index.borrow_mut();
-		if index.name_index.contains_key(file.path()) {
+		let index = &mut *self.index.borrow_mut();
+		let Entry::Vacant(name_entry) = index.name_index.entry(file.path.clone()) else {
 			return Err(ConstructError::DuplicateName);
-		}
-		if index.ns_index.contains_key(&file.ns()) {
+		};
+		let Entry::Vacant(ns_entry) = index.ns_index.entry(file.ns()) else {
 			return Err(ConstructError::AddedBefore);
-		}
+		};
 		let len = unsafe { (*self.files.get()).len() };
-		index.name_index.insert(file.0.path.clone(), len);
-		index.ns_index.insert(file.ns(), len);
+		name_entry.insert_entry(len);
+		ns_entry.insert_entry(len);
 		unsafe { (*self.files.get()).push(file) }
 		Ok(())
 	}
@@ -179,7 +189,9 @@ impl GrowableList {
 	}
 }
 impl DeclProv for GrowableList {
-	fn import_file<'file>(&'file self, path: &str) -> ImportResult<'file> {
+	fn import_file<'file>(
+		&'file self, path: &str, _value: Option<&Value>,
+	) -> ImportResult<'file> {
 		match self.index.borrow().name_index.get(path) {
 			Some(&index) => ImportResult::Ok(self.index_file(index).unwrap().clone()),
 			None => ImportResult::Err(ImportError::NotFound),
@@ -209,7 +221,7 @@ pub enum FsLoadError {
 	OutsideRoot,
 	NonUtf8Path,
 	Io(IoError),
-	Parse(crate::parse::ParseError),
+	Parse(Vec<crate::parse::ParseError>),
 }
 
 #[cfg(feature = "fs-provider")]
@@ -233,7 +245,7 @@ impl FsProv {
 	pub fn load(&self, path: &str) -> Result<DeclFileBox, FsLoadError> {
 		let path = self.root.join(path);
 		let Some(path_str) = path.to_str() else { return Err(FsLoadError::NonUtf8Path) };
-		if let ImportResult::Ok(file) = self.list.import_file(path_str) {
+		if let ImportResult::Ok(file) = self.list.import_file(path_str, None) {
 			return Ok(file);
 		}
 
@@ -257,7 +269,9 @@ impl FsProv {
 }
 #[cfg(feature = "fs-provider")]
 impl DeclProv for FsProv {
-	fn import_file<'file>(&'file self, path: &str) -> ImportResult<'file> {
+	fn import_file<'file>(
+		&'file self, path: &str, _value: Option<&Value>,
+	) -> ImportResult<'file> {
 		match self.load(path) {
 			Ok(file) => ImportResult::Ok(file),
 			Err(FsLoadError::NotFound) => ImportResult::Err(ImportError::NotFound),

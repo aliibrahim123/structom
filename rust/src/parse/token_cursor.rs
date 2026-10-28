@@ -1,19 +1,20 @@
+use core::fmt::Display;
+
 use alloc_crate::{borrow::Cow, fmt::Write, format, string::String, vec::Vec};
 use gramex::{Matcher, result::Expected, str::hex};
-use lean_string::LeanStr;
 
 use crate::{
 	parse::{
 		ParseError, ParseOptions, Span,
-		str_cursor::{self, Cursor as StrCursor, Ident},
+		str_cursor::{Cursor as StrCursor, Ident},
 		tokenize::parse_digits,
 		tokens::{
 			Block, Source, StrKind, Token, TokenKind, Tokens, angle_close, angle_open,
 			brace_close, brace_open, bracket_close, bracket_open, comma, ident,
-			paren_close, paren_open, str_tk,
+			paren_close, paren_open,
 		},
 	},
-	utils::{StrExt, VecLike},
+	utils::VecLike,
 };
 pub use gramex::cursor::Cursor as _;
 
@@ -21,6 +22,11 @@ pub use gramex::cursor::Cursor as _;
 pub struct Str<'src> {
 	pub val: Cow<'src, str>,
 	pub span: Span,
+}
+impl Display for Str<'_> {
+	fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+		f.write_str(&self.val)
+	}
 }
 
 pub struct Cursor<'src, 'other> {
@@ -146,7 +152,7 @@ impl<'src> Cursor<'src, '_> {
 	pub fn eat_delim_list<T, V: VecLike<T> + Default>(
 		&mut self, open: impl Matcher<Tokens<'src>>, close: impl Matcher<Tokens<'src>>,
 		item: impl FnMut(&mut Self) -> Option<T>,
-	) -> V {
+	) -> Option<V> {
 		if !self.test(&open) {
 			self.expected(open.expected());
 		}
@@ -155,10 +161,10 @@ impl<'src> Cursor<'src, '_> {
 	pub fn try_delim_list<T, V: VecLike<T> + Default>(
 		&mut self, open: impl Matcher<Tokens<'src>>, close: impl Matcher<Tokens<'src>>,
 		mut item: impl FnMut(&mut Self) -> Option<T>,
-	) -> V {
+	) -> Option<V> {
 		let mut items = V::default();
 		if !self.try_symbol(open) {
-			return items;
+			return None;
 		}
 		while !self.try_symbol(&close) {
 			if self.is_end() {
@@ -173,7 +179,7 @@ impl<'src> Cursor<'src, '_> {
 				self.skip_until(|cur| cur.try_symbol(comma) || cur.test(&close));
 			}
 		}
-		items
+		Some(items)
 	}
 	pub fn eat_delim<T>(
 		&mut self, open: impl Matcher<Tokens<'src>>, close: impl Matcher<Tokens<'src>>,

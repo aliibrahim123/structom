@@ -85,17 +85,21 @@ impl Profile {
 		(self.0 & fields::RICH != 0).then_some(Rich(self.0 & fields::RICH_GRP))
 	}
 
-	pub fn set_obj(&mut self, obj: Option<Obj>) {
+	pub fn with_obj(mut self, obj: Option<Obj>) -> Self {
 		self.0 = (self.0 & !fields::OBJ_GRP) | obj.map_or(0, |o| o.0);
+		self
 	}
-	pub fn set_bin(&mut self, bin: Option<Bin>) {
+	pub fn with_bin(mut self, bin: Option<Bin>) -> Self {
 		self.0 = (self.0 & !fields::BIN_GRP) | bin.map_or(0, |b| b.0);
+		self
 	}
-	pub fn set_decl(&mut self, decl: Option<Decl>) {
+	pub fn with_decl(mut self, decl: Option<Decl>) -> Self {
 		self.0 = (self.0 & !fields::DECL_GRP) | decl.map_or(0, |d| d.0);
+		self
 	}
-	pub fn set_rich(&mut self, rich: Option<Rich>) {
+	pub fn with_rich(mut self, rich: Option<Rich>) -> Self {
 		self.0 = (self.0 & !fields::RICH_GRP) | rich.map_or(0, |r| r.0);
+		self
 	}
 }
 
@@ -247,3 +251,29 @@ group!(struct Rich, "rich", RICH, RICH_GRP, [
 	(bitfield, "bitfield", RICH_BITFIELD, BITFIELD),
 	(unitfield, "unitfield", RICH_UNITFIELD, UNITFIELD)
 ]);
+
+#[cfg(feature = "parse")]
+mod parse {
+	use core::str::FromStr;
+
+	use alloc_crate::vec::Vec;
+
+	use crate::parse::{
+		ParseError, head::parse_profile, str_cursor::Cursor, tokens::Source,
+	};
+
+	use super::*;
+	impl FromStr for Profile {
+		type Err = Vec<ParseError>;
+		fn from_str(s: &str) -> Result<Self, Self::Err> {
+			let mut errors = Vec::new();
+			let source = Source::new(s, "input");
+			let mut cur = Cursor::new(&source, None, &mut errors);
+			let profile = parse_profile(&mut cur, None, false).0;
+			match errors.is_empty() {
+				true => Ok(profile),
+				false => Err(errors),
+			}
+		}
+	}
+}

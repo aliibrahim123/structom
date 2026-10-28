@@ -1,6 +1,7 @@
 use core::sync::atomic::{AtomicU64, Ordering};
 
 use alloc_crate::vec::Vec;
+use hashbrown::hash_map::Entry;
 use lean_string::LeanStr;
 
 use crate::{
@@ -156,13 +157,13 @@ impl<T, const MAX: u32, const COUNT_AFTER: bool> ItemStore<T, MAX, COUNT_AFTER> 
 		&mut self, name: LeanStr, item: T, id: u32,
 	) -> Result<(&mut T, u32), ConstructError> {
 		check_ident(&name)?;
-		if self.name_index.contains_key(&name) {
+		let Entry::Vacant(entry) = self.name_index.entry(name) else {
 			return Err(ConstructError::DuplicateName);
-		}
+		};
 		if COUNT_AFTER {
 			self.id_counter = id
 		}
-		self.name_index.insert(name, self.items.len() as u32);
+		entry.insert(self.items.len() as u32);
 		self.add_index(id, self.items.len() as u32);
 		Ok((self.items.push_mut(item), id))
 	}
