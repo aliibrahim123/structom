@@ -33,4 +33,6 @@ pub enum ConstructError {
 	DuplicateName,
 	InvalidName,
 	DuplicateNotation,
+	MismatchParams,
+	NonContiguous,
 }

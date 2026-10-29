@@ -207,6 +207,49 @@ impl DeclProv for GrowableList {
 	}
 }
 
+#[derive(Debug, Clone)]
+pub struct BatchList {
+	start: u64,
+	files: Box<[DeclFileBox]>,
+	name_index: HashMap<LeanStr, usize>,
+}
+impl BatchList {
+	pub fn new(
+		files: impl IntoIterator<Item = DeclFileBox>,
+	) -> Result<Self, ConstructError> {
+		let files = Box::from_iter(files);
+		let start = files.get(0).map_or(0, |file| file.ns().0);
+		if files.iter().enumerate().any(|(ind, file)| file.ns().0 != start + ind as u64) {
+			return Err(ConstructError::NonContiguous);
+		}
+		let name_index =
+			files.iter().map(|f| (f.path.clone(), (f.ns().0 - start) as _)).collect();
+		Ok(Self { start, files, name_index })
+	}
+	pub fn start(&self) -> DeclNs {
+		DeclNs(self.start)
+	}
+	pub fn files(&self) -> &[DeclFileBox] {
+		&self.files
+	}
+}
+impl DeclProv for BatchList {
+	fn import_file<'file>(
+		&'file self, path: &str, _value: Option<&Value>,
+	) -> ImportResult<'file> {
+		match self.name_index.get(path) {
+			Some(&index) => ImportResult::Ok(self.files[index].clone()),
+			None => ImportResult::Err(ImportError::NotFound),
+		}
+	}
+	fn get_file(&self, id: DeclNs) -> Option<&DeclFile> {
+		self.files.get(id.0.checked_sub(self.start)? as usize).map(|f| f.deref())
+	}
+	fn get_file_box(&self, id: DeclNs) -> Option<DeclFileBox> {
+		self.files.get(id.0.checked_sub(self.start)? as usize).map(|f| f.clone())
+	}
+}
+
 #[cfg(feature = "fs-provider")]
 use alloc_crate::{
 	fs::{canonicalize, read_to_string},

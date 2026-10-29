@@ -15,6 +15,7 @@ pub struct Variant {
 	rich_notation: RichNotation,
 	metadata: Metadata,
 }
+
 impl Variant {
 	pub fn new(name: &str, body: Option<Body>) -> Self {
 		Self::new_lean(LeanStr::from(name), body)
@@ -36,6 +37,9 @@ impl Variant {
 	}
 	pub fn body(&self) -> Option<&Body> {
 		self.body.as_ref()
+	}
+	pub fn is_reserved(&self) -> bool {
+		matches!(self.name.as_str(), "_")
 	}
 	pub fn rich_notation(&self) -> &RichNotation {
 		&self.rich_notation
@@ -96,13 +100,23 @@ impl Union {
 	}
 	pub fn add_variant_at(
 		&mut self, variant: Variant, tag: usize,
-	) -> Result<(), ConstructError> {
+	) -> Result<VariantTag, ConstructError> {
 		if tag as u32 > self.tag_type.max() {
 			return Err(ConstructError::FullCapacity);
 		}
 		self.variants.add_at(variant.name.clone(), variant, tag).map(|(var, id)| {
 			var.tag = VariantTag(id);
+			var.tag
 		})
+	}
+	pub fn reserve_variant(
+		&mut self, id: Option<usize>, body: Option<Body>,
+	) -> Result<VariantTag, ConstructError> {
+		let variant = Variant::new("_", body);
+		match id {
+			Some(id) => self.add_variant_at(variant, id),
+			None => self.add_variant(variant),
+		}
 	}
 	pub fn tag_type(&self) -> TagType {
 		match (self.tag_type, self.variants.id_counter) {

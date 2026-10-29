@@ -14,6 +14,7 @@ use crate::{
 enum FieldType {
 	Required,
 	Optional { default_value: Option<Value> },
+	Reserved,
 }
 
 #[derive(Debug)]
@@ -49,12 +50,15 @@ impl Field {
 	pub fn id(&self) -> FieldId {
 		self.id
 	}
+	pub fn is_reserved(&self) -> bool {
+		matches!(self.type_, FieldType::Reserved)
+	}
 	pub fn is_optional(&self) -> bool {
-		!matches!(self.type_, FieldType::Required)
+		matches!(self.type_, FieldType::Optional { .. })
 	}
 	pub fn default_value(&self) -> Option<&Value> {
 		match &self.type_ {
-			FieldType::Required => None,
+			FieldType::Required | FieldType::Reserved => None,
 			FieldType::Optional { default_value } => default_value.as_ref(),
 		}
 	}
@@ -89,10 +93,21 @@ impl Fields {
 	}
 	pub fn add_field_at(
 		&mut self, field: Field, id: usize,
-	) -> Result<(), ConstructError> {
+	) -> Result<FieldId, ConstructError> {
 		self.fields.add_at(field.name.clone(), field, id).map(|(field, id)| {
 			field.id = FieldId(id as u16);
+			field.id
 		})
+	}
+	pub fn reserve(
+		&mut self, typeid: TypeId, id: Option<usize>,
+	) -> Result<FieldId, ConstructError> {
+		let mut field = Field::new("_", typeid);
+		field.type_ = FieldType::Reserved;
+		match id {
+			Some(id) => self.add_field_at(field, id),
+			None => self.add_field(field),
+		}
 	}
 	pub fn as_tree(&mut self, children: FieldId) -> Result<(), ConstructError> {
 		if !self.fields.has_index(children.0 as u32) {

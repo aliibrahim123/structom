@@ -26,7 +26,7 @@ impl GenericParam {
 		self.id
 	}
 	pub fn as_typeid(&self) -> TypeId {
-		TypeId::new(DeclNs::GENERIC_PARAMS, self.id)
+		TypeId::new_unchecked(DeclNs::GENERIC_PARAMS, self.id)
 	}
 }
 

@@ -8,19 +8,19 @@ use crate::decl::{DeclNs, items::ItemId, rich::Metadata};
 pub struct TypeId {
 	ns: DeclNs,
 	item: ItemId,
-	params: ThinVec<TypeId>,
+	pub(crate) params: ThinVec<TypeId>,
 	metadata: Metadata,
 }
 macro_rules! declare_builtin_typeids {
 	[$($name:ident),*] => {
-		$(pub const $name: TypeId = TypeId::new(DeclNs::BUILT_INS, ItemId::$name);)*
+		$(pub const $name: TypeId = TypeId::new_unchecked(DeclNs::BUILT_INS, ItemId::$name);)*
 	};
 }
 impl TypeId {
-	pub const fn new(ns: DeclNs, item: ItemId) -> Self {
+	pub const fn new_unchecked(ns: DeclNs, item: ItemId) -> Self {
 		Self { ns, item, params: ThinVec::new(), metadata: Metadata::new_const() }
 	}
-	pub fn with_params(
+	pub fn with_params_unchecked(
 		ns: DeclNs, item: ItemId, params: impl IntoIterator<Item = TypeId>,
 	) -> Self {
 		Self { ns, item, params: params.into_iter().collect(), metadata: Metadata::new() }
@@ -30,14 +30,14 @@ impl TypeId {
 		MAP, LIST, ARR, INST, DUR, BINT, DEC, UUID, COLOR
 	];
 	pub fn arr(item: TypeId, len: u16) -> Self {
-		let len = TypeId::new(DeclNs(0), ItemId(len));
-		Self::with_params(DeclNs::BUILT_INS, ItemId::ARR, [item, len])
+		let len = TypeId::new_unchecked(DeclNs(0), ItemId(len));
+		Self::with_params_unchecked(DeclNs::BUILT_INS, ItemId::ARR, [item, len])
 	}
 	pub fn list(item: TypeId) -> Self {
-		Self::with_params(DeclNs::BUILT_INS, ItemId::LIST, [item])
+		Self::with_params_unchecked(DeclNs::BUILT_INS, ItemId::LIST, [item])
 	}
 	pub fn map(key: TypeId, value: TypeId) -> Self {
-		Self::with_params(DeclNs::BUILT_INS, ItemId::MAP, [key, value])
+		Self::with_params_unchecked(DeclNs::BUILT_INS, ItemId::MAP, [key, value])
 	}
 	pub fn ns(&self) -> DeclNs {
 		self.ns

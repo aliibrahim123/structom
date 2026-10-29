@@ -9,14 +9,18 @@ use crate::{
 	utils::HashMap,
 };
 
+static ID_COUNTER: AtomicU64 = AtomicU64::new(2);
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct DeclNs(pub(crate) u64);
 impl DeclNs {
 	pub const BUILT_INS: DeclNs = DeclNs(0);
 	pub const GENERIC_PARAMS: DeclNs = DeclNs(1);
 	pub(crate) fn new() -> Self {
-		static ID_COUNTER: AtomicU64 = AtomicU64::new(2);
 		DeclNs(ID_COUNTER.fetch_add(1, Ordering::Relaxed))
+	}
+	pub(crate) fn new_n(n: u64) -> u64 {
+		ID_COUNTER.fetch_add(n, Ordering::Relaxed)
 	}
 	pub fn value(self) -> u64 {
 		self.0
@@ -85,7 +89,12 @@ impl<T, const MAX: u32, const COUNT_AFTER: bool> Default
 	for ItemStore<T, MAX, COUNT_AFTER>
 {
 	fn default() -> Self {
-		Self::new()
+		Self {
+			items: Vec::new(),
+			id_index: IdIndex::Sparse(Vec::new()),
+			name_index: HashMap::default(),
+			id_counter: 0,
+		}
 	}
 }
 impl<T, const MAX: u32, const COUNT_AFTER: bool> ItemStore<T, MAX, COUNT_AFTER> {
@@ -157,13 +166,15 @@ impl<T, const MAX: u32, const COUNT_AFTER: bool> ItemStore<T, MAX, COUNT_AFTER> 
 		&mut self, name: LeanStr, item: T, id: u32,
 	) -> Result<(&mut T, u32), ConstructError> {
 		check_ident(&name)?;
-		let Entry::Vacant(entry) = self.name_index.entry(name) else {
+		let Entry::Vacant(name_entry) = self.name_index.entry(name) else {
 			return Err(ConstructError::DuplicateName);
 		};
 		if COUNT_AFTER {
 			self.id_counter = id
 		}
-		entry.insert(self.items.len() as u32);
+		if name_entry.key() != "_" {
+			name_entry.insert(self.items.len() as u32);
+		}
 		self.add_index(id, self.items.len() as u32);
 		Ok((self.items.push_mut(item), id))
 	}

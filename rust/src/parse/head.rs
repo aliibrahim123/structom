@@ -6,7 +6,7 @@ use lean_string::LeanStr;
 
 use crate::{
 	decl::{
-		DeclFile, DeclFileBox, DeclNs, DeclProv,
+		DeclFileBox, DeclNs, DeclProv,
 		items::ItemId,
 		provider::{ImportError, ImportResult},
 		rich::Metadata,
@@ -17,8 +17,7 @@ use crate::{
 		str_cursor::{Cursor as StrCursor, Ident},
 		token_cursor::*,
 		tokens::{
-			Block, brace_close, brace_open, bracket_close, bracket_open, paren_close,
-			paren_open,
+			Block, brace_open, bracket_close, bracket_open, paren_close, paren_open,
 		},
 		value::parse_map,
 	},
@@ -157,6 +156,7 @@ pub struct Scope<'src, 'prov> {
 	pub prov: &'prov dyn DeclProv,
 	pub local_file: Option<DeclFileBox>,
 	pub namespaces: HashMap<&'src str, DeclFileBox>,
+	pub unnamespaced: Vec<DeclFileBox>,
 	pub top: HashMap<LeanStr, (DeclNs, ItemId)>,
 	pub unsuported_rich: HashSet<&'src str>,
 }
@@ -165,6 +165,7 @@ impl<'prov> Scope<'_, 'prov> {
 		Self {
 			local_file,
 			prov,
+			unnamespaced: Vec::new(),
 			namespaces: HashMap::default(),
 			top: HashMap::default(),
 			unsuported_rich: HashSet::new(),
@@ -224,24 +225,31 @@ fn import_res_into_file(
 		}
 	}
 }
-
+fn add_specified_imports<'src>(
+	items: &[Ident<'src>], file: DeclFileBox, scope: &mut Scope<'src, '_>,
+	cur: &mut Cursor<'src, '_>,
+) {
+	for item in items {
+		let Some(def) = file.item_by_name(&item.val) else {
+			cur.error(format!("importing undefined item \"{item}\""), item.span);
+			return;
+		};
+		let Entry::Vacant(entry) = scope.top.entry(item.val.into()) else {
+			cur.error(
+				format!("multiple imported items with the same name \"{item}\"",),
+				item.span,
+			);
+			return;
+		};
+		entry.insert_entry((file.ns(), def.id));
+	}
+}
 fn add_import<'src>(
 	res: Result<DeclFileBox, ImportError>, import: &Import<'src>,
 	scope: &mut Scope<'src, '_>, cur: &mut Cursor<'src, '_>,
 ) {
 	let Import { path, ns, items, .. } = import;
 	let Ok(file) = import_res_into_file(res, path, cur) else { return };
-
-	let mut insert_top =
-		|ident: LeanStr, item_id, span| match scope.top.entry(ident.clone()) {
-			Entry::Occupied(entry) => cur.error(
-				format!("multiple imported items with the same name \"{}\"", entry.key()),
-				span,
-			),
-			Entry::Vacant(entry) => {
-				entry.insert_entry((file.ns(), item_id));
-			}
-		};
 
 	if let Some(ns) = ns {
 		let Entry::Vacant(entry) = scope.namespaces.entry(&ns.val) else {
@@ -253,17 +261,9 @@ fn add_import<'src>(
 		};
 		entry.insert_entry(file);
 	} else if let Some(items) = items {
-		for item in items {
-			let Some(def) = file.item_by_name(&item.val) else {
-				cur.error(format!("importing undefined item \"{item}\""), item.span);
-				return;
-			};
-			insert_top(item.val.into(), def.id(), item.span);
-		}
+		add_specified_imports(items, file, scope, cur);
 	} else {
-		for item in file.items() {
-			insert_top(item.name.clone(), item.id(), path.span);
-		}
+		scope.unnamespaced.push(file)
 	}
 }
 
