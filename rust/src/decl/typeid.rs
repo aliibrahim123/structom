@@ -98,6 +98,13 @@ impl Hash for TypeId {
 	}
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TypeIdError {
+	UnknownItem,
+	Reserved,
+	MismatchParams,
+}
+
 pub(crate) mod raw {
 	pub const NONE: u16 = 0x00;
 	pub const ANY: u16 = 0x01;

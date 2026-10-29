@@ -5,7 +5,7 @@ use hashbrown::hash_map::Entry;
 use lean_string::LeanStr;
 
 use crate::{
-	decl::{ConstructError, typeid::raw},
+	decl::{AssignError, typeid::raw},
 	utils::HashMap,
 };
 
@@ -64,12 +64,12 @@ impl VariantTag {
 	}
 }
 
-pub(crate) fn check_ident(name: &LeanStr) -> Result<(), ConstructError> {
+pub(crate) fn check_ident(name: &LeanStr) -> Result<(), AssignError> {
 	let mut chars = name.chars();
 	(chars.next().is_some_and(|c| matches!(c, 'a'..='z' | 'A'..='Z' | '_'))
 		&& chars.all(|c| matches!(c, 'a'..='z' | 'A'..='Z' | '0'..='9' | '_')))
 	.then_some(())
-	.ok_or(ConstructError::InvalidName)
+	.ok_or(AssignError::InvalidName)
 }
 
 #[derive(Debug)]
@@ -99,7 +99,7 @@ impl<T, const MAX: u32, const COUNT_AFTER: bool> Default
 }
 impl<T, const MAX: u32, const COUNT_AFTER: bool> ItemStore<T, MAX, COUNT_AFTER> {
 	const UNASSIGNED_INDEX: u32 = u32::MAX;
-	const HASHMAP_THRESHOLD: u32 = 64;
+	const HASHMAP_THRESHOLD: u32 = 32;
 	pub fn new() -> Self {
 		Self::default()
 	}
@@ -113,14 +113,18 @@ impl<T, const MAX: u32, const COUNT_AFTER: bool> ItemStore<T, MAX, COUNT_AFTER> 
 	}
 	pub fn get_index(&self, id: u32) -> Option<u32> {
 		match &self.id_index {
-			IdIndex::Sparse(map) => map.get(id as usize).copied(),
+			IdIndex::Sparse(map) => {
+				map.get(id as usize).filter(|id| **id != Self::UNASSIGNED_INDEX).copied()
+			}
 			IdIndex::Map(map) => map.get(&id).copied(),
 		}
 	}
 	pub fn add_index(&mut self, id: u32, index: u32) {
 		match &mut self.id_index {
 			IdIndex::Sparse(map) => {
-				if id > Self::HASHMAP_THRESHOLD {
+				if id > map.len() as u32
+					&& id - self.items.len() as u32 > Self::HASHMAP_THRESHOLD
+				{
 					let map = map.iter().enumerate().filter_map(|(id, ind)| {
 						(*ind != Self::UNASSIGNED_INDEX).then_some((id as u32, *ind))
 					});
@@ -139,12 +143,10 @@ impl<T, const MAX: u32, const COUNT_AFTER: bool> ItemStore<T, MAX, COUNT_AFTER> 
 			}
 		}
 	}
-	pub fn add(
-		&mut self, name: LeanStr, item: T,
-	) -> Result<(&mut T, u32), ConstructError> {
+	pub fn add(&mut self, name: LeanStr, item: T) -> Result<(&mut T, u32), AssignError> {
 		while self.has_index(self.id_counter) {
 			if self.id_counter == MAX {
-				return Err(ConstructError::FullCapacity);
+				return Err(AssignError::FullCapacity);
 			}
 			self.id_counter += 1;
 		}
@@ -153,23 +155,23 @@ impl<T, const MAX: u32, const COUNT_AFTER: bool> ItemStore<T, MAX, COUNT_AFTER> 
 	}
 	pub fn add_at(
 		&mut self, name: LeanStr, item: T, id: usize,
-	) -> Result<(&mut T, u32), ConstructError> {
+	) -> Result<(&mut T, u32), AssignError> {
 		if id > MAX as usize {
-			return Err(ConstructError::IdOutOfRange);
+			return Err(AssignError::IdOutOfRange);
 		}
 		if self.has_index(id as u32) {
-			return Err(ConstructError::UsedId);
+			return Err(AssignError::UsedId);
 		}
 		self.insert(name, item, id as u32)
 	}
 	fn insert(
 		&mut self, name: LeanStr, item: T, id: u32,
-	) -> Result<(&mut T, u32), ConstructError> {
+	) -> Result<(&mut T, u32), AssignError> {
 		check_ident(&name)?;
 		let Entry::Vacant(name_entry) = self.name_index.entry(name) else {
-			return Err(ConstructError::DuplicateName);
+			return Err(AssignError::DuplicateName);
 		};
-		if COUNT_AFTER {
+		if COUNT_AFTER && id > self.id_counter {
 			self.id_counter = id
 		}
 		if name_entry.key() != "_" {

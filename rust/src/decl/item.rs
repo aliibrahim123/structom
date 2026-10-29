@@ -3,8 +3,8 @@ use thin_vec::ThinVec;
 
 use crate::{
 	decl::{
-		ConstructError, DeclNs,
-		body::Body,
+		AssignError, DeclNs,
+		body::{Body, UnassignedSpace},
 		id::ItemId,
 		items::TypeId,
 		rich::{Metadata, RichNotation},
@@ -39,9 +39,9 @@ impl GenericParams {
 	pub fn len(&self) -> usize {
 		self.0.len()
 	}
-	pub fn add(&mut self, name: &str) -> Result<ItemId, ConstructError> {
+	pub fn add(&mut self, name: &str) -> Result<ItemId, AssignError> {
 		if self.0.iter().any(|param| param.name == name) {
-			return Err(ConstructError::DuplicateName);
+			return Err(AssignError::DuplicateName);
 		}
 		let id = ItemId(self.0.len() as u16);
 		self.0.push(GenericParam { name: LeanStr::from(name), id });
@@ -77,7 +77,7 @@ pub struct Item {
 	metadata: Metadata,
 }
 impl Item {
-	pub fn struct_(name: &str, body: impl Into<Body>) -> Result<Self, ConstructError> {
+	pub fn struct_(name: &str, body: impl Into<Body>) -> Result<Self, UnassignedSpace> {
 		let mut body = body.into();
 		if let Body::Fields(fields) = &mut body {
 			fields.finalize()?;

@@ -988,7 +988,7 @@ Each variant is defined by an identifier, optionally followed by a [struct body]
 
 Variants named `_` are skipped, but their tags are still counted.
 
-Each variant gets its own `0` based tag based on its declaration order, it can specify its own using `#tag`, ids continue counting after it, and skipped assigned ones.
+Each variant gets its own `0` based tag based on its declaration order, it can specify its own using `#tag`, ids continue counting after it if it is larger than the previous, and skipped assigned ones.
 
 A union can define its tag type inside parentheses after the name.
 

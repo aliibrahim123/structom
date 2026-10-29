@@ -2,6 +2,8 @@ use core::fmt::Display;
 #[cfg(feature = "rich-unitfield")]
 use core::ops::Index;
 
+#[cfg(feature = "rich-bitfield")]
+use crate::decl::id::FieldId;
 #[cfg(feature = "rich-unitfield")]
 use crate::utils::HashMap;
 use alloc_crate::vec::Vec;
@@ -9,7 +11,7 @@ use lean_string::LeanStr;
 use thin_vec::ThinVec;
 
 use crate::{
-	decl::{ConstructError, id::check_ident, items::TypeId},
+	decl::{AssignError, id::check_ident, items::TypeId},
 	value::Value,
 };
 
@@ -44,14 +46,12 @@ impl Metadata {
 	pub fn len(&self) -> usize {
 		self.0.len()
 	}
-	pub fn add(
-		&mut self, name: &str, params: ThinVec<Value>,
-	) -> Result<(), ConstructError> {
+	pub fn add(&mut self, name: &str, params: ThinVec<Value>) -> Result<(), AssignError> {
 		self.add_lean(LeanStr::from(name), params)
 	}
 	pub(crate) fn add_lean(
 		&mut self, name: LeanStr, params: impl IntoIterator<Item = Value>,
-	) -> Result<(), ConstructError> {
+	) -> Result<(), AssignError> {
 		check_ident(&name)?;
 		self.0.push(MetadataItem { name, params: ThinVec::from_iter(params) });
 		Ok(())
@@ -78,34 +78,57 @@ impl<'a, G: IntoIterator<Item = Value>> FromIterator<(&'a str, G)> for Metadata 
 	}
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DuplicateNotation;
+
 #[derive(Debug, Default)]
 pub struct RichNotation(ThinVec<Form>);
 impl RichNotation {
 	pub fn new() -> Self {
 		Self::default()
 	}
-	pub fn add_reader(&mut self, name: &str) -> Result<(), ConstructError> {
+	pub fn add_reader(&mut self, name: &str) -> Result<(), DuplicateNotation> {
 		if self.0.iter().any(|f| matches!(f, Form::Reader(other) if name == other.0)) {
-			return Err(ConstructError::DuplicateNotation);
+			return Err(DuplicateNotation);
 		}
 		self.0.push(Form::Reader(Reader::from(name)));
 		Ok(())
 	}
 	#[cfg(feature = "rich-bitfield")]
-	pub fn add_bitfield(&mut self, size: u8) -> Result<(), ConstructError> {
+	pub fn add_bitfield(&mut self, size: u8) -> Result<&mut BitField, DuplicateNotation> {
 		if self.0.iter().any(|form| matches!(form, Form::BitField(_))) {
-			return Err(ConstructError::DuplicateNotation);
+			return Err(DuplicateNotation);
 		}
 		self.0.push(Form::BitField(BitField::new(size)));
-		Ok(())
+		let Some(Form::BitField(bitfield)) = self.0.last_mut() else { unreachable!() };
+		Ok(bitfield)
 	}
 	#[cfg(feature = "rich-unitfield")]
-	pub fn add_unitfield(&mut self) -> Result<(), ConstructError> {
+	pub fn add_unitfield(&mut self) -> Result<&mut UnitField, DuplicateNotation> {
 		if self.0.iter().any(|form| matches!(form, Form::UnitField(_))) {
-			return Err(ConstructError::DuplicateNotation);
+			return Err(DuplicateNotation);
 		}
 		self.0.push(Form::UnitField(UnitField::new()));
-		Ok(())
+		let Some(Form::UnitField(unitfield)) = self.0.last_mut() else { unreachable!() };
+		Ok(unitfield)
+	}
+
+	pub fn has_reader(&self, name: &str) -> bool {
+		self.0.iter().any(|form| matches!(form, Form::Reader(r) if r.0 == name))
+	}
+	#[cfg(feature = "rich-bitfield")]
+	pub fn get_bitfield(&self) -> Option<&BitField> {
+		self.0.iter().find_map(|form| match form {
+			Form::BitField(bf) => Some(bf),
+			_ => None,
+		})
+	}
+	#[cfg(feature = "rich-unitfield")]
+	pub fn get_unitfield(&self) -> Option<&UnitField> {
+		self.0.iter().find_map(|form| match form {
+			Form::UnitField(uf) => Some(uf),
+			_ => None,
+		})
 	}
 
 	pub fn form_count(&self) -> usize {
@@ -156,34 +179,68 @@ pub enum BitFieldType {
 }
 
 #[cfg(feature = "rich-bitfield")]
+#[derive(Debug, Clone)]
+pub struct BitFieldField {
+	name: LeanStr,
+	id: FieldId,
+	type_: BitFieldType,
+}
+impl BitFieldField {
+	fn new(name: LeanStr, id: FieldId, type_: BitFieldType) -> Self {
+		Self { name, id, type_ }
+	}
+	pub fn name(&self) -> &str {
+		&self.name
+	}
+	pub fn id(&self) -> FieldId {
+		self.id
+	}
+	pub fn type_(&self) -> &BitFieldType {
+		&self.type_
+	}
+}
+
+#[cfg(feature = "rich-bitfield")]
 #[derive(Debug)]
 pub struct BitField {
 	size: u8,
-	fields: Vec<(LeanStr, BitFieldType)>,
+	fields: Vec<BitFieldField>,
 }
 #[cfg(feature = "rich-bitfield")]
 impl BitField {
 	fn new(size: u8) -> Self {
 		Self { size, fields: Vec::new() }
 	}
-	pub fn add(&mut self, name: &str, field: BitFieldType) -> Result<(), ConstructError> {
-		self.add_lean(LeanStr::from(name), field)
+	pub fn add(
+		&mut self, name: &str, type_: BitFieldType,
+	) -> Result<FieldId, AssignError> {
+		self.add_lean(LeanStr::from(name), type_)
 	}
 	pub(crate) fn add_lean(
-		&mut self, name: LeanStr, field: BitFieldType,
-	) -> Result<(), ConstructError> {
+		&mut self, name: LeanStr, type_: BitFieldType,
+	) -> Result<FieldId, AssignError> {
 		check_ident(&name)?;
-		self.fields.push((name, field));
-		Ok(())
+		if self.fields.len() >= u16::MAX as usize {
+			return Err(AssignError::FullCapacity);
+		}
+		let id = FieldId(self.fields.len() as u16);
+		self.fields.push(BitFieldField::new(name, id, type_));
+		Ok(id)
 	}
 	pub fn size(&self) -> u8 {
 		self.size
 	}
+	pub fn field_by_name(&self, name: &str) -> Option<&BitFieldField> {
+		self.fields.iter().find_map(|field| (field.name == name).then_some(field))
+	}
+	pub fn field_by_id(&self, id: FieldId) -> Option<&BitFieldField> {
+		self.fields.get(id.0 as usize)
+	}
 	pub fn field_count(&self) -> usize {
 		self.fields.len()
 	}
-	pub fn fields(&self) -> impl Iterator<Item = (&str, &BitFieldType)> {
-		self.fields.iter().map(|(name, field)| (name.as_str(), field))
+	pub fn fields(&self) -> &[BitFieldField] {
+		&self.fields
 	}
 }
 
@@ -235,7 +292,7 @@ impl Unit {
 	pub(crate) fn new_lean(names: Vec<LeanStr>, mult: Value) -> Self {
 		Self { names, mult, min: None, max: None }
 	}
-	pub fn names(&self) -> Names {
+	pub fn names(&self) -> Names<'_> {
 		Names(&self.names)
 	}
 	pub fn mult(&self) -> &Value {
@@ -260,15 +317,18 @@ impl UnitField {
 	fn new() -> Self {
 		Self { units: Vec::new(), name_index: HashMap::default() }
 	}
-	pub fn add(&mut self, unit: Unit) -> Result<(), ConstructError> {
+	pub fn add(&mut self, unit: Unit) -> Result<(), AssignError> {
 		if unit.names.iter().any(|name| self.name_index.contains_key(name)) {
-			return Err(ConstructError::DuplicateName);
+			return Err(AssignError::DuplicateName);
 		}
 		for name in unit.names.iter() {
 			self.name_index.insert(name.clone(), self.units.len() as u32);
 		}
 		self.units.push(unit);
 		Ok(())
+	}
+	pub fn unit_by_name(&self, name: &str) -> Option<&Unit> {
+		self.name_index.get(name).map(|&i| &self.units[i as usize])
 	}
 	pub fn unit_count(&self) -> usize {
 		self.units.len()

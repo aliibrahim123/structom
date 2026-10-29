@@ -12,7 +12,7 @@ use lean_string::LeanStr;
 #[cfg(feature = "fs-provider")]
 use crate::parse::parse_decl_file;
 use crate::{
-	decl::{ConstructError, DeclFile, DeclFileBox, DeclNs},
+	decl::{DeclFile, DeclFileBox, DeclNs},
 	value::Value,
 };
 
@@ -74,6 +74,13 @@ impl DeclProv for Void {
 	}
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AddError {
+	DuplicateName,
+	AddedBefore,
+	NonContiguous,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct List {
 	files: Vec<DeclFileBox>,
@@ -84,12 +91,12 @@ impl List {
 	pub fn new() -> List {
 		Self::default()
 	}
-	pub fn add(&mut self, file: DeclFileBox) -> Result<(), ConstructError> {
+	pub fn add(&mut self, file: DeclFileBox) -> Result<(), AddError> {
 		let Entry::Vacant(name_entry) = self.name_index.entry(file.path.clone()) else {
-			return Err(ConstructError::DuplicateName);
+			return Err(AddError::DuplicateName);
 		};
 		let Entry::Vacant(ns_entry) = self.ns_index.entry(file.ns()) else {
-			return Err(ConstructError::AddedBefore);
+			return Err(AddError::AddedBefore);
 		};
 		name_entry.insert_entry(self.files.len());
 		ns_entry.insert_entry(self.files.len());
@@ -98,7 +105,7 @@ impl List {
 	}
 	pub fn add_multiple(
 		&mut self, files: impl IntoIterator<Item = DeclFileBox>,
-	) -> Result<(), ConstructError> {
+	) -> Result<(), AddError> {
 		for file in files {
 			self.add(file)?;
 		}
@@ -148,13 +155,13 @@ impl GrowableList {
 	pub fn new() -> GrowableList {
 		Self::default()
 	}
-	pub fn add(&self, file: DeclFileBox) -> Result<(), ConstructError> {
+	pub fn add(&self, file: DeclFileBox) -> Result<(), AddError> {
 		let index = &mut *self.index.borrow_mut();
 		let Entry::Vacant(name_entry) = index.name_index.entry(file.path.clone()) else {
-			return Err(ConstructError::DuplicateName);
+			return Err(AddError::DuplicateName);
 		};
 		let Entry::Vacant(ns_entry) = index.ns_index.entry(file.ns()) else {
-			return Err(ConstructError::AddedBefore);
+			return Err(AddError::AddedBefore);
 		};
 		let len = unsafe { (*self.files.get()).len() };
 		name_entry.insert_entry(len);
@@ -164,7 +171,7 @@ impl GrowableList {
 	}
 	pub fn add_multiple(
 		&self, files: impl IntoIterator<Item = DeclFileBox>,
-	) -> Result<(), ConstructError> {
+	) -> Result<(), AddError> {
 		for file in files {
 			self.add(file)?;
 		}
@@ -214,13 +221,11 @@ pub struct BatchList {
 	name_index: HashMap<LeanStr, usize>,
 }
 impl BatchList {
-	pub fn new(
-		files: impl IntoIterator<Item = DeclFileBox>,
-	) -> Result<Self, ConstructError> {
+	pub fn new(files: impl IntoIterator<Item = DeclFileBox>) -> Result<Self, AddError> {
 		let files = Box::from_iter(files);
 		let start = files.get(0).map_or(0, |file| file.ns().0);
 		if files.iter().enumerate().any(|(ind, file)| file.ns().0 != start + ind as u64) {
-			return Err(ConstructError::NonContiguous);
+			return Err(AddError::NonContiguous);
 		}
 		let name_index =
 			files.iter().map(|f| (f.path.clone(), (f.ns().0 - start) as _)).collect();

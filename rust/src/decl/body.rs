@@ -2,7 +2,7 @@ use lean_string::LeanStr;
 
 use crate::{
 	decl::{
-		ConstructError,
+		AssignError,
 		id::ItemStore,
 		items::{FieldId, TypeId},
 		rich::Metadata,
@@ -70,6 +70,9 @@ impl Field {
 	}
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct UnassignedSpace;
+
 #[derive(Debug)]
 pub struct Fields {
 	is_fixed: bool,
@@ -85,7 +88,7 @@ impl Fields {
 	pub fn new(is_fixed: bool) -> Self {
 		Self { is_fixed, fields: ItemStore::new(), tree_children: None }
 	}
-	pub fn add_field(&mut self, field: Field) -> Result<FieldId, ConstructError> {
+	pub fn add_field(&mut self, field: Field) -> Result<FieldId, AssignError> {
 		self.fields.add(field.name.clone(), field).map(|(field, id)| {
 			field.id = FieldId(id as u16);
 			field.id
@@ -93,7 +96,7 @@ impl Fields {
 	}
 	pub fn add_field_at(
 		&mut self, field: Field, id: usize,
-	) -> Result<FieldId, ConstructError> {
+	) -> Result<FieldId, AssignError> {
 		self.fields.add_at(field.name.clone(), field, id).map(|(field, id)| {
 			field.id = FieldId(id as u16);
 			field.id
@@ -101,7 +104,7 @@ impl Fields {
 	}
 	pub fn reserve(
 		&mut self, typeid: TypeId, id: Option<usize>,
-	) -> Result<FieldId, ConstructError> {
+	) -> Result<FieldId, AssignError> {
 		let mut field = Field::new("_", typeid);
 		field.type_ = FieldType::Reserved;
 		match id {
@@ -109,9 +112,9 @@ impl Fields {
 			None => self.add_field(field),
 		}
 	}
-	pub fn as_tree(&mut self, children: FieldId) -> Result<(), ConstructError> {
+	pub fn as_tree(&mut self, children: FieldId) -> Result<(), AssignError> {
 		if !self.fields.has_index(children.0 as u32) {
-			return Err(ConstructError::UnassignedId);
+			return Err(AssignError::UnassignedId);
 		}
 		self.tree_children = Some(children);
 		Ok(())
@@ -131,12 +134,12 @@ impl Fields {
 	pub fn as_slice(&self) -> &[Field] {
 		&self.fields.items
 	}
-	pub fn finalize(&mut self) -> Result<(), ConstructError> {
+	pub fn finalize(&mut self) -> Result<(), UnassignedSpace> {
 		let max_id =
 			self.fields.items.iter().map(|field| field.id.0 as i32).max().unwrap_or(-1);
 		match self.fields.items.len() as i32 == max_id + 1 {
 			true => Ok(()),
-			false => Err(ConstructError::UnassignedSpace),
+			false => Err(UnassignedSpace),
 		}
 	}
 }

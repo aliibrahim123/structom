@@ -5,10 +5,10 @@ use lean_string::LeanStr;
 use thin_vec::ThinVec;
 
 use crate::decl::{
-	ConstructError, DeclNs,
+	AssignError, DeclNs,
 	id::ItemStore,
 	item::{Item, ItemKind},
-	items::{ItemId, TypeId},
+	items::{ItemId, TypeId, TypeIdError},
 	rich::Metadata,
 };
 
@@ -34,11 +34,14 @@ impl DeclFile {
 	}
 	pub fn item_typeid(
 		&self, id: ItemId, params: impl IntoIterator<Item = TypeId>,
-	) -> Result<TypeId, ConstructError> {
-		let item = self.item_by_id(id).ok_or(ConstructError::UnassignedId)?;
+	) -> Result<TypeId, TypeIdError> {
+		let item = self.item_by_id(id).ok_or(TypeIdError::UnknownItem)?;
+		if matches!(item.kind(), ItemKind::Reserved) {
+			return Err(TypeIdError::Reserved);
+		}
 		let params = ThinVec::from_iter(params);
 		if params.len() != item.generic_params().len() {
-			return Err(ConstructError::MismatchParams);
+			return Err(TypeIdError::MismatchParams);
 		}
 		let mut typeid = TypeId::new_unchecked(self.ns, id);
 		typeid.params = params;
@@ -74,15 +77,13 @@ impl DeclFileBuilder {
 		});
 		paths.collect()
 	}
-	pub fn add_item(&mut self, item: Item) -> Result<ItemId, ConstructError> {
+	pub fn add_item(&mut self, item: Item) -> Result<ItemId, AssignError> {
 		self.0.items.add(item.name.clone(), item).map(|(item, id)| {
 			item.id = ItemId(id as u16);
 			item.id
 		})
 	}
-	pub fn add_item_at(
-		&mut self, item: Item, id: usize,
-	) -> Result<ItemId, ConstructError> {
+	pub fn add_item_at(&mut self, item: Item, id: usize) -> Result<ItemId, AssignError> {
 		self.0.items.add_at(item.name.clone(), item, id as usize).map(|(item, id)| {
 			item.id = ItemId(id as u16);
 			item.id
@@ -91,7 +92,7 @@ impl DeclFileBuilder {
 	pub fn reserve<'params>(
 		&mut self, name: Option<&str>, id: Option<usize>,
 		generic_params: impl IntoIterator<Item = &'params str>,
-	) -> Result<ItemId, ConstructError> {
+	) -> Result<ItemId, AssignError> {
 		let mut item =
 			Item::new_lean(LeanStr::from(name.unwrap_or("_")), ItemKind::Reserved);
 		for param in generic_params {
@@ -104,13 +105,13 @@ impl DeclFileBuilder {
 	}
 	pub fn define_reserved(
 		&mut self, id: ItemId, mut item: Item,
-	) -> Result<(), ConstructError> {
+	) -> Result<(), AssignError> {
 		let Some(index) = self.0.items.get_index(id.0 as u32) else {
-			return Err(ConstructError::UnassignedId);
+			return Err(AssignError::UnassignedId);
 		};
 		let slot = self.0.items.items.get_mut(index as usize).unwrap();
-		if matches!(slot.kind, ItemKind::Reserved) {
-			return Err(ConstructError::UsedId);
+		if !matches!(slot.kind, ItemKind::Reserved) {
+			return Err(AssignError::UsedId);
 		}
 		item.id = id;
 		mem::swap(&mut item.name, &mut slot.name);
@@ -120,11 +121,11 @@ impl DeclFileBuilder {
 	pub fn metadata_mut(&mut self) -> &mut Metadata {
 		&mut self.0.metadata
 	}
-	pub fn finalize(self) -> Result<DeclFileBox, ConstructError> {
+	pub fn finalize(self) -> Result<DeclFileBox, AssignError> {
 		if self.0.items.items.iter().any(|item| {
 			return matches!(item.kind, ItemKind::Reserved) && item.name != "_";
 		}) {
-			return Err(ConstructError::UnassignedId);
+			return Err(AssignError::UnassignedId);
 		}
 		Ok(DeclFileBox(Arc::new(self.0)))
 	}

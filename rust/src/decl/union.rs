@@ -1,7 +1,7 @@
 use lean_string::LeanStr;
 
 use crate::decl::{
-	ConstructError,
+	AssignError,
 	id::ItemStore,
 	items::{Body, VariantTag},
 	rich::{Metadata, RichNotation},
@@ -87,11 +87,9 @@ impl Union {
 	pub fn new(tag_type: TagType) -> Self {
 		Self { tag_type, variants: ItemStore::new() }
 	}
-	pub fn add_variant(
-		&mut self, variant: Variant,
-	) -> Result<VariantTag, ConstructError> {
-		if self.variants.id_counter >= self.tag_type.max() {
-			return Err(ConstructError::FullCapacity);
+	pub fn add_variant(&mut self, variant: Variant) -> Result<VariantTag, AssignError> {
+		if self.variants.id_counter > self.tag_type.max() {
+			return Err(AssignError::FullCapacity);
 		}
 		self.variants.add(variant.name.clone(), variant).map(|(var, id)| {
 			var.tag = VariantTag(id);
@@ -100,9 +98,9 @@ impl Union {
 	}
 	pub fn add_variant_at(
 		&mut self, variant: Variant, tag: usize,
-	) -> Result<VariantTag, ConstructError> {
+	) -> Result<VariantTag, AssignError> {
 		if tag as u32 > self.tag_type.max() {
-			return Err(ConstructError::FullCapacity);
+			return Err(AssignError::FullCapacity);
 		}
 		self.variants.add_at(variant.name.clone(), variant, tag).map(|(var, id)| {
 			var.tag = VariantTag(id);
@@ -111,7 +109,7 @@ impl Union {
 	}
 	pub fn reserve_variant(
 		&mut self, id: Option<usize>, body: Option<Body>,
-	) -> Result<VariantTag, ConstructError> {
+	) -> Result<VariantTag, AssignError> {
 		let variant = Variant::new("_", body);
 		match id {
 			Some(id) => self.add_variant_at(variant, id),

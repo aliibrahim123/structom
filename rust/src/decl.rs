@@ -23,16 +23,11 @@ pub mod items {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum ConstructError {
+pub enum AssignError {
 	UsedId,
-	AddedBefore,
+	UnassignedId,
 	FullCapacity,
 	IdOutOfRange,
-	UnassignedSpace,
-	UnassignedId,
 	DuplicateName,
 	InvalidName,
-	DuplicateNotation,
-	MismatchParams,
-	NonContiguous,
 }
