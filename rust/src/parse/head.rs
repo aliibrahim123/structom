@@ -6,8 +6,8 @@ use lean_string::LeanStr;
 
 use crate::{
 	decl::{
-		DeclFileBox, DeclNs, DeclProv,
-		items::ItemId,
+		DeclFile, DeclFileBox, DeclNs, DeclProv,
+		items::{ItemId, TypeId},
 		provider::{ImportError, ImportResult},
 		rich::Metadata,
 	},
@@ -154,11 +154,15 @@ pub fn parse_profile<'src>(
 
 pub struct Scope<'src, 'prov> {
 	pub prov: &'prov dyn DeclProv,
+
 	pub local_file: Option<DeclFileBox>,
+
 	pub namespaces: HashMap<&'src str, DeclFileBox>,
 	pub unnamespaced: Vec<DeclFileBox>,
-	pub top: HashMap<LeanStr, (DeclNs, ItemId)>,
+	pub top: HashMap<LeanStr, (DeclNs, ItemId, u16)>,
+
 	pub unsuported_rich: HashSet<&'src str>,
+	pub profile: Profile,
 }
 impl<'prov> Scope<'_, 'prov> {
 	pub fn new(local_file: Option<DeclFileBox>, prov: &'prov dyn DeclProv) -> Self {
@@ -169,12 +173,34 @@ impl<'prov> Scope<'_, 'prov> {
 			namespaces: HashMap::default(),
 			top: HashMap::default(),
 			unsuported_rich: HashSet::new(),
+			profile: Profile::new(),
+		}
+	}
+	pub fn resolve_top(&mut self, name: &str) -> Option<(TypeId, u16)> {
+		if let Some(&(ns, item, params)) = self.top.get(name) {
+			return Some((TypeId::new_unchecked(ns, item), params));
+		}
+		self.unnamespaced.iter().find_map(|file| {
+			file.item_by_name(name).and_then(|item| {
+				let params = item.generic_params().len() as u16;
+				self.top.insert(name.into(), (file.ns, item.id, params));
+				Some((TypeId::new_unchecked(file.ns, item.id), params))
+			})
+		})
+	}
+	pub fn resolve_file(&self, ns: DeclNs) -> Option<&DeclFile> {
+		if let Some(file) = &self.local_file
+			&& file.ns == ns
+		{
+			Some(file)
+		} else {
+			self.prov.get_file(ns)
 		}
 	}
 }
 
 fn parse_head<'src>(
-	cur: &mut Cursor<'src, '_>, unsupported_rich: &mut HashSet<&'src str>,
+	cur: &mut Cursor<'src, '_>, scope: &mut Scope<'src, '_>,
 ) -> Result<(Metadata, Vec<Import<'src>>), ()> {
 	let mut imports = Vec::new();
 	let mut metadata = Metadata::new();
@@ -187,20 +213,20 @@ fn parse_head<'src>(
 			}
 			Directive::Profile => {
 				if cur.eat_delim(paren_open, paren_close, |cur| {
-					let cur = &mut cur.enter_str()?;
-					let (request, unsuported) =
-						parse_profile(cur, Some(unsupported_rich), true);
+					let (request, unsuported) = parse_profile(
+						&mut cur.enter_str()?,
+						Some(&mut scope.unsuported_rich),
+						true,
+					);
 					let supported = Profile::supported().with_bin(None);
+					scope.profile |= request;
 					Some(unsuported | !supported.supports(request))
 				}) == Some(true)
 				{
 					return Err(());
 				}
 			}
-			_ => {
-				cur.error(directive.invalid_place().to_string(), span);
-				cur.skip_block(Block::Paren);
-			}
+			_ => directive.invalid_place(cur, span),
 		}
 	}
 	Ok((metadata, imports))
@@ -241,7 +267,13 @@ fn add_specified_imports<'src>(
 			);
 			return;
 		};
-		entry.insert_entry((file.ns(), def.id));
+		if scope.namespaces.contains_key(item.val) {
+			cur.error(
+				format!("imported item \"{item}\" conflict with a namespace"),
+				item.span,
+			)
+		}
+		entry.insert_entry((file.ns(), def.id, def.generic_params().len() as u16));
 	}
 }
 fn add_import<'src>(
@@ -259,6 +291,12 @@ fn add_import<'src>(
 			);
 			return;
 		};
+		if scope.top.contains_key(ns.val) {
+			cur.error(
+				format!("namescape \"{ns}\" conflict with an imported item"),
+				ns.span,
+			);
+		}
 		entry.insert_entry(file);
 	} else if let Some(items) = items {
 		add_specified_imports(items, file, scope, cur);
@@ -270,7 +308,7 @@ fn add_import<'src>(
 pub fn resolve_head<'src, 'prov>(
 	cur: &mut Cursor<'src, '_>, scope: &mut Scope<'src, 'prov>,
 ) -> Result<Metadata, ()> {
-	let (metadata, imports) = parse_head(cur, &mut scope.unsuported_rich)?;
+	let (metadata, imports) = parse_head(cur, scope)?;
 	for import in imports {
 		match scope.prov.import_file(&import.path.val, import.meta.as_ref()) {
 			ImportResult::Ok(file) => add_import(Ok(file), &import, scope, cur),
@@ -287,7 +325,7 @@ pub fn resolve_head<'src, 'prov>(
 pub async fn resolve_head_async<'src, 'prov>(
 	cur: &mut Cursor<'src, '_>, scope: &mut Scope<'src, 'prov>,
 ) -> Result<Metadata, ()> {
-	let (metadata, imports) = parse_head(cur, &mut scope.unsuported_rich)?;
+	let (metadata, imports) = parse_head(cur, scope)?;
 	for import in imports {
 		match scope.prov.import_file(&import.path.val, import.meta.as_ref()) {
 			ImportResult::Ok(file) => add_import(Ok(file), &import, scope, cur),

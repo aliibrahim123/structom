@@ -73,6 +73,9 @@ impl<'src> gramex::cursor::Cursor<'src> for Cursor<'src, '_> {
 	}
 }
 impl<'src> Cursor<'src, '_> {
+	pub fn prev(&self) -> Token {
+		self.tokens.0[self.off - 1]
+	}
 	pub fn ident(&mut self) -> Option<Ident<'src>> {
 		let span = self.eat(ident).ok()?.span;
 		Some(Ident { val: self.src.source_of(span), span })
@@ -113,6 +116,9 @@ impl<'src> Cursor<'src, '_> {
 		let range = Some(Span::new(span.start() + 1, span.end() - 1));
 		Some(StrCursor::new(self.src, range, self.errors))
 	}
+	pub fn eat_int<T>(&mut self) -> Option<T> {
+		todo!()
+	}
 	pub fn comma_unless_end(&mut self) {
 		if !self.try_symbol(comma) && !self.peek().unwrap().is_block_closer() {
 			self.expected(comma.expected());
@@ -152,11 +158,11 @@ impl<'src> Cursor<'src, '_> {
 	pub fn eat_delim_list<T, V: VecLike<T> + Default>(
 		&mut self, open: impl Matcher<Tokens<'src>>, close: impl Matcher<Tokens<'src>>,
 		item: impl FnMut(&mut Self) -> Option<T>,
-	) -> Option<V> {
+	) -> V {
 		if !self.test(&open) {
 			self.expected(open.expected());
 		}
-		self.try_delim_list(open, close, item)
+		self.try_delim_list(open, close, item).unwrap_or_default()
 	}
 	pub fn try_delim_list<T, V: VecLike<T> + Default>(
 		&mut self, open: impl Matcher<Tokens<'src>>, close: impl Matcher<Tokens<'src>>,

@@ -185,15 +185,11 @@ The root value is the first object in the first segment. Parent objects always c
 
 There are at most `4.2 billion (2 ^ 32 - 1)` segments spanning at most `16GB (2 ^ 34)` bytes each, giving a theoretical maximum of `64EB (2 ^ 66 - 2 ^ 34)` file size.
 
-# Declarations
+# Declarations Basics
 
 Declarations are object notation constructs that act as schemas and define the shape of data structures.
 
 They are written above the root value in object files, or in dedicated files called declaration files.
-
-Local declarations can refer to each other in any order, not only to items above them.
-
-Local declarations can shadow imported items and builtins, but can not shadow namespaces.
 
 #### Example
 
@@ -387,9 +383,7 @@ let root_directive = '#' '!' name:ident meta_params?;
 let metadata = '@' name:ident meta_params?;
 let root_metadata = '@' '!' name:ident meta_params?;
 
-let meta_params = '(' params:list<metavalue> ')';
-let metavalue = type_spec | value | '[' list<metavalue>? ']' | metamap;
-let metamap = '{' list<metavalue ':' metavalue>? '}'
+let meta_params = '(' params:list<value> ')';
 ;
 ```
 
@@ -401,9 +395,7 @@ It is useful for external tooling and is ignored by the parser.
 
 Directives and Metadata are declared before items, values, types, fields, variants, and [generic parameters](#generics), using a `#` or `@` followed by the name respectively.
 
-They can optionally take metavalue parameters enclosed in parentheses.
-
-Metavalues are builtin types values, [type specifiers](#type-specifier), and [lists](#list) and [maps](#map) of them.
+They can optionally take builtin types value as parameters enclosed in parentheses.
 
 Directives and metadata that applies to the whole file are declared before any items, using a `!` before the name.
 
@@ -671,6 +663,10 @@ A single file can contain at most `65536 (2^16)` items.
 
 Items named `_` are skipped, but their ids are still counted.
 
+Items can refer to each other in any order, not only to items above them.
+
+Items can shadow nonspecified imported items and non fundimantal builtins not specified in the profile.
+
 Items can define their default values through the `default` directive.
 
 ### Inner definitions
@@ -684,9 +680,9 @@ let inner_def = ('#' id:nb)? (
 
 Items can be declared inline within the fields of other items, becoming the types of those fields.
 
-They can be anonymous (no name given), and they inherit the [`fixed`](#fixed-struct) directive and the [generics](#generics) of their parent item.
+They are anonymous taking optional name used as kind of metadata, and they inherit the [`fixed`](#fixed-struct) directive and the [generics](#generics) of their parent item.
 
-They receive the ids directly after their parent's id, in declaration order, and this carries over to nested definitions.
+They receive their ids like top level items except counting down from `65535 (2^16 -1)`.
 
 Inner definitions can also be used inside generic parameters.
 
@@ -1251,12 +1247,14 @@ Keys are compared for equality based on their types:
 
 ```gramex
 let map_type = "map" '<' key:type_spec ',' value:type_spec '>';
-let map_value = '{' list<key:value ':' value>? '}';
+let map_value = '{' list<(key = ident | value) ':' value>? '}';
 ```
 
 The `map` [type specifier](#type-specifier) takes 2 generic arguments: the `key` and the `value` type specifiers.
 
 Its value is a list of `:`-separated key-value pairs enclosed in a curly block.
+
+identifier keys are transformed into `str` keys.
 
 If no type is specified or inferred, the default is `map<any, any>`.
 

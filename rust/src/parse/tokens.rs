@@ -59,6 +59,9 @@ impl Span {
 	pub fn is_point(&self) -> bool {
 		self.start + 1 == self.end
 	}
+	pub(crate) fn join(&self, other: Span) -> Span {
+		Self::new(self.start().min(other.start()), self.end().max(other.end()))
+	}
 	pub fn point(pos: usize) -> Self {
 		Self::new(pos, pos + 1)
 	}

@@ -26,6 +26,6 @@ impl<T> VecLike<T> for ThinVec<T> {
 		self.push(val)
 	}
 }
-impl VecLike<()> for () {
-	fn push(&mut self, _val: ()) {}
+impl<T> VecLike<T> for () {
+	fn push(&mut self, _val: T) {}
 }

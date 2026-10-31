@@ -17,6 +17,7 @@ use crate::{
 pub struct GenericParam {
 	name: LeanStr,
 	id: ItemId,
+	metadata: Metadata,
 }
 impl GenericParam {
 	pub fn name(&self) -> &str {
@@ -27,6 +28,12 @@ impl GenericParam {
 	}
 	pub fn as_typeid(&self) -> TypeId {
 		TypeId::new_unchecked(DeclNs::GENERIC_PARAMS, self.id)
+	}
+	pub fn metadata(&self) -> &Metadata {
+		&self.metadata
+	}
+	pub fn metadata_mut(&mut self) -> &mut Metadata {
+		&mut self.metadata
 	}
 }
 
@@ -44,7 +51,11 @@ impl GenericParams {
 			return Err(AssignError::DuplicateName);
 		}
 		let id = ItemId(self.0.len() as u16);
-		self.0.push(GenericParam { name: LeanStr::from(name), id });
+		self.0.push(GenericParam {
+			name: LeanStr::from(name),
+			id,
+			metadata: Metadata::new(),
+		});
 		Ok(id)
 	}
 	pub fn get_by_id(&self, id: ItemId) -> Option<&GenericParam> {

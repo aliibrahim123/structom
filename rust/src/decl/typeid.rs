@@ -2,14 +2,17 @@ use core::hash::{Hash, Hasher};
 
 use thin_vec::ThinVec;
 
-use crate::decl::{DeclNs, items::ItemId, rich::Metadata};
+use crate::{
+	decl::{DeclNs, items::ItemId, rich::Metadata},
+	profile::Profile,
+};
 
 #[derive(Debug, Clone)]
 pub struct TypeId {
-	ns: DeclNs,
-	item: ItemId,
+	pub(crate) ns: DeclNs,
+	pub(crate) item: ItemId,
 	pub(crate) params: ThinVec<TypeId>,
-	metadata: Metadata,
+	pub(crate) metadata: Metadata,
 }
 macro_rules! declare_builtin_typeids {
 	[$($name:ident),*] => {
@@ -38,6 +41,9 @@ impl TypeId {
 	}
 	pub fn map(key: TypeId, value: TypeId) -> Self {
 		Self::with_params_unchecked(DeclNs::BUILT_INS, ItemId::MAP, [key, value])
+	}
+	pub fn far(item: TypeId) -> Self {
+		Self::with_params_unchecked(DeclNs::BUILT_INS, ItemId::FAR, [item])
 	}
 	pub fn ns(&self) -> DeclNs {
 		self.ns
@@ -135,4 +141,35 @@ pub(crate) mod raw {
 	pub const DEC: u16 = 0x83;
 	pub const UUID: u16 = 0x84;
 	pub const COLOR: u16 = 0x85;
+}
+
+pub(crate) fn builtin_by_name(name: &str, profile: Profile) -> Option<TypeId> {
+	match name {
+		"none" => Some(TypeId::NONE),
+		"any" => Some(TypeId::ANY),
+		"bool" => Some(TypeId::BOOL),
+		"far" => Some(TypeId::FAR),
+		"u8" => Some(TypeId::U8),
+		"u16" => Some(TypeId::U16),
+		"u32" => Some(TypeId::U32),
+		"u64" => Some(TypeId::U64),
+		"i8" => Some(TypeId::I8),
+		"i16" => Some(TypeId::I16),
+		"i32" => Some(TypeId::I32),
+		"i64" => Some(TypeId::I64),
+		"f32" => Some(TypeId::F32),
+		"f64" => Some(TypeId::F64),
+		"f16" => Some(TypeId::F16),
+		"arr" => Some(TypeId::ARR),
+		"list" => Some(TypeId::LIST),
+		"map" => Some(TypeId::MAP),
+		"str" => Some(TypeId::STR),
+		"inst" if profile.rich().is_some_and(|r| r.inst()) => Some(TypeId::INST),
+		"dur" if profile.rich().is_some_and(|r| r.dur()) => Some(TypeId::DUR),
+		"bint" if profile.rich().is_some_and(|r| r.bint()) => Some(TypeId::BINT),
+		"dec" if profile.rich().is_some_and(|r| r.dec()) => Some(TypeId::DEC),
+		"uuid" if profile.rich().is_some_and(|r| r.uuid()) => Some(TypeId::UUID),
+		"color" if profile.rich().is_some_and(|r| r.color()) => Some(TypeId::COLOR),
+		_ => None,
+	}
 }

@@ -14,7 +14,7 @@ use crate::decl::{
 
 #[derive(Debug)]
 pub struct DeclFile {
-	ns: DeclNs,
+	pub(crate) ns: DeclNs,
 	pub(crate) path: LeanStr,
 	items: ItemStore<Item, { u16::MAX as u32 }, false>,
 	metadata: Metadata,
