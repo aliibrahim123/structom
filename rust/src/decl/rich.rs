@@ -185,6 +185,7 @@ pub struct BitFieldField {
 	id: FieldId,
 	type_: BitFieldType,
 }
+#[cfg(feature = "rich-bitfield")]
 impl BitFieldField {
 	fn new(name: LeanStr, id: FieldId, type_: BitFieldType) -> Self {
 		Self { name, id, type_ }

@@ -51,14 +51,13 @@ fn parse_import<'src>(cur: &mut Cursor<'src, '_>) -> Option<Import<'src>> {
 	})
 }
 
-enum UnknownFeat<'set, '_ref> {
+enum UnknownFeat<'_ref> {
 	Ignore,
 	Error,
-	Collect(&'_ref mut HashSet<&'set str>),
+	Collect(&'_ref mut HashSet<LeanStr>),
 }
 pub fn unkown_feat<'src>(
-	unkown: &mut UnknownFeat<'src, '_>, feat: &Ident<'src>, group_ident: &Ident<'_>,
-	cur: &mut StrCursor<'src, '_>,
+	unkown: &mut UnknownFeat, feat: &Ident, group_ident: &Ident, cur: &mut StrCursor,
 ) -> bool {
 	match unkown {
 		UnknownFeat::Ignore => false,
@@ -70,7 +69,7 @@ pub fn unkown_feat<'src>(
 			true
 		}
 		UnknownFeat::Collect(set) => {
-			set.insert(feat.val);
+			set.insert(feat.val.into());
 			false
 		}
 	}
@@ -79,8 +78,8 @@ pub fn parse_group<
 	'src,
 	G: Default + BitOrAssign + BitAnd<Output = G> + PartialEq + Copy,
 >(
-	cur: &mut StrCursor<'src, '_>, group_ident: &Ident<'_>, group: &mut Option<G>,
-	features: &[(&str, G)], unknown: &mut UnknownFeat<'src, '_>,
+	cur: &mut StrCursor, group_ident: &Ident, group: &mut Option<G>,
+	features: &[(&str, G)], unknown: &mut UnknownFeat,
 ) -> bool {
 	if group.is_some() {
 		cur.error(format!("duplicate profile group \"{group_ident}\""), group_ident.span);
@@ -126,8 +125,8 @@ const RICH_FEATS: &[(&str, Rich)] = &[
 	("unitfield", Rich::UNITFIELD),
 ];
 
-pub fn parse_profile<'src>(
-	cur: &mut StrCursor<'src, '_>, unsupported_rich: Option<&mut HashSet<&'src str>>,
+pub fn parse_profile(
+	cur: &mut StrCursor, unsupported_rich: Option<&mut HashSet<LeanStr>>,
 	emit_unsupported: bool,
 ) -> (Profile, bool) {
 	let (mut obj, mut bin, mut decl, mut rich) = (None, None, None, None);
@@ -172,7 +171,9 @@ pub struct Scope<'src, 'prov> {
 	pub unnamespaced: Vec<DeclFileBox>,
 	pub top: HashMap<LeanStr, (DeclNs, ItemId, u16)>,
 
-	pub unsuported_rich: HashSet<&'src str>,
+	pub generics: HashMap<&'src str, ItemId>,
+
+	pub unsuported_rich: HashSet<LeanStr>,
 	pub profile: Profile,
 }
 impl<'prov> Scope<'_, 'prov> {
@@ -183,6 +184,7 @@ impl<'prov> Scope<'_, 'prov> {
 			unnamespaced: Vec::new(),
 			namespaces: HashMap::default(),
 			top: HashMap::default(),
+			generics: HashMap::default(),
 			unsuported_rich: HashSet::new(),
 			profile: Profile::new(),
 		}
@@ -224,8 +226,9 @@ fn parse_head<'src>(
 			}
 			Directive::Profile => {
 				if cur.eat_delim(paren_open, paren_close, |cur| {
+					let str = cur.str()?;
 					let (request, unsuported) = parse_profile(
-						&mut cur.enter_str()?,
+						&mut cur.enter_str(&str),
 						Some(&mut scope.unsuported_rich),
 						true,
 					);

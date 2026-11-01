@@ -26,13 +26,26 @@ impl Display for Ident<'_> {
 	}
 }
 
+#[derive(Debug, Clone, Copy)]
+enum ErrorSpan {
+	Normal { end_span: Span },
+	Whole(Span),
+}
+impl ErrorSpan {
+	fn map(self, span: Span) -> Span {
+		match self {
+			ErrorSpan::Normal { .. } => span,
+			ErrorSpan::Whole(span) => span,
+		}
+	}
+}
 #[derive(Debug)]
 pub struct Cursor<'src, 'err> {
 	pub slice: &'src str,
 	pub off: usize,
 	pub src: &'src Source<'src>,
 	pub errors: &'err mut Vec<ParseError>,
-	pub end_span: Span,
+	error_span: ErrorSpan,
 }
 impl<'src> gramex::cursor::Cursor<'src> for Cursor<'src, '_> {
 	type MatchAble = str;
@@ -48,10 +61,14 @@ impl<'src> gramex::cursor::Cursor<'src> for Cursor<'src, '_> {
 		&mut self.off
 	}
 	fn map_error(&mut self, err: gramex::result::MatchError) -> Self::Error {
-		let err = ParseError::from_match_error(&err, self.src, self.end_span, |buf| {
+		let end_span = match self.error_span {
+			ErrorSpan::Normal { end_span: end } => end,
+			ErrorSpan::Whole(span) => span,
+		};
+		let err = ParseError::from_match_error(&err, self.src, end_span, |buf| {
 			let char = self.slice.char_at(err.off).unwrap();
 			_ = write!(buf, "`{char}`");
-			Span::new(err.off, err.off + char.len_utf8())
+			self.error_span.map(Span::new(err.off, err.off + char.len_utf8()))
 		});
 		self.errors.push(err);
 	}
@@ -66,7 +83,14 @@ impl<'src> Cursor<'src, '_> {
 			}
 			None => (src.str, 0, Span::EMPTY),
 		};
-		Cursor { slice, src, off, errors, end_span }
+		Cursor { slice, src, off, errors, error_span: ErrorSpan::Normal { end_span } }
+	}
+	pub fn new_resolved<'err>(
+		src: &'src Source<'src>, resolved: &'src str, span: Span,
+		errors: &'err mut Vec<ParseError>,
+	) -> Cursor<'src, 'err> {
+		let error_span = ErrorSpan::Whole(span);
+		Cursor { slice: resolved, off: 0, src, errors, error_span }
 	}
 	pub fn try_char(&mut self, char: char) -> bool {
 		self.try_eat(char).is_some()
@@ -106,6 +130,7 @@ impl<'src> Cursor<'src, '_> {
 		_ = <Self as gramex::cursor::Cursor>::expected::<()>(self, expected);
 	}
 	pub fn error(&mut self, msg: String, span: Span) {
+		let span = self.error_span.map(span);
 		self.errors.push(ParseError::new(msg, span, self.src));
 	}
 }

@@ -1,4 +1,4 @@
-use core::fmt::Display;
+use core::{fmt::Display, str::FromStr};
 
 use alloc_crate::{borrow::Cow, fmt::Write, format, string::String, vec::Vec};
 use gramex::{Matcher, result::Expected, str::hex};
@@ -9,12 +9,12 @@ use crate::{
 		str_cursor::{Cursor as StrCursor, Ident},
 		tokenize::parse_digits,
 		tokens::{
-			Block, Source, StrKind, Token, TokenKind, Tokens, angle_close, angle_open,
-			brace_close, brace_open, bracket_close, bracket_open, comma, ident,
-			paren_close, paren_open,
+			Block, IntBase, Source, StrKind, Token, TokenKind, Tokens, angle_close,
+			angle_open, brace_close, brace_open, bracket_close, bracket_open, comma,
+			ident, paren_close, paren_open,
 		},
 	},
-	utils::VecLike,
+	utils::{FromStrRadix, VecLike},
 };
 pub use gramex::cursor::Cursor as _;
 
@@ -61,9 +61,11 @@ impl<'src> gramex::cursor::Cursor<'src> for Cursor<'src, '_> {
 			let token = self.tokens.0[err.off];
 			let found = self.src.source_of(token.span);
 			_ = match token.kind {
-				TokenKind::StrTk { kind } if found.len() > 32 => {
-					let end = if kind == StrKind::Multiline { "\"\"\"" } else { "\"" };
-					write!(buf, "`{}...{end}`", &found[0..32],)
+				TokenKind::StrTk { .. } if found.len() > 32 => {
+					write!(buf, "a string")
+				}
+				TokenKind::Bytes { .. } if found.len() > 32 => {
+					write!(buf, "a byte string")
 				}
 				_ => write!(buf, "`{found}`"),
 			};
@@ -91,33 +93,44 @@ impl<'src> Cursor<'src, '_> {
 		self.try_eat(matcher).is_some()
 	}
 	pub fn str(&mut self) -> Option<Str<'src>> {
-		let Some(Token { kind: TokenKind::StrTk { kind: StrKind::Normal }, span }) =
-			self.peek().copied()
+		let Some(&Token { kind: TokenKind::StrTk { kind, unterminated }, span }) =
+			self.peek()
 		else {
 			self.expected("a string");
 			return None;
 		};
-		let mut buf = None;
-		let range = Some(Span::new(span.start() + 1, span.end() - 1));
-		let mut cur = StrCursor::new(self.src, range, self.errors);
-		resolve_escapes(&mut cur, &mut buf);
-		match buf {
-			Some(buf) => Some(Str { val: Cow::Owned(buf), span }),
-			None => Some(Str { val: Cow::Borrowed(self.src.source_of(span)), span }),
+		self.skip();
+		match kind {
+			StrKind::Normal => Some(resolve_str_normal(self, span, unterminated)),
+			StrKind::Multiline => Some(resolve_str_multiline(self, span, unterminated)),
 		}
 	}
-	pub fn enter_str(&mut self) -> Option<StrCursor<'src, '_>> {
-		let Some(Token { kind: TokenKind::StrTk { kind: StrKind::Normal }, span }) =
-			self.peek().copied()
+	pub fn enter_str<'cur>(&'cur mut self, str: &'cur Str) -> StrCursor<'cur, 'cur> {
+		let Self { src, errors, .. } = self;
+		match &str.val {
+			Cow::Borrowed(_) => StrCursor::new(src, Some(str.span), errors),
+			Cow::Owned(val) => StrCursor::new_resolved(src, val, str.span, errors),
+		}
+	}
+	pub fn eat_int<T: FromStrRadix>(&mut self, kind: &str) -> Option<T> {
+		let Some(&Token { kind: TokenKind::Int { base, has_dash, .. }, span }) =
+			self.peek()
 		else {
-			self.expected("a string");
+			self.expected("an integer");
 			return None;
 		};
-		let range = Some(Span::new(span.start() + 1, span.end() - 1));
-		Some(StrCursor::new(self.src, range, self.errors))
-	}
-	pub fn eat_int<T>(&mut self) -> Option<T> {
-		todo!()
+		let radix = match base {
+			IntBase::Dec => 10,
+			IntBase::Hex => 16,
+			IntBase::Bin => 2,
+		};
+		let raw = &self.src.source_of(span)[if base != IntBase::Dec { 2 } else { 0 }..];
+		let digits = if has_dash { &raw.replace('_', "") } else { raw };
+		let Ok(val) = T::from_str_radix(digits, radix) else {
+			self.error(format!("number `{raw}` is out of range for {kind}"), span);
+			return None;
+		};
+		Some(val)
 	}
 	pub fn comma_unless_end(&mut self) {
 		if !self.try_symbol(comma) && !self.peek().unwrap().is_block_closer() {
@@ -234,7 +247,7 @@ impl Block {
 fn parse_unicode_escape(cur: &mut StrCursor, start: usize) -> Result<char, ()> {
 	cur.eat('{')?;
 	let (dg_count, has_dash) = parse_digits(cur, hex);
-	cur.eat('}');
+	_ = cur.eat('}');
 	let span = Span::new(start, cur.off);
 	if dg_count > 6 {
 		cur.error("unicode escape can only have 1..6 hex digits".into(), span);
@@ -248,6 +261,41 @@ fn parse_unicode_escape(cur: &mut StrCursor, start: usize) -> Result<char, ()> {
 		return Err(());
 	};
 	Ok(code)
+}
+
+fn resolve_str_normal<'src>(
+	cur: &mut Cursor<'src, '_>, span: Span, unterminated: bool,
+) -> Str<'src> {
+	let mut buf = None;
+	let range =
+		Some(Span::new(span.start() + 1, span.end() - if unterminated { 0 } else { 1 }));
+	let mut cur = StrCursor::new(cur.src, range, cur.errors);
+	resolve_escapes(&mut cur, &mut buf);
+	match buf {
+		Some(buf) => Str { val: Cow::Owned(buf), span },
+		None => Str { val: Cow::Borrowed(cur.src.source_of(span)), span },
+	}
+}
+
+fn resolve_str_multiline<'src>(
+	cur: &mut Cursor<'src, '_>, span: Span, unterminated: bool,
+) -> Str<'src> {
+	let raw = cur.src.source_of(span);
+	let body = &raw[3..raw.len() - if unterminated { 0 } else { 3 }]
+		.trim_start_matches([' ', '\t']);
+	let trimmed = body.trim_end_matches([' ', '\t']);
+	let indent = &body[trimmed.len()..];
+
+	let mut buf = None;
+	for line in trimmed.split('\n') {
+		let line = line.strip_prefix(indent).unwrap_or(line);
+		let range = cur.src.str.substr_range(line).unwrap();
+		let range = Some(Span::new(range.start, range.end));
+		let mut cur = StrCursor::new(cur.src, range, cur.errors);
+		resolve_escapes(&mut cur, &mut buf);
+	}
+
+	Str { val: Cow::Owned(buf.unwrap()), span }
 }
 
 fn resolve_escapes(cur: &mut StrCursor, buf: &mut Option<String>) {

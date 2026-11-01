@@ -96,14 +96,28 @@ pub enum FloatKind {
 pub enum StrKind {
 	Normal,
 	Multiline,
-	Bytes,
+}
+impl StrKind {
+	pub fn quotes(self) -> &'static str {
+		match self {
+			Self::Normal => "\"",
+			Self::Multiline => "\"\"\"",
+		}
+	}
+	pub fn quote_count(self) -> usize {
+		match self {
+			Self::Normal => 1,
+			Self::Multiline => 3,
+		}
+	}
 }
 
 #[derive_enum_matcher(for Tokens<'slice>, field = .kind, expected = tk_kind_to_expected)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TokenKind {
 	Ident,
-	StrTk { kind: StrKind },
+	StrTk { kind: StrKind, unterminated: bool },
+	Bytes { unterminated: bool },
 	Int { sign: Sign, base: IntBase, has_dash: bool },
 	Float { kind: FloatKind, has_dash: bool },
 

@@ -137,53 +137,44 @@ macro_rules! head_type {
 	() => { &mut impl FnMut(&mut Cursor) -> Result<TypeId, Metadata> };
 }
 
-fn parse_arr_typeid(
-	cur: &mut Cursor, scope: &mut Scope, metadata: Metadata, head: head_type!(),
-) -> TypeId {
+fn parse_arr_typespec(cur: &mut Cursor, scope: &mut Scope, head: head_type!()) -> TypeId {
 	let typeid = cur.eat_delim(angle_open, angle_close, |cur| {
 		let item = parse_typespec(cur, scope, false, head).ok()?;
 		cur.eat(comma).ok()?;
-		let nb = cur.eat_int()?;
+		let nb = cur.eat_int("`arr` length")?;
 		Some(TypeId::arr(item, nb))
 	});
-	TypeId { metadata, ..typeid.unwrap_or(TypeId::ANY) }
-}
-fn skip_generics_and_end(
-	cur: &mut Cursor, scope: &mut Scope, head: head_type!(), metadata: Metadata,
-) -> TypeId {
-	cur.try_delim_list::<_, ()>(angle_open, angle_close, |cur| {
-		parse_typespec(cur, scope, false, head).ok()
-	});
-	TypeId { metadata, ..TypeId::ANY }
+	typeid.unwrap_or(TypeId::ANY)
 }
 fn resolve_primary(
 	primary: &Ident, cur: &mut Cursor, scope: &mut Scope, head: head_type!(),
-	metadata: Metadata,
 ) -> ControlFlow<TypeId, (TypeId, u16)> {
 	if *primary == "arr" {
-		return Break(parse_arr_typeid(cur, scope, metadata, head));
-	} else if let Some(mut typeid) = builtin_by_name(primary.val, scope.profile) {
+		return Break(parse_arr_typespec(cur, scope, head));
+	} else if let Some(typeid) = builtin_by_name(primary.val, scope.profile) {
 		let params = match typeid.item {
 			ItemId::LIST | ItemId::FAR => 2,
 			ItemId::MAP => 2,
 			_ => 0,
 		};
-		typeid.metadata = metadata;
 		Continue((typeid, params))
-	} else if let Some(mut res) = scope.resolve_top(primary.val) {
-		res.0.metadata = metadata;
+	} else if let Some(&item) = scope.generics.get(primary.val) {
+		Continue((TypeId::new_unchecked(DeclNs::GENERIC_PARAMS, item), 0))
+	} else if let Some(res) = scope.resolve_top(primary.val) {
 		Continue(res)
+	} else if scope.unsuported_rich.contains(primary.val) {
+		Break(TypeId::ANY)
 	} else {
 		cur.error(format!("undefined item \"{primary}\""), primary.span);
-		return Break(skip_generics_and_end(cur, scope, head, metadata));
+		return Break(TypeId::ANY);
 	}
 }
 fn resolve_prim_dot_sec(
 	primary: &Ident, cur: &mut Cursor, scope: &mut Scope, in_value: bool,
-	head: head_type!(), metadata: Metadata,
+	head: head_type!(),
 ) -> ControlFlow<TypeId, (TypeId, u16)> {
 	let Some(secondary) = cur.try_ident() else {
-		return Break(skip_generics_and_end(cur, scope, head, metadata));
+		return Break(TypeId::ANY);
 	};
 	if let Some(file) = scope.namespaces.get(primary.val) {
 		let Some(item) = file.item_by_name(secondary.val) else {
@@ -191,21 +182,21 @@ fn resolve_prim_dot_sec(
 				format!("undefined item \"{primary}.{secondary}\""),
 				primary.span.join(secondary.span),
 			);
-			return Break(skip_generics_and_end(cur, scope, head, metadata));
+			return Break(TypeId::ANY);
 		};
 		Continue((
-			TypeId { metadata, ..TypeId::new_unchecked(file.ns, item.id) },
+			TypeId::new_unchecked(file.ns, item.id),
 			item.generic_params().len() as u16,
 		))
 	} else if in_value && let Some((typeid, _)) = scope.resolve_top(primary.val) {
 		cur.off -= 2;
-		return Break(TypeId { metadata, ..typeid });
+		return Break(typeid);
 	} else {
 		cur.error(format!("undefined namespace \"{primary}\""), primary.span);
-		return Break(skip_generics_and_end(cur, scope, head, metadata));
+		return Break(TypeId::ANY);
 	}
 }
-fn parse_typeid_generic(
+fn parse_typepec_generic(
 	params: u16, cur: &mut Cursor, scope: &mut Scope, start: Span, head: head_type!(),
 ) -> ThinVec<TypeId> {
 	let mut list: ThinVec<_> = cur
@@ -239,14 +230,20 @@ pub fn parse_typespec(
 	};
 
 	let (mut typeid, params) = match match cur.try_symbol(dot) {
-		false => resolve_primary(&primary, cur, scope, head, metadata),
-		true => resolve_prim_dot_sec(&primary, cur, scope, in_value, head, metadata),
+		false => resolve_primary(&primary, cur, scope, head),
+		true => resolve_prim_dot_sec(&primary, cur, scope, in_value, head),
 	} {
 		Continue(res) => res,
-		Break(typeid) => return Ok(typeid),
+		Break(typeid) => {
+			cur.try_delim_list::<_, ()>(angle_open, angle_close, |cur| {
+				parse_typespec(cur, scope, false, head).ok()
+			});
+			return Ok(TypeId { metadata, ..typeid });
+		}
 	};
 
-	typeid.params = parse_typeid_generic(params, cur, scope, primary.span, head);
+	typeid.metadata = metadata;
+	typeid.params = parse_typepec_generic(params, cur, scope, primary.span, head);
 
 	Ok(typeid)
 }

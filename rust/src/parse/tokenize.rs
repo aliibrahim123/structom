@@ -11,7 +11,8 @@ use crate::{
 		error::ParseError,
 		str_cursor::{self, *},
 		tokens::{
-			Block, FloatKind, IntBase, Sign, Source, Span, StrKind, Token, TokenKind::*,
+			Block, FloatKind, IntBase, Sign, Source, Span, StrKind, Token,
+			TokenKind::{self, *},
 		},
 	},
 	utils::StrExt,
@@ -92,7 +93,7 @@ fn parse_int(cur: &mut Cursor, tokens: &mut Vec<Token>, sign: Sign, start: usize
 	}
 	let (base, has_dg, has_dash) = if cur.try_eat("0x").is_some() {
 		if cur.try_char('"') {
-			return parse_str(cur, StrKind::Bytes, tokens, start);
+			return parse_str(cur, StrLikeKind::Bytes, tokens, start);
 		}
 		let (has_dg, has_dash) = parse_digits(cur, hex);
 		(IntBase::Hex, has_dg, has_dash)
@@ -156,26 +157,36 @@ fn handle_sign(cur: &mut Cursor, char: char, tokens: &mut Vec<Token>, start: usi
 	}
 }
 
-fn parse_str(cur: &mut Cursor, kind: StrKind, tokens: &mut Vec<Token>, start: usize) {
+enum StrLikeKind {
+	Normal,
+	Multiline,
+	Bytes,
+}
+
+fn parse_str(cur: &mut Cursor, kind: StrLikeKind, tokens: &mut Vec<Token>, start: usize) {
 	let quotes = match kind {
-		StrKind::Multiline => "\"\"\"",
-		StrKind::Normal | StrKind::Bytes => "\"",
+		StrLikeKind::Multiline => "\"\"\"",
+		_ => "\"",
 	};
-	loop {
+	let unterminated = loop {
 		let last_quote = cur.off;
 		if !cur.try_until_str(quotes) {
 			cur.error("unterminated string".into(), Span::new(start, cur.slice.len()));
-			break;
+			break true;
 		}
 		let pre_offsets = (last_quote..cur.off() - quotes.len()).rev();
 		let slashes =
 			pre_offsets.take_while(|&i| cur.slice.char_at(i) == Some('\\')).count();
 		if slashes % 2 == 0 {
-			break;
+			break false;
 		}
-	}
-
-	tokens.push(Token { kind: StrTk { kind }, span: Span::new(start, cur.off()) });
+	};
+	let kind = match kind {
+		StrLikeKind::Normal => StrTk { kind: StrKind::Normal, unterminated },
+		StrLikeKind::Multiline => StrTk { kind: StrKind::Multiline, unterminated },
+		StrLikeKind::Bytes => Bytes { unterminated },
+	};
+	tokens.push(Token { kind, span: Span::new(start, cur.off()) });
 }
 
 fn parse_ident(cur: &mut Cursor, tokens: &mut Vec<Token>) {
@@ -240,10 +251,13 @@ pub fn tokenize(
 				parse_float(cur, &mut tokens, false, start);
 			}
 
-			'"' => match cur.try_eat("\"\"").is_some() {
-				true => parse_str(cur, StrKind::Multiline, &mut tokens, start),
-				false => parse_str(cur, StrKind::Normal, &mut tokens, start),
-			},
+			'"' => {
+				if cur.try_eat("\"\"").is_some() {
+					parse_str(cur, StrLikeKind::Multiline, &mut tokens, start)
+				} else {
+					parse_str(cur, StrLikeKind::Normal, &mut tokens, start)
+				}
+			}
 
 			'(' => {
 				block_stack.push((Block::Paren, tokens.len()));

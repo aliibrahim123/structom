@@ -1202,8 +1202,9 @@ The escape codes are:
 
 - the opening and closing quotes are tripled.
 - `"` and `""` are allowed unescaped
-- from the start till after indentation of the first line is stripped.
+- the whitespace till newline around the text is stripped.
 - the indentation is stripped from the start of each line based on what the clossing `"""` has, mismatched line starts are ignored.
+- the indentation is ` ` and `\t` while line separator is `\n`.
 
 ### Binary encoding
 
@@ -1592,11 +1593,11 @@ let profile = feature_group ('_' feature_group)*;
 let feature_group = group:ident ('{' list<feature:ident> '}')?;
 ```
 
-A profile is a string that identifies the features and extensions supported by an implementation.
+A profile is a normal string that identifies the features and extensions supported by an implementation.
 
 Not all features are required, implementations can choose to support only what they need.
 
-A profile string is composed of several feature groups separated by '\_'.
+A profile string is composed of several feature groups separated by `_`.
 
 Each group is composed of a base and optional extensions specified inside a comma separated list enclosed in curly block.
 
