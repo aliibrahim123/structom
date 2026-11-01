@@ -1,3 +1,5 @@
+use core::ops::ControlFlow::{self, Break, Continue};
+
 use alloc_crate::{format, string::ToString};
 
 use thin_vec::ThinVec;
@@ -14,7 +16,7 @@ use crate::{
 		str_cursor::Ident,
 		token_cursor::*,
 		tokens::{
-			Block, alt, angle_close, angle_open, bang, comma, dot, hash, paren_open,
+			Block, alt, angle_close, angle_open, bang, comma, dot, hash, int, paren_open,
 		},
 		value::parse_map,
 	},
@@ -27,6 +29,7 @@ pub enum Directive {
 	Fixed,
 	Default,
 	Tree,
+	Tag,
 	Rich,
 	Bitfield,
 	Unitfield,
@@ -46,6 +49,9 @@ impl Directive {
 			Directive::Default => {
 				"the \"default\" directive can only be applied to items"
 			}
+			Directive::Tag => {
+				"the tag directive can only be applied to items, variants and fields"
+			}
 			Directive::Tree => "the \"tree\" directive can only be applied to fields",
 			Directive::Rich => {
 				"the \"rich\" directive can only be applied to items and variants"
@@ -58,7 +64,11 @@ impl Directive {
 			}
 		};
 		cur.error(msg.to_string(), span);
-		cur.skip_block(Block::Paren);
+		if self == Directive::Tag {
+			cur.try_eat(int);
+		} else {
+			cur.skip_block(Block::Paren)
+		}
 	}
 }
 
@@ -85,6 +95,9 @@ fn try_directive(cur: &mut Cursor, in_root: bool) -> Option<(Directive, Span)> {
 			cur.off -= 1;
 			return None;
 		}
+		if cur.test(int) {
+			return Some((Directive::Tag, cur.peek().unwrap().span));
+		}
 		let Some(ident) = cur.ident() else { return None };
 		let directive = match ident.val {
 			"import" => Directive::Import,
@@ -97,6 +110,7 @@ fn try_directive(cur: &mut Cursor, in_root: bool) -> Option<(Directive, Span)> {
 			"unitfield" => Directive::Unitfield,
 			name => {
 				cur.error(format!("invalid directive \"{name}\""), ident.span);
+				cur.skip_block(Block::Paren);
 				return None;
 			}
 		};
@@ -111,27 +125,111 @@ pub fn meta_loop(
 	try_directive(cur, in_root)
 }
 
-pub fn parse_typeid<'src>(
-	cur: &mut Cursor<'src, '_>, scope: &mut Scope, in_value: bool,
-	over_ride: &mut impl FnMut(&mut Cursor<'src, '_>) -> Option<TypeId>,
-) -> Result<TypeId, Metadata> {
+pub fn directiveless_meta(cur: &mut Cursor) -> Metadata {
 	let mut metadata = Metadata::new();
 	while let Some((directive, span)) = meta_loop(cur, false, &mut metadata) {
 		directive.invalid_place(cur, span);
 	}
+	metadata
+}
 
-	if let Some(mut typeid) = over_ride(cur) {
-		typeid.metadata = metadata;
-		return Ok(typeid);
-	}
+macro_rules! head_type {
+	() => { &mut impl FnMut(&mut Cursor) -> Result<TypeId, Metadata> };
+}
 
-	let mut skip_generics_and_end =
-		|cur: &mut Cursor<'src, '_>, scope: &mut Scope, metadata| {
-			cur.try_delim_list::<_, ()>(angle_open, angle_close, |cur| {
-				parse_typeid(cur, scope, false, over_ride).ok()
-			});
-			Ok(TypeId { metadata, ..TypeId::ANY })
+fn parse_arr_typeid(
+	cur: &mut Cursor, scope: &mut Scope, metadata: Metadata, head: head_type!(),
+) -> TypeId {
+	let typeid = cur.eat_delim(angle_open, angle_close, |cur| {
+		let item = parse_typespec(cur, scope, false, head).ok()?;
+		cur.eat(comma).ok()?;
+		let nb = cur.eat_int()?;
+		Some(TypeId::arr(item, nb))
+	});
+	TypeId { metadata, ..typeid.unwrap_or(TypeId::ANY) }
+}
+fn skip_generics_and_end(
+	cur: &mut Cursor, scope: &mut Scope, head: head_type!(), metadata: Metadata,
+) -> TypeId {
+	cur.try_delim_list::<_, ()>(angle_open, angle_close, |cur| {
+		parse_typespec(cur, scope, false, head).ok()
+	});
+	TypeId { metadata, ..TypeId::ANY }
+}
+fn resolve_primary(
+	primary: &Ident, cur: &mut Cursor, scope: &mut Scope, head: head_type!(),
+	metadata: Metadata,
+) -> ControlFlow<TypeId, (TypeId, u16)> {
+	if *primary == "arr" {
+		return Break(parse_arr_typeid(cur, scope, metadata, head));
+	} else if let Some(mut typeid) = builtin_by_name(primary.val, scope.profile) {
+		let params = match typeid.item {
+			ItemId::LIST | ItemId::FAR => 2,
+			ItemId::MAP => 2,
+			_ => 0,
 		};
+		typeid.metadata = metadata;
+		Continue((typeid, params))
+	} else if let Some(mut res) = scope.resolve_top(primary.val) {
+		res.0.metadata = metadata;
+		Continue(res)
+	} else {
+		cur.error(format!("undefined item \"{primary}\""), primary.span);
+		return Break(skip_generics_and_end(cur, scope, head, metadata));
+	}
+}
+fn resolve_prim_dot_sec(
+	primary: &Ident, cur: &mut Cursor, scope: &mut Scope, in_value: bool,
+	head: head_type!(), metadata: Metadata,
+) -> ControlFlow<TypeId, (TypeId, u16)> {
+	let Some(secondary) = cur.try_ident() else {
+		return Break(skip_generics_and_end(cur, scope, head, metadata));
+	};
+	if let Some(file) = scope.namespaces.get(primary.val) {
+		let Some(item) = file.item_by_name(secondary.val) else {
+			cur.error(
+				format!("undefined item \"{primary}.{secondary}\""),
+				primary.span.join(secondary.span),
+			);
+			return Break(skip_generics_and_end(cur, scope, head, metadata));
+		};
+		Continue((
+			TypeId { metadata, ..TypeId::new_unchecked(file.ns, item.id) },
+			item.generic_params().len() as u16,
+		))
+	} else if in_value && let Some((typeid, _)) = scope.resolve_top(primary.val) {
+		cur.off -= 2;
+		return Break(TypeId { metadata, ..typeid });
+	} else {
+		cur.error(format!("undefined namespace \"{primary}\""), primary.span);
+		return Break(skip_generics_and_end(cur, scope, head, metadata));
+	}
+}
+fn parse_typeid_generic(
+	params: u16, cur: &mut Cursor, scope: &mut Scope, start: Span, head: head_type!(),
+) -> ThinVec<TypeId> {
+	let mut list: ThinVec<_> = cur
+		.try_delim_list(angle_open, angle_close, |cur| {
+			parse_typespec(cur, scope, false, head).ok()
+		})
+		.unwrap_or_default();
+	if list.len() != params as usize {
+		cur.error(
+			format!("expected {params} generic parameters, got {}", list.len()),
+			start.join(cur.prev().span),
+		);
+		list.resize(params as usize, TypeId::ANY);
+	}
+	list
+}
+
+pub fn parse_typespec(
+	cur: &mut Cursor, scope: &mut Scope, in_value: bool, head: head_type!(),
+) -> Result<TypeId, Metadata> {
+	let metadata = match head(cur) {
+		Ok(typeid) => return Ok(typeid),
+		Err(metadata) => metadata,
+	};
 
 	let Some(primary) = cur.try_ident() else {
 		if !in_value {
@@ -139,63 +237,16 @@ pub fn parse_typeid<'src>(
 		}
 		return Err(metadata);
 	};
-	let (mut typeid, params) = if !cur.try_symbol(dot) {
-		if primary == "arr" {
-			let typeid = cur.eat_delim(angle_open, angle_close, |cur| {
-				let item = parse_typeid(cur, scope, false, over_ride).ok()?;
-				cur.eat(comma).ok()?;
-				let nb = cur.eat_int()?;
-				Some(TypeId::arr(item, nb))
-			});
-			return Ok(TypeId { metadata, ..typeid.unwrap_or(TypeId::ANY) });
-		} else if let Some(typeid) = builtin_by_name(primary.val, scope.profile) {
-			let params = match typeid.item {
-				ItemId::LIST | ItemId::FAR => 2,
-				ItemId::MAP => 2,
-				_ => 0,
-			};
-			(typeid, params)
-		} else if let Some(res) = scope.resolve_top(primary.val) {
-			res
-		} else {
-			cur.error(format!("undefined item \"{primary}\""), primary.span);
-			return skip_generics_and_end(cur, scope, metadata);
-		}
-	} else {
-		let Some(secondary) = cur.try_ident() else {
-			return skip_generics_and_end(cur, scope, metadata);
-		};
-		if let Some(file) = scope.namespaces.get(primary.val) {
-			let Some(item) = file.item_by_name(secondary.val) else {
-				cur.error(
-					format!("undefined item \"{primary}.{secondary}\""),
-					primary.span.join(secondary.span),
-				);
-				return skip_generics_and_end(cur, scope, metadata);
-			};
-			(TypeId::new_unchecked(file.ns, item.id), item.generic_params().len() as u16)
-		} else if in_value && let Some((typeid, _)) = scope.resolve_top(primary.val) {
-			cur.off -= 2;
-			return Ok(TypeId { metadata, ..typeid });
-		} else {
-			cur.error(format!("undefined namespace \"{primary}\""), primary.span);
-			return skip_generics_and_end(cur, scope, metadata);
-		}
+
+	let (mut typeid, params) = match match cur.try_symbol(dot) {
+		false => resolve_primary(&primary, cur, scope, head, metadata),
+		true => resolve_prim_dot_sec(&primary, cur, scope, in_value, head, metadata),
+	} {
+		Continue(res) => res,
+		Break(typeid) => return Ok(typeid),
 	};
-	let span = primary.span.join(cur.prev().span);
 
-	if params > 0 {
-		let mut list: ThinVec<_> = cur.eat_delim_list(angle_open, angle_close, |cur| {
-			parse_typeid(cur, scope, false, over_ride).ok()
-		});
-		if list.len() != params as usize {
-			let got = list.len();
-			cur.error(format!("expected {params} generic parameters, got {got}"), span);
-			list.resize(params as usize, TypeId::ANY);
-		}
-		typeid.params = list;
-	}
+	typeid.params = parse_typeid_generic(params, cur, scope, primary.span, head);
 
-	typeid.metadata = metadata;
 	Ok(typeid)
 }

@@ -51,38 +51,58 @@ fn parse_import<'src>(cur: &mut Cursor<'src, '_>) -> Option<Import<'src>> {
 	})
 }
 
-pub fn parse_profile_group<
+enum UnknownFeat<'set, '_ref> {
+	Ignore,
+	Error,
+	Collect(&'_ref mut HashSet<&'set str>),
+}
+pub fn unkown_feat<'src>(
+	unkown: &mut UnknownFeat<'src, '_>, feat: &Ident<'src>, group_ident: &Ident<'_>,
+	cur: &mut StrCursor<'src, '_>,
+) -> bool {
+	match unkown {
+		UnknownFeat::Ignore => false,
+		UnknownFeat::Error => {
+			cur.error(
+				format!("profile feature \"{group_ident}.{feat}\" is not supported"),
+				feat.span,
+			);
+			true
+		}
+		UnknownFeat::Collect(set) => {
+			set.insert(feat.val);
+			false
+		}
+	}
+}
+pub fn parse_group<
 	'src,
 	G: Default + BitOrAssign + BitAnd<Output = G> + PartialEq + Copy,
 >(
 	cur: &mut StrCursor<'src, '_>, group_ident: &Ident<'_>, group: &mut Option<G>,
-	features: &[(&str, G)], mut is_unsupported: impl FnMut(&Ident<'src>) -> bool,
+	features: &[(&str, G)], unknown: &mut UnknownFeat<'src, '_>,
 ) -> bool {
-	if group.is_none() {
+	if group.is_some() {
 		cur.error(format!("duplicate profile group \"{group_ident}\""), group_ident.span);
 	}
 	let group = group.get_or_insert_default();
 	let mut unsupported = false;
 	if cur.try_char('{') {
-		while !cur.test('}') || cur.is_end() {
+		while !cur.test('}') && !cur.is_end() {
 			let Some(feat) = cur.eat_ident() else {
 				cur.skip();
 				continue;
 			};
-			if let Some((name, feat_on)) = features.iter().find(|(n, _)| feat == n) {
-				if *group & *feat_on == *feat_on {
+			if let Some(&(name, feat_on)) = features.iter().find(|(n, _)| feat == n) {
+				if *group & feat_on == feat_on {
 					cur.error(
 						format!("profile feature \"{group_ident}.{name}\" is duplicated"),
 						feat.span,
 					);
 				}
-				*group |= *feat_on
-			} else if is_unsupported(&feat) {
-				unsupported = true;
-				cur.error(
-					format!("profile feature \"{group_ident}.{feat}\" is not supported"),
-					feat.span,
-				);
+				*group |= feat_on;
+			} else {
+				unsupported |= unkown_feat(unknown, &feat, group_ident, cur)
 			}
 			if !cur.try_char(',') && !cur.test('}') {
 				cur.expected("`,`");
@@ -107,13 +127,15 @@ const RICH_FEATS: &[(&str, Rich)] = &[
 ];
 
 pub fn parse_profile<'src>(
-	cur: &mut StrCursor<'src, '_>, mut unsupported_rich: Option<&mut HashSet<&'src str>>,
+	cur: &mut StrCursor<'src, '_>, unsupported_rich: Option<&mut HashSet<&'src str>>,
 	emit_unsupported: bool,
 ) -> (Profile, bool) {
-	let mut obj = None;
-	let mut bin = None;
-	let mut decl = None;
-	let mut rich = None;
+	let (mut obj, mut bin, mut decl, mut rich) = (None, None, None, None);
+	let (mut unkown_normal, mut unknown_rich) = if emit_unsupported {
+		(UnknownFeat::Error, UnknownFeat::Collect(unsupported_rich.unwrap()))
+	} else {
+		(UnknownFeat::Ignore, UnknownFeat::Ignore)
+	};
 	let mut unsupported = false;
 	while !cur.is_end() {
 		let Some(group) = cur.eat_ident() else {
@@ -121,21 +143,10 @@ pub fn parse_profile<'src>(
 			continue;
 		};
 		unsupported |= match group.val {
-			"obj" => {
-				parse_profile_group(cur, &group, &mut obj, &[], |_| emit_unsupported)
-			}
-			"bin" => parse_profile_group(cur, &group, &mut bin, BIN_FEATS, |_| {
-				emit_unsupported
-			}),
-			"decl" => parse_profile_group(cur, &group, &mut decl, DECL_FEATS, |_| {
-				emit_unsupported
-			}),
-			"rich" => parse_profile_group(cur, &group, &mut rich, RICH_FEATS, |feat| {
-				if let Some(unsupported_rich) = &mut unsupported_rich {
-					unsupported_rich.insert(feat.val);
-				}
-				false
-			}),
+			"obj" => parse_group(cur, &group, &mut obj, &[], &mut unkown_normal),
+			"bin" => parse_group(cur, &group, &mut bin, BIN_FEATS, &mut unkown_normal),
+			"decl" => parse_group(cur, &group, &mut decl, DECL_FEATS, &mut unkown_normal),
+			"rich" => parse_group(cur, &group, &mut rich, RICH_FEATS, &mut unknown_rich),
 			name => {
 				if emit_unsupported {
 					cur.error(format!("invalid profile group \"{name}\""), group.span);
@@ -251,9 +262,8 @@ fn import_res_into_file(
 		}
 	}
 }
-fn add_specified_imports<'src>(
-	items: &[Ident<'src>], file: DeclFileBox, scope: &mut Scope<'src, '_>,
-	cur: &mut Cursor<'src, '_>,
+fn add_specified_imports(
+	items: &[Ident], file: DeclFileBox, scope: &mut Scope, cur: &mut Cursor,
 ) {
 	for item in items {
 		let Some(def) = file.item_by_name(&item.val) else {
@@ -278,7 +288,7 @@ fn add_specified_imports<'src>(
 }
 fn add_import<'src>(
 	res: Result<DeclFileBox, ImportError>, import: &Import<'src>,
-	scope: &mut Scope<'src, '_>, cur: &mut Cursor<'src, '_>,
+	scope: &mut Scope<'src, '_>, cur: &mut Cursor,
 ) {
 	let Import { path, ns, items, .. } = import;
 	let Ok(file) = import_res_into_file(res, path, cur) else { return };
