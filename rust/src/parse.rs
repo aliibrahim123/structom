@@ -17,11 +17,11 @@ pub use {error::ParseError, tokens::Span};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParseOptions {
 	pub metadata: bool,
-	pub dump_unresolved: bool,
+	//pub dump_unresolved: bool,
 }
 impl Default for ParseOptions {
 	fn default() -> Self {
-		Self { metadata: false, dump_unresolved: false }
+		Self { metadata: false }
 	}
 }
 

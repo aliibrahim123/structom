@@ -128,7 +128,7 @@ impl Fields {
 	pub fn field_by_name(&self, name: &str) -> Option<&Field> {
 		self.fields.get_by_name(name)
 	}
-	pub fn len(&self) -> usize {
+	pub fn count(&self) -> usize {
 		self.fields.items.len()
 	}
 	pub fn as_slice(&self) -> &[Field] {

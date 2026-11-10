@@ -95,8 +95,8 @@ impl<'src> Cursor<'src, '_> {
 	pub fn try_char(&mut self, char: char) -> bool {
 		self.try_eat(char).is_some()
 	}
-	pub fn test_next(&self, offset: usize, matcher: impl Matcher<str>) -> bool {
-		matcher.test(self.slice, &mut (self.off + offset))
+	pub fn test_next(&self, offset: isize, matcher: impl Matcher<str>) -> bool {
+		matcher.test(self.slice, &mut ((self.off as isize + offset) as usize))
 	}
 	pub fn try_until(&mut self, char: char) -> bool {
 		let res = self.slice[self.off..].find(char);
@@ -122,7 +122,7 @@ impl<'src> Cursor<'src, '_> {
 		}
 		let end = self.slice[self.off + 1..]
 			.find(|c: char| !matches!(c, 'a'..='z' | 'A'..='Z' | '0'..='9' | '_'))
-			.map_or(self.slice.len(), |i| self.off + i);
+			.map_or(self.slice.len(), |i| self.off + i + 1);
 		self.off = end;
 		Some(Ident { val: &self.slice[start..end], span: Span::new(start, end) })
 	}

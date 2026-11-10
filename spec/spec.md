@@ -399,6 +399,8 @@ They can optionally take builtin types value as parameters enclosed in parenthes
 
 Directives and metadata that applies to the whole file are declared before any items, using a `!` before the name.
 
+Metadata of the same name are allowed on the same item, but directives are not.
+
 #### Example
 
 ```structom

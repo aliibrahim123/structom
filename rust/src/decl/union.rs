@@ -63,7 +63,7 @@ pub enum TagType {
 	Auto,
 }
 impl TagType {
-	fn max(&self) -> u32 {
+	pub fn max(&self) -> u32 {
 		match self {
 			Self::U8 => u8::MAX as u32,
 			Self::U16 => u16::MAX as u32,
@@ -88,7 +88,7 @@ impl Union {
 		Self { tag_type, variants: ItemStore::new() }
 	}
 	pub fn add_variant(&mut self, variant: Variant) -> Result<VariantTag, AssignError> {
-		if self.variants.id_counter > self.tag_type.max() {
+		if self.variants.id_counter >= self.tag_type.max() {
 			return Err(AssignError::FullCapacity);
 		}
 		self.variants.add(variant.name.clone(), variant).map(|(var, id)| {

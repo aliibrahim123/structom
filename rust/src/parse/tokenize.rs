@@ -65,7 +65,7 @@ fn close_delim(
 
 	let Some((_, open_ind)) = block_stack.pop() else { unreachable!() };
 	let close_off = tokens.len() - open_ind;
-	tokens[open_ind].set_close_off(close_off);
+	tokens[open_ind].set_close_off(Some(close_off));
 	tokens.push(Token { kind: block.end(), span });
 }
 
@@ -84,6 +84,9 @@ pub fn parse_digits(cur: &mut Cursor, dg: impl Matcher<str> + Copy) -> (u32, boo
 		dg_count += 1;
 		has_dash |= cur.try_char('_');
 		skip_underscores(cur, dg);
+	}
+	if cur.test_next(-1, "_") && cur.test_next(-2, dg) {
+		cur.expected(dg.expected());
 	}
 	(dg_count, has_dash)
 }
@@ -122,7 +125,7 @@ fn parse_int(cur: &mut Cursor, tokens: &mut Vec<Token>, sign: Sign, start: usize
 fn parse_float(
 	cur: &mut Cursor, tokens: &mut Vec<Token>, mut has_dash: bool, start: usize,
 ) {
-	if cur.try_char('.') {
+	if cur.try_char('.') && (cur.test(dec) || cur.test('_')) {
 		has_dash |= parse_digits(cur, dec).1;
 	}
 	if cur.try_char('e') || cur.try_char('E') {
@@ -239,7 +242,7 @@ pub fn tokenize(
 			'?' => tokens.push(Token { kind: Question, span }),
 			'=' => tokens.push(Token { kind: Equal, span }),
 			'#' => tokens.push(Token { kind: Hash, span }),
-			'@' => tokens.push(Token { kind: Alt, span }),
+			'@' => tokens.push(Token { kind: At, span }),
 			'!' => tokens.push(Token { kind: Bang, span }),
 
 			'a'..='z' | 'A'..='Z' | '_' => parse_ident(cur, &mut tokens),
@@ -289,12 +292,15 @@ pub fn tokenize(
 	for (block, open_ind) in block_stack.iter().rev() {
 		let close_off = tokens.len() - open_ind;
 		let open = &mut tokens[*open_ind];
-		open.set_close_off(close_off);
+		open.set_close_off(Some(close_off));
 		cur.error(format!("unclosed `{}`", block.delims().0), open.span);
 		tokens.push(Token { kind: block.end(), span: Span::EMPTY });
 	}
 	if filter_dummy {
-		tokens.retain(|token| *token != Token::DUMMY)
+		tokens.retain_mut(|token| {
+			token.set_close_off(None);
+			*token != Token::DUMMY
+		});
 	}
 	Ok(tokens)
 }

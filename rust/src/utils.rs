@@ -30,15 +30,22 @@ impl<T> VecLike<T> for () {
 	fn push(&mut self, _val: T) {}
 }
 
-pub trait FromStrRadix: Sized {
-	fn from_str_radix(src: &str, radix: u32) -> Result<Self, core::num::ParseIntError>;
+pub trait IntFromStr: Sized {
+	fn from_str(src: &str, radix: u32, is_neg: bool) -> Option<Self>;
+	const BOUNDS: (Self, Self);
 }
 macro_rules! impl_from_str_radix {
 	[$($ty:ty),+] => {
-		$(impl FromStrRadix for $ty {
-			fn from_str_radix(src: &str, radix: u32) -> Result<Self, core::num::ParseIntError> {
-				Self::from_str_radix(src, radix)
+		$(impl IntFromStr for $ty {
+			fn from_str(src: &str, radix: u32, is_neg: bool) -> Option<Self> {
+				let int = Self::from_str_radix(src, radix).ok()?;
+				if is_neg {
+					int.checked_neg()
+				} else {
+					Some(int)
+				}
 			}
+			const BOUNDS: (Self, Self) = (Self::MIN, Self::MAX);
 		})+
 	};
 }

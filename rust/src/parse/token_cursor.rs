@@ -9,12 +9,12 @@ use crate::{
 		str_cursor::{Cursor as StrCursor, Ident},
 		tokenize::parse_digits,
 		tokens::{
-			Block, IntBase, Source, StrKind, Token, TokenKind, Tokens, angle_close,
+			Block, IntBase, Sign, Source, StrKind, Token, TokenKind, Tokens, angle_close,
 			angle_open, brace_close, brace_open, bracket_close, bracket_open, comma,
-			ident, paren_close, paren_open,
+			ident, paren_close, paren_open, unit_comment,
 		},
 	},
-	utils::{FromStrRadix, VecLike},
+	utils::{IntFromStr, VecLike},
 };
 pub use gramex::cursor::Cursor as _;
 
@@ -78,6 +78,9 @@ impl<'src> Cursor<'src, '_> {
 	pub fn prev(&self) -> Token {
 		self.tokens.0[self.off - 1]
 	}
+	pub fn try_symbol(&mut self, matcher: impl Matcher<Tokens<'src>>) -> bool {
+		self.try_eat(matcher).is_some()
+	}
 	pub fn ident(&mut self) -> Option<Ident<'src>> {
 		let span = self.eat(ident).ok()?.span;
 		Some(Ident { val: self.src.source_of(span), span })
@@ -87,10 +90,11 @@ impl<'src> Cursor<'src, '_> {
 		Some(Ident { val: self.src.source_of(span), span })
 	}
 	pub fn try_ident_kw(&mut self, name: &str) -> bool {
-		self.try_eat(ident).is_some_and(|token| self.src.source_of(token.span) == name)
-	}
-	pub fn try_symbol(&mut self, matcher: impl Matcher<Tokens<'src>>) -> bool {
-		self.try_eat(matcher).is_some()
+		let matches = self.peek().is_some_and(|token| {
+			token.kind == TokenKind::Ident && self.src.source_of(token.span) == name
+		});
+		matches.then(|| self.skip());
+		matches
 	}
 	pub fn str(&mut self) -> Option<Str<'src>> {
 		let Some(&Token { kind: TokenKind::StrTk { kind, unterminated }, span }) =
@@ -112,28 +116,36 @@ impl<'src> Cursor<'src, '_> {
 			Cow::Owned(val) => StrCursor::new_resolved(src, val, str.span, errors),
 		}
 	}
-	pub fn eat_int<T: FromStrRadix>(&mut self, kind: &str) -> Option<T> {
-		let Some(&Token { kind: TokenKind::Int { base, has_dash, .. }, span }) =
+	pub fn eat_int<T: IntFromStr + Display>(&mut self, kind: &str) -> Option<T> {
+		let Some(&Token { kind: TokenKind::Int { base, has_dash, sign }, span }) =
 			self.peek()
 		else {
 			self.expected("an integer");
 			return None;
 		};
+		self.skip();
 		let radix = match base {
 			IntBase::Dec => 10,
 			IntBase::Hex => 16,
 			IntBase::Bin => 2,
 		};
-		let raw = &self.src.source_of(span)[if base != IntBase::Dec { 2 } else { 0 }..];
-		let digits = if has_dash { &raw.replace('_', "") } else { raw };
-		let Ok(val) = T::from_str_radix(digits, radix) else {
-			self.error(format!("number `{raw}` is out of range for {kind}"), span);
+		let raw = self.src.source_of(span);
+		let dg_start = if sign != Sign::None { 1 } else { 0 }
+			+ if base != IntBase::Dec { 2 } else { 0 };
+		let digits = &raw[dg_start..];
+		let digits = if has_dash { &digits.replace('_', "") } else { digits };
+		let Some(val) = T::from_str(digits, radix, sign == Sign::Neg) else {
+			let (min, max) = T::BOUNDS;
+			let msg = format!(
+				"number `{raw}` is out of range for {kind}, valid range is `{min}`..`{max}`"
+			);
+			self.error(msg, span);
 			return None;
 		};
 		Some(val)
 	}
 	pub fn comma_unless_end(&mut self) {
-		if !self.try_symbol(comma) && !self.peek().unwrap().is_block_closer() {
+		if !self.try_symbol(comma) && !self.peek().is_some_and(|t| t.is_block_closer()) {
 			self.expected(comma.expected());
 		}
 	}
@@ -143,7 +155,7 @@ impl<'src> Cursor<'src, '_> {
 			self.off += close_off as usize;
 			return;
 		}
-		let mut depth = 0;
+		let mut depth = 1;
 		while depth > 0 {
 			if let Some(closed_off) = block.try_open(self) {
 				match closed_off {
@@ -174,8 +186,9 @@ impl<'src> Cursor<'src, '_> {
 	) -> V {
 		if !self.test(&open) {
 			self.expected(open.expected());
+			return V::default();
 		}
-		self.try_delim_list(open, close, item).unwrap_or_default()
+		self.try_delim_list(open, close, item).unwrap()
 	}
 	pub fn try_delim_list<T, V: VecLike<T> + Default>(
 		&mut self, open: impl Matcher<Tokens<'src>>, close: impl Matcher<Tokens<'src>>,
@@ -189,8 +202,11 @@ impl<'src> Cursor<'src, '_> {
 			if self.is_end() {
 				panic!();
 			}
+			let skip = self.try_symbol(unit_comment);
 			if let Some(item) = item(self) {
-				items.push(item);
+				if !skip {
+					items.push(item)
+				};
 				if !(self.try_symbol(comma) || self.test(&close)) {
 					self.expected(comma.expected())
 				}
@@ -244,36 +260,18 @@ impl Block {
 		}
 	}
 }
-fn parse_unicode_escape(cur: &mut StrCursor, start: usize) -> Result<char, ()> {
-	cur.eat('{')?;
-	let (dg_count, has_dash) = parse_digits(cur, hex);
-	_ = cur.eat('}');
-	let span = Span::new(start, cur.off);
-	if dg_count > 6 {
-		cur.error("unicode escape can only have 1..6 hex digits".into(), span);
-		return Err(());
-	}
-	let code = &cur.src.source_of(span)[3..span.len() - 1];
-	let code = if has_dash { &code.replace('_', "") } else { code };
-	let code = u32::from_str_radix(code, 16).unwrap();
-	let Some(code) = char::from_u32(code) else {
-		cur.error("invalid unicode escape".into(), span);
-		return Err(());
-	};
-	Ok(code)
-}
 
 fn resolve_str_normal<'src>(
 	cur: &mut Cursor<'src, '_>, span: Span, unterminated: bool,
 ) -> Str<'src> {
 	let mut buf = None;
-	let range =
-		Some(Span::new(span.start() + 1, span.end() - if unterminated { 0 } else { 1 }));
-	let mut cur = StrCursor::new(cur.src, range, cur.errors);
+	let end = span.end() - if unterminated { 0 } else { 1 };
+	let content_span = Span::new(span.start() + 1, end);
+	let mut cur = StrCursor::new(cur.src, Some(content_span), cur.errors);
 	resolve_escapes(&mut cur, &mut buf);
 	match buf {
 		Some(buf) => Str { val: Cow::Owned(buf), span },
-		None => Str { val: Cow::Borrowed(cur.src.source_of(span)), span },
+		None => Str { val: Cow::Borrowed(cur.src.source_of(content_span)), span },
 	}
 }
 
@@ -286,8 +284,11 @@ fn resolve_str_multiline<'src>(
 	let trimmed = body.trim_end_matches([' ', '\t']);
 	let indent = &body[trimmed.len()..];
 
-	let mut buf = None;
-	for line in trimmed.split('\n') {
+	let mut buf = Some(String::new());
+	for (ind, line) in trimmed.split('\n').enumerate() {
+		if ind != 0 {
+			buf.as_mut().unwrap().push('\n')
+		}
 		let line = line.strip_prefix(indent).unwrap_or(line);
 		let range = cur.src.str.substr_range(line).unwrap();
 		let range = Some(Span::new(range.start, range.end));
@@ -298,13 +299,32 @@ fn resolve_str_multiline<'src>(
 	Str { val: Cow::Owned(buf.unwrap()), span }
 }
 
+fn parse_unicode_escape(cur: &mut StrCursor, start: usize) -> Result<char, ()> {
+	cur.eat('{')?;
+	let (dg_count, has_dash) = parse_digits(cur, hex);
+	let code_end = cur.off;
+	_ = cur.eat('}');
+	let span = Span::new(start, cur.off);
+	if !(1..=6).contains(&dg_count) {
+		cur.error("unicode escape should contain 1..6 hex digits".into(), span);
+		return Err(());
+	}
+	let code = cur.src.source_of(Span::new(start + 3, code_end));
+	let code = if has_dash { &code.replace('_', "") } else { code };
+	let code = u32::from_str_radix(code, 16).unwrap();
+	let Some(code) = char::from_u32(code) else {
+		cur.error("invalid unicode escape".into(), span);
+		return Err(());
+	};
+	Ok(code)
+}
 fn resolve_escapes(cur: &mut StrCursor, buf: &mut Option<String>) {
 	let mut last_ind = cur.off;
 	while cur.try_until('\\') {
 		let start = cur.off - 1;
 		let buf = buf.get_or_insert_default();
 		buf.push_str(&cur.src.str[last_ind..cur.off - 1]);
-		cur.skip();
+
 		let char = match cur.try_eat_token().unwrap() {
 			'n' => Some('\n'),
 			't' => Some('\t'),

@@ -16,9 +16,9 @@ use crate::{
 		str_cursor::Ident,
 		token_cursor::*,
 		tokens::{
-			Block, alt, angle_close, angle_open, bang, comma, dot, hash, int, paren_open,
+			Block, angle_close, angle_open, at, bang, comma, dot, hash, int, paren_open,
 		},
-		value::parse_map,
+		value::{parse_map, parse_value},
 	},
 };
 
@@ -73,7 +73,7 @@ impl Directive {
 }
 
 fn try_metadata(cur: &mut Cursor, in_root: bool, metadata: &mut Metadata) {
-	while cur.try_eat(alt).is_some() {
+	while cur.try_eat(at).is_some() {
 		if in_root && !cur.try_symbol(bang) {
 			cur.off -= 1;
 			break;
@@ -84,21 +84,22 @@ fn try_metadata(cur: &mut Cursor, in_root: bool, metadata: &mut Metadata) {
 			continue;
 		}
 		let items: ThinVec<_> = cur
-			.try_delim_list(paren_open, paren_open, |cur| parse_map(cur, true))
+			.try_delim_list(paren_open, paren_open, |cur| parse_value(cur, true))
 			.unwrap_or_default();
 		_ = metadata.add(ident.val, items);
 	}
 }
 fn try_directive(cur: &mut Cursor, in_root: bool) -> Option<(Directive, Span)> {
-	cur.try_eat(hash).and_then(|_| {
+	while cur.try_symbol(hash) {
+		let start = cur.prev().span;
 		if in_root && !cur.try_symbol(bang) {
 			cur.off -= 1;
 			return None;
 		}
 		if cur.test(int) {
-			return Some((Directive::Tag, cur.peek().unwrap().span));
+			return Some((Directive::Tag, start.join(cur.peek().unwrap().span)));
 		}
-		let Some(ident) = cur.ident() else { return None };
+		let Some(ident) = cur.ident() else { continue };
 		let directive = match ident.val {
 			"import" => Directive::Import,
 			"profile" => Directive::Profile,
@@ -109,13 +110,17 @@ fn try_directive(cur: &mut Cursor, in_root: bool) -> Option<(Directive, Span)> {
 			"bitfield" => Directive::Bitfield,
 			"unitfield" => Directive::Unitfield,
 			name => {
-				cur.error(format!("invalid directive \"{name}\""), ident.span);
+				cur.error(
+					format!("invalid directive \"{name}\""),
+					start.join(ident.span),
+				);
 				cur.skip_block(Block::Paren);
-				return None;
+				continue;
 			}
 		};
-		Some((directive, ident.span))
-	})
+		return Some((directive, start.join(ident.span)));
+	}
+	None
 }
 
 pub fn meta_loop(
@@ -171,7 +176,6 @@ fn resolve_primary(
 }
 fn resolve_prim_dot_sec(
 	primary: &Ident, cur: &mut Cursor, scope: &mut Scope, in_value: bool,
-	head: head_type!(),
 ) -> ControlFlow<TypeId, (TypeId, u16)> {
 	let Some(secondary) = cur.try_ident() else {
 		return Break(TypeId::ANY);
@@ -231,7 +235,7 @@ pub fn parse_typespec(
 
 	let (mut typeid, params) = match match cur.try_symbol(dot) {
 		false => resolve_primary(&primary, cur, scope, head),
-		true => resolve_prim_dot_sec(&primary, cur, scope, in_value, head),
+		true => resolve_prim_dot_sec(&primary, cur, scope, in_value),
 	} {
 		Continue(res) => res,
 		Break(typeid) => {

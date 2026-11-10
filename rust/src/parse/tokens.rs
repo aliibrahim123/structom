@@ -143,7 +143,7 @@ pub enum TokenKind {
 	Question,
 	Equal,
 	Hash,
-	Alt,
+	At,
 	Bang,
 
 	UnitComment,
@@ -176,14 +176,14 @@ impl Token {
 			_ => false,
 		}
 	}
-	pub fn set_close_off(&mut self, off: usize) {
-		let off = off.try_into().ok();
+	pub fn set_close_off(&mut self, off: Option<usize>) {
+		let off = off.map(|v| v.try_into().ok()).flatten();
 		match &mut self.kind {
 			TokenKind::ParenOpen { close_off } => *close_off = off,
 			TokenKind::BraceOpen { close_off } => *close_off = off,
 			TokenKind::BracketOpen { close_off } => *close_off = off,
 			TokenKind::AngleOpen { close_off } => *close_off = off,
-			_ => panic!("not a block opener"),
+			_ => {}
 		}
 	}
 	pub fn get_close_off(&self) -> Option<u32> {
@@ -192,7 +192,7 @@ impl Token {
 			TokenKind::BraceOpen { close_off } => close_off,
 			TokenKind::BracketOpen { close_off } => close_off,
 			TokenKind::AngleOpen { close_off } => close_off,
-			_ => panic!("not a block opener"),
+			_ => None,
 		}
 	}
 }
@@ -231,7 +231,7 @@ fn tk_kind_to_expected(kind: &'static str) -> Expected {
 			"Question" => "`?`",
 			"Equal" => "`=`",
 			"Hash" => "`#`",
-			"Alt" => "`@`",
+			"At" => "`@`",
 			"Bang" => "`!`",
 
 			"UnitComment" => "`/-`",

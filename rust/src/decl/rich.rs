@@ -46,14 +46,16 @@ impl Metadata {
 	pub fn len(&self) -> usize {
 		self.0.len()
 	}
-	pub fn add(&mut self, name: &str, params: ThinVec<Value>) -> Result<(), AssignError> {
-		self.add_lean(LeanStr::from(name), params)
+	pub fn add(
+		&mut self, name: &str, params: impl IntoIterator<Item = Value>,
+	) -> Result<(), AssignError> {
+		self.add_lean(LeanStr::from(name), params.into_iter().collect())
 	}
 	pub(crate) fn add_lean(
-		&mut self, name: LeanStr, params: impl IntoIterator<Item = Value>,
+		&mut self, name: LeanStr, params: ThinVec<Value>,
 	) -> Result<(), AssignError> {
 		check_ident(&name)?;
-		self.0.push(MetadataItem { name, params: ThinVec::from_iter(params) });
+		self.0.push(MetadataItem { name, params });
 		Ok(())
 	}
 	pub fn get(&self, name: &str) -> Option<&MetadataItem> {
@@ -224,6 +226,9 @@ impl BitField {
 		if self.fields.len() >= u16::MAX as usize {
 			return Err(AssignError::FullCapacity);
 		}
+		if self.fields.iter().any(|field| field.name == name) {
+			return Err(AssignError::DuplicateName);
+		}
 		let id = FieldId(self.fields.len() as u16);
 		self.fields.push(BitFieldField::new(name, id, type_));
 		Ok(id)
@@ -289,6 +294,12 @@ impl<'a> IntoIterator for Names<'a> {
 impl Unit {
 	pub fn new<'a>(names: impl IntoIterator<Item = &'a str>, mult: Value) -> Self {
 		Self::new_lean(names.into_iter().map(LeanStr::from).collect(), mult)
+	}
+	pub fn with_bounds<'a>(
+		names: impl IntoIterator<Item = &'a str>, mult: Value, min: Option<Value>,
+		max: Option<Value>,
+	) -> Self {
+		Self { names: names.into_iter().map(LeanStr::from).collect(), mult, min, max }
 	}
 	pub(crate) fn new_lean(names: Vec<LeanStr>, mult: Value) -> Self {
 		Self { names, mult, min: None, max: None }

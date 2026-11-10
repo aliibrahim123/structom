@@ -3,8 +3,6 @@ use core::{
 	ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, Not},
 };
 
-use alloc_crate::process::Output;
-
 macro_rules! bit_markers {
 	($first:ident $(, $rest:ident)* $(,)?) => {
     	pub const $first: u16 = 1;
