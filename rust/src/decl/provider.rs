@@ -57,7 +57,7 @@ pub trait DeclProv {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Void {}
+pub struct Void;
 impl DeclProv for Void {
 	fn import_file<'file>(
 		&'file self, _path: &str, _value: Option<&Value>,
@@ -263,16 +263,6 @@ use alloc_crate::{
 };
 
 #[cfg(feature = "fs-provider")]
-#[derive(Debug)]
-pub enum FsLoadError {
-	NotFound,
-	OutsideRoot,
-	NonUtf8Path,
-	Io(IoError),
-	Parse(Vec<crate::parse::ParseError>),
-}
-
-#[cfg(feature = "fs-provider")]
 #[derive(Debug, Clone)]
 pub struct FsProv {
 	root: PathBuf,
@@ -290,50 +280,49 @@ impl FsProv {
 	pub fn files(&self) -> impl Iterator<Item = &DeclFile> {
 		self.list.files()
 	}
-	pub fn load(&self, path: &str) -> Result<DeclFileBox, FsLoadError> {
-		let path = self.root.join(path);
-		let Some(path_str) = path.to_str() else { return Err(FsLoadError::NonUtf8Path) };
-		if let ImportResult::Ok(file) = self.list.import_file(path_str, None) {
-			return Ok(file);
-		}
-
-		let path = canonicalize(&path).map_err(|err| {
-			if err.kind() == ErrorKind::NotFound {
-				FsLoadError::NotFound
-			} else {
-				FsLoadError::Io(err)
-			}
-		})?;
-		if !path.starts_with(&self.root) {
-			return Err(FsLoadError::OutsideRoot);
-		}
-
-		let src = read_to_string(path).map_err(FsLoadError::Io)?;
-		let file = parse_decl_file(&src, path_str).map_err(FsLoadError::Parse)?;
-
-		_ = self.list.add(file.clone());
-		Ok(file)
-	}
 }
 #[cfg(feature = "fs-provider")]
 impl DeclProv for FsProv {
 	fn import_file<'file>(
 		&'file self, path: &str, _value: Option<&Value>,
 	) -> ImportResult<'file> {
-		match self.load(path) {
-			Ok(file) => ImportResult::Ok(file),
-			Err(FsLoadError::NotFound) => ImportResult::Err(ImportError::NotFound),
-			Err(FsLoadError::NonUtf8Path) => {
-				ImportResult::Err(ImportError::Other("path is not utf8".into()))
-			}
-			Err(FsLoadError::OutsideRoot) => {
-				ImportResult::Err(ImportError::Other("path is outside the root".into()))
-			}
-			Err(FsLoadError::Io(err)) => {
-				ImportResult::Err(ImportError::Other(err.to_string().into()))
-			}
-			Err(FsLoadError::Parse(err)) => ImportResult::Err(ImportError::Parse(err)),
+		let path = self.root.join(path);
+		let Some(path_str) = path.to_str() else {
+			return ImportResult::Err(ImportError::Other("path is not utf8".into()));
+		};
+		if let ImportResult::Ok(file) = self.list.import_file(path_str, None) {
+			return ImportResult::Ok(file);
 		}
+
+		let path = match canonicalize(&path) {
+			Ok(path) => path,
+			Err(err) if err.kind() == ErrorKind::NotFound => {
+				return ImportResult::Err(ImportError::NotFound);
+			}
+			Err(err) => {
+				return ImportResult::Err(ImportError::Other(err.to_string().into()));
+			}
+		};
+
+		if !path.starts_with(&self.root) {
+			return ImportResult::Err(ImportError::Other(
+				"path is outside the root".into(),
+			));
+		}
+
+		let src = match read_to_string(path) {
+			Ok(src) => src,
+			Err(err) => {
+				return ImportResult::Err(ImportError::Other(err.to_string().into()));
+			}
+		};
+		let file = match parse_decl_file(&src, path_str) {
+			Ok(src) => src,
+			Err(err) => return ImportResult::Err(ImportError::Parse(err)),
+		};
+
+		_ = self.list.add(file.clone());
+		ImportResult::Ok(file)
 	}
 	fn get_file_box(&self, id: DeclNs) -> Option<DeclFileBox> {
 		self.list.get_file_box(id)

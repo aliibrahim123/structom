@@ -16,7 +16,8 @@ use crate::{
 		str_cursor::Ident,
 		token_cursor::*,
 		tokens::{
-			Block, angle_close, angle_open, at, bang, comma, dot, hash, int, paren_open,
+			Block, angle_close, angle_open, at, bang, comma, dot, hash, int, paren_close,
+			paren_open, unit_comment,
 		},
 		value::{parse_map, parse_value},
 	},
@@ -63,6 +64,7 @@ impl Directive {
 				"the \"unitfield\" directive can only be applied to tagged structs and variants"
 			}
 		};
+
 		cur.error(msg.to_string(), span);
 		if self == Directive::Tag {
 			cur.try_eat(int);
@@ -73,31 +75,39 @@ impl Directive {
 }
 
 fn try_metadata(cur: &mut Cursor, in_root: bool, metadata: &mut Metadata) {
-	while cur.try_eat(at).is_some() {
-		if in_root && !cur.try_symbol(bang) {
-			cur.off -= 1;
+	loop {
+		let start = cur.off;
+		let skip = cur.try_symbol(unit_comment);
+		if !cur.try_symbol(at) || in_root && !cur.try_symbol(bang) {
+			cur.rewind(start);
 			break;
 		}
-		let Some(ident) = cur.try_ident() else { continue };
-		if !cur.options.metadata {
+		let Some(ident) = cur.ident() else { continue };
+		if skip || !cur.options.metadata {
 			cur.skip_block(Block::Paren);
 			continue;
 		}
 		let items: ThinVec<_> = cur
-			.try_delim_list(paren_open, paren_open, |cur| parse_value(cur, true))
+			.try_delim_list(paren_open, paren_close, |cur| parse_value(cur, true))
 			.unwrap_or_default();
 		_ = metadata.add(ident.val, items);
 	}
 }
 fn try_directive(cur: &mut Cursor, in_root: bool) -> Option<(Directive, Span)> {
-	while cur.try_symbol(hash) {
-		let start = cur.prev().span;
-		if in_root && !cur.try_symbol(bang) {
-			cur.off -= 1;
+	loop {
+		let start = cur.off;
+		let skip = cur.try_symbol(unit_comment);
+		let start_span = cur.peek().map_or(Span::EMPTY, |t| t.span);
+		if !cur.try_symbol(hash) || in_root && !cur.try_symbol(bang) {
+			cur.rewind(start);
 			return None;
 		}
 		if cur.test(int) {
-			return Some((Directive::Tag, start.join(cur.peek().unwrap().span)));
+			if skip {
+				cur.skip();
+				continue;
+			}
+			return Some((Directive::Tag, start_span.join(cur.peek().unwrap().span)));
 		}
 		let Some(ident) = cur.ident() else { continue };
 		let directive = match ident.val {
@@ -112,22 +122,32 @@ fn try_directive(cur: &mut Cursor, in_root: bool) -> Option<(Directive, Span)> {
 			name => {
 				cur.error(
 					format!("invalid directive \"{name}\""),
-					start.join(ident.span),
+					start_span.join(ident.span),
 				);
 				cur.skip_block(Block::Paren);
 				continue;
 			}
 		};
-		return Some((directive, start.join(ident.span)));
+		if skip {
+			cur.skip_block(Block::Paren);
+			continue;
+		}
+		return Some((directive, start_span.join(ident.span)));
 	}
-	None
 }
 
 pub fn meta_loop(
 	cur: &mut Cursor, in_root: bool, metadata: &mut Metadata,
 ) -> Option<(Directive, Span)> {
-	try_metadata(cur, in_root, metadata);
-	try_directive(cur, in_root)
+	loop {
+		let start = cur.off;
+		try_metadata(cur, in_root, metadata);
+		if let Some(res) = try_directive(cur, in_root) {
+			return Some(res);
+		} else if cur.off == start {
+			return None;
+		}
+	}
 }
 
 pub fn directiveless_meta(cur: &mut Cursor) -> Metadata {
@@ -139,7 +159,7 @@ pub fn directiveless_meta(cur: &mut Cursor) -> Metadata {
 }
 
 macro_rules! head_type {
-	() => { &mut impl FnMut(&mut Cursor) -> Result<TypeId, Metadata> };
+	() => { &mut impl FnMut(&mut Cursor) -> ControlFlow<TypeId, Metadata> };
 }
 
 fn parse_arr_typespec(cur: &mut Cursor, scope: &mut Scope, head: head_type!()) -> TypeId {
@@ -158,7 +178,7 @@ fn resolve_primary(
 		return Break(parse_arr_typespec(cur, scope, head));
 	} else if let Some(typeid) = builtin_by_name(primary.val, scope.profile) {
 		let params = match typeid.item {
-			ItemId::LIST | ItemId::FAR => 2,
+			ItemId::LIST | ItemId::FAR => 1,
 			ItemId::MAP => 2,
 			_ => 0,
 		};
@@ -222,8 +242,8 @@ pub fn parse_typespec(
 	cur: &mut Cursor, scope: &mut Scope, in_value: bool, head: head_type!(),
 ) -> Result<TypeId, Metadata> {
 	let metadata = match head(cur) {
-		Ok(typeid) => return Ok(typeid),
-		Err(metadata) => metadata,
+		Break(typeid) => return Ok(typeid),
+		Continue(metadata) => metadata,
 	};
 
 	let Some(primary) = cur.try_ident() else {
@@ -239,9 +259,7 @@ pub fn parse_typespec(
 	} {
 		Continue(res) => res,
 		Break(typeid) => {
-			cur.try_delim_list::<_, ()>(angle_open, angle_close, |cur| {
-				parse_typespec(cur, scope, false, head).ok()
-			});
+			cur.skip_block(Block::Angle);
 			return Ok(TypeId { metadata, ..typeid });
 		}
 	};

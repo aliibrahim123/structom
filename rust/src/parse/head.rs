@@ -56,7 +56,7 @@ enum UnknownFeat<'_ref> {
 	Error,
 	Collect(&'_ref mut HashSet<LeanStr>),
 }
-pub fn unkown_feat<'src>(
+fn unkown_feat<'src>(
 	unkown: &mut UnknownFeat, feat: &Ident, group_ident: &Ident, cur: &mut StrCursor,
 ) -> bool {
 	match unkown {
@@ -74,10 +74,7 @@ pub fn unkown_feat<'src>(
 		}
 	}
 }
-pub fn parse_group<
-	'src,
-	G: Default + BitOrAssign + BitAnd<Output = G> + PartialEq + Copy,
->(
+fn parse_group<'src, G: Default + BitOrAssign + BitAnd<Output = G> + PartialEq + Copy>(
 	cur: &mut StrCursor, group_ident: &Ident, group: &mut Option<G>,
 	features: &[(&str, G)], unknown: &mut UnknownFeat,
 ) -> bool {
@@ -153,8 +150,8 @@ pub fn parse_profile(
 				emit_unsupported
 			}
 		};
-		if !cur.try_char('_') && !cur.is_end() {
-			cur.expected("`_`");
+		if !cur.try_char(',') && !cur.is_end() {
+			cur.expected("`,`");
 		}
 	}
 	let profile =

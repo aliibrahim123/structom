@@ -1591,15 +1591,14 @@ struct Bytes(u64)
 ## Profile
 
 ```gramex
-let profile = feature_group ('_' feature_group)*;
-let feature_group = group:ident ('{' list<feature:ident> '}')?;
+let profile = list<group:ident ('{' list<feature:ident> '}')?>;
 ```
 
 A profile is a normal string that identifies the features and extensions supported by an implementation.
 
 Not all features are required, implementations can choose to support only what they need.
 
-A profile string is composed of several feature groups separated by `_`.
+A profile string is composed of several feature groups separated by `,`.
 
 Each group is composed of a base and optional extensions specified inside a comma separated list enclosed in curly block.
 
@@ -1628,7 +1627,7 @@ The `profile` root directive defines the features and extensions the file uses.
 #### example
 
 ```structom
-#!profile("obj_decl_rich{dur}")
+#!profile("obj,decl,rich{dur}")
 
 struct User {
 	name: str,

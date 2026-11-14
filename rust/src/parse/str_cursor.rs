@@ -96,6 +96,9 @@ impl<'src> Cursor<'src, '_> {
 		self.try_eat(char).is_some()
 	}
 	pub fn test_next(&self, offset: isize, matcher: impl Matcher<str>) -> bool {
+		if self.off as isize + offset < 0 {
+			return false;
+		}
 		matcher.test(self.slice, &mut ((self.off as isize + offset) as usize))
 	}
 	pub fn try_until(&mut self, char: char) -> bool {

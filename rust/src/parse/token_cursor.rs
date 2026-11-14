@@ -14,7 +14,7 @@ use crate::{
 			ident, paren_close, paren_open, unit_comment,
 		},
 	},
-	utils::{IntFromStr, VecLike},
+	utils::{IntFromStr, StrExt, VecLike},
 };
 pub use gramex::cursor::Cursor as _;
 
@@ -112,7 +112,10 @@ impl<'src> Cursor<'src, '_> {
 	pub fn enter_str<'cur>(&'cur mut self, str: &'cur Str) -> StrCursor<'cur, 'cur> {
 		let Self { src, errors, .. } = self;
 		match &str.val {
-			Cow::Borrowed(_) => StrCursor::new(src, Some(str.span), errors),
+			Cow::Borrowed(_) => {
+				let range = src.str.substr_range(&str.val).unwrap();
+				StrCursor::new(src, Some(Span::new(range.start, range.end)), errors)
+			}
 			Cow::Owned(val) => StrCursor::new_resolved(src, val, str.span, errors),
 		}
 	}
@@ -220,7 +223,7 @@ impl<'src> Cursor<'src, '_> {
 		&mut self, open: impl Matcher<Tokens<'src>>, close: impl Matcher<Tokens<'src>>,
 		mut item: impl FnMut(&mut Self) -> Option<T>,
 	) -> Option<T> {
-		self.eat(open).ok();
+		self.eat(open).ok()?;
 		let item = item(self);
 		if self.eat(&close).is_err() {
 			self.skip_until(|cur| cur.try_symbol(&close));
@@ -279,10 +282,11 @@ fn resolve_str_multiline<'src>(
 	cur: &mut Cursor<'src, '_>, span: Span, unterminated: bool,
 ) -> Str<'src> {
 	let raw = cur.src.source_of(span);
-	let body = &raw[3..raw.len() - if unterminated { 0 } else { 3 }]
-		.trim_start_matches([' ', '\t']);
+	let body = &raw[3..raw.len() - if unterminated { 0 } else { 3 }];
 	let trimmed = body.trim_end_matches([' ', '\t']);
 	let indent = &body[trimmed.len()..];
+	let trimmed =
+		trimmed.trim_start_matches([' ', '\t']).trim_prefix("\n").trim_suffix("\n");
 
 	let mut buf = Some(String::new());
 	for (ind, line) in trimmed.split('\n').enumerate() {

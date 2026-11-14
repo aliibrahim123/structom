@@ -13,7 +13,6 @@ use alloc_crate::vec::Vec;
 use crate::decl::DeclFileBox;
 pub use {error::ParseError, tokens::Span};
 
-#[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParseOptions {
 	pub metadata: bool,
