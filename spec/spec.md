@@ -10,11 +10,11 @@ This document is the language specification for Structom. It covers the full fea
 
 - An expressive object notation designed for ergonomic, human-readable data files.
 - An efficient binary encoding designed for bare-metal serialization performance.
-- A rich schema system with a [module system](#imports) and forward and backward compatibility.
+- A rich schema system with a [module system](#imports), [forward and backward compatibility](#evolution-guide) and binary encoding.
 - A schemaless mode in both the object notation and the binary encoding.
 - Rich modeling constructs: [tagged unions](#unions), [tagged types](#tagged-struct), [tree structs](#tree-struct), [generics](#generics), [anonymous items](#inner-definitions), and more.
-- Zero-copy binary decoding with support for segment based streaming and out-of-order decoding.
-- A wide set of rich data types: [instance](#inst), [duration](#dur), [UUID](#uuid), [bigint](#bint) [bitfield](#bitfield), and more.
+- Zero-copy binary decoding with support for object based streaming and out-of-order decoding.
+- A wide set of rich data types: [instant](#inst), [duration](#dur), [UUID](#uuid), [bigint](#bint) [bitfield](#bitfield), and more.
 - Erasable [metadata](#metadata) for better tooling, with a set of common built-in metadata.
 - many optional extensions implementations can opt to.
 
@@ -132,7 +132,7 @@ Data is encoded as signed or unsigned integers of `n` bits, specified by the `u`
 
 Array-like data is encoded as a field holding the length followed by the items fields, through a pointer or inlined. Arrays are always `0`-indexed.
 
-Pointers are `u32` fields that encode forward byte offsets relative to the pointer's own position. They point to objects in the current segment.
+Pointers are `u32` fields that encode forward byte offsets relative to the pointer's own position pointing to objects.
 
 Null pointers are encoded with the value `0`.
 
@@ -153,13 +153,13 @@ The header begins with the magic number `53 54 4F 4D` (`STOM`) followed by a `u8
 Then it is followed by an `u8` `opt` option bit flags having the following flags:
 
 - `imp`: whether there are imports.
-- `seg`: whether there are segments.
+- `ld`: whether there are a local decleration.
 
 If `imp` is `1`, a list of imports is followed encoded as a `u16` length field followed by the inlined `str`s encoding the import paths.
 
-If `seg` is `1`, a list of segments comes next encoded as a non-zero `u32` length field followed by the `u64` segment offsets scaled by 4 bytes.
+If `ld` is `1`, a `u32` pointer to a `FileDecl` object encoding local item decleration is followed.
 
-Finally, a `typeid` of the root value follows, if `imp` is `0`, it is just the `u16` `id` part, `ns` is `0` implied.
+Finally, a `typeid` of the root value follows.
 
 #### Example
 
@@ -167,23 +167,19 @@ Finally, a `typeid` of the root value follows, if `imp` is `0`, it is just the `
 
 A header with 1 import (`"schema"`), and the root value `import("schema").first_type`.
 
-### Segments
+### Objects
 
-![segments](./segments.svg)
+A binary file is composed of multiple objects, each encoding a specific data structure defined by the schema.
 
-Segments are non-uniformly sized parts of a binary file.
+Objects are aligned to minimuim `u32` boundries based on the maximuim alignment of their fields.
 
-They create a two-level address space for the file, which keeps pointers short (`u32`) while still supporting `u64` file sizes.
-
-A segment is composed of multiple objects, each encoding a specific data structure defined by the schema.
-
-Objects are aligned to `u64` boundaries and usually start with a `u32` field encoding the object's full size scaled by 4 bytes.
+they usually start with a `u32` field encoding the object's full size scaled by 4 bytes.
 
 An object whose size is fixed in time does not need the size field, like boxed fixed structs in generic fields.
 
-The root value is the first object in the first segment. Parent objects always come before their children.
+The root value is the first object at byte 0 of the body. Parent objects always come before their children.
 
-There are at most `4.2 billion (2 ^ 32 - 1)` segments spanning at most `16GB (2 ^ 34)` bytes each, giving a theoretical maximum of `64EB (2 ^ 66 - 2 ^ 34)` file size.
+objects can span `4` to `16GB (2 ^ 34)` bytes, with theoretical maximuim file size of `64EB (2 ^ 66)` bytes, though non `far` pointers can reach `16GB (2 ^ 34)` bytes ahead of them.
 
 # Declarations Basics
 
@@ -310,7 +306,7 @@ Type identifiers are fields in the binary encoding that specify the type of a va
 
 A type identifier is composed of two `u16` fields: a namespace identifier `ns`, and the type `id` within that namespace.
 
-`ns` `0` is the built-in types namespace. The remaining values are assigned to imported files, using their index in the header's `import` array plus 1.
+`ns` `0` is the built-in types namespace, `ns` `1` is local declerations, The remaining values are assigned to imported files, using their index in the header's `import` array plus 2.
 
 If the resolved item is [generic](#generics), its parameters follow the base `typeid` as additional `typeid`s.
 
@@ -603,11 +599,17 @@ let any_value = value;
 
 ![any value](./any_value.svg)
 
-![any object](./any_object.svg)
+#### with generic parameters
 
-`any` is encoded as a pointer to an object that encodes the `value` together with its `typeid`, in addition to a `u32` `len` field scaled by 4.
+![any generic value](./any_generic_value.svg)
 
-The `value` does not encode its `len` field.
+![any generic object](./any_generic_object.svg)
+
+**Align**: 4
+
+`any` is encoded as a `typeid` field without generic parameters, followed by the value encoded as if it is a [generic field](#binary-encoding-1) instantiated to the given `typeid`.
+
+If the base type has generic parameters, the `typeid` field become `ns: 0x0000, id: 0xffff`, followed by a pointer to an object encoding the whole `typeid`, then the value encoded inlined.
 
 #### Example
 
@@ -622,11 +624,13 @@ Element {
 }
 ```
 
+![any example](./any_example.svg)
+
 ## `far`
 
 The `far` type is a pointer to an object in any segment.
 
-`far` is used in large files (> `16GB`), where a single segment is not enough.
+`far` is used in large files (> `16GB`), where a `u32` pointer is not enough.
 
 Its default value is a null pointer.
 
@@ -643,13 +647,9 @@ let far_value = value;
 
 ![far typeid](./far_typeid.svg)
 
-![far value](./far_value.svg)
+**Align**: 8
 
-**Align**: 4
-
-`far` is encoded as a fat pointer consisting of the `segment` id and an `u32` scaled `offset` from the beginning of that segment.
-
-A null `far` pointer has both its `segment` and `offset` set to `0`.
+`far` is encoded the same as regular `u32` pointers except it is `u64`.
 
 # Items
 
@@ -674,27 +674,25 @@ Items can define their default values through the `default` directive.
 ### Inner definitions
 
 ```gramex
-let inner_def = ('#' id:nb)? (
+let inner_def =
 	"struct" name?:ident struct_body |
 	"union" name?:ident union_body
-);
+;
 ```
 
 Items can be declared inline within the fields of other items, becoming the types of those fields.
 
 They are anonymous taking optional name used as kind of metadata, and they inherit the [`fixed`](#fixed-struct) directive and the [generics](#generics) of their parent item.
 
-They receive their ids like top level items except counting down from `65535 (2^16 -1)`.
-
 Inner definitions can also be used inside generic parameters.
 
 #### Example
 
 ```structom
-#0 #fixed #tree(elements) struct Element {
+#fixed #tree(elements) struct Element {
 	tag: str,
-	attr: list<#1 struct {
-		name: #3 struct AttrName(str),
+	attr: list<struct {
+		name: struct AttrName(str),
 		value: any,
 	}>,
 	elements: list<Element>,
@@ -703,9 +701,9 @@ Inner definitions can also be used inside generic parameters.
 struct _ {}
 
 #default(.B)
-#5 union Union<T> {
+#3 union Union<T> {
 	A, B, C,
-	D(/* id = 6 */ union { A, B, C(T) }),
+	D(union { A, B, C(T) }),
 	E { v?: list<T> },
 }
 ```
@@ -1218,11 +1216,10 @@ The escape codes are:
 
 ```structom
 "abc \"\\\n \u{12_34}"
-"""
-    abc "\\
-	 \u{12_34}
-"""
-
+	"""
+    	abc "\\
+		\u{12_34}
+	"""
 ```
 
 ## `map`
@@ -1606,8 +1603,7 @@ The groups and their extensions are:
 
 - `obj`: the object notation, schemaless mode (builtin types and `any`).
 
-- `bin`: the binary encoding, schemaless mode (builtin types and `any`), having the following extensions:
-    - `seg`: segments and large files support.
+- `bin`: the binary encoding, schemaless mode (builtin types and `any`).
 
 - `decl`: declarations and user defined items, include module system and schema mode of object notation and binary encoding, having the following extensions:
     - `gen`: generics support for user defined items.
