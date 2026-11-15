@@ -128,7 +128,7 @@ const encodings = {
 		u16('01 00', 'imports'),
 		u32('06 00 00 00', 'import1_len'),
 		...Array.from('schema').map((v) => u8(v.charCodeAt(0).toString(16), '')),
-		...typeid('01 00', '00 00'),
+		...typeid('02 00', '00 00'),
 	],
 	segments: [
 		u32('obj0_len'),

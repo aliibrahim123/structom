@@ -157,7 +157,7 @@ Then it is followed by an `u8` `opt` option bit flags having the following flags
 
 If `imp` is `1`, a list of imports is followed encoded as a `u16` length field followed by the inlined `str`s encoding the import paths.
 
-If `ld` is `1`, a `u32` pointer to a `FileDecl` object encoding local item decleration is followed.
+If `ld` is `1`, a `u32` pointer to a [`DeclFile`](#declaration-types) object encoding local item decleration is followed.
 
 Finally, a `typeid` of the root value follows.
 
@@ -177,15 +177,17 @@ they usually start with a `u32` field encoding the object's full size scaled by 
 
 An object whose size is fixed in time does not need the size field, like boxed fixed structs in generic fields.
 
-The root value is the first object at byte 0 of the body. Parent objects always come before their children.
+The root value is the first object at byte 0 of the body, non object values are encoded inside an object without `len` field.
+
+Parent objects always come before their children.
 
 objects can span `4` to `16GB (2 ^ 34)` bytes, with theoretical maximuim file size of `64EB (2 ^ 66)` bytes, though non `far` pointers can reach `16GB (2 ^ 34)` bytes ahead of them.
 
 # Declarations Basics
 
-Declarations are object notation constructs that act as schemas and define the shape of data structures.
+Declarations act as schemas and define the shape of data structures.
 
-They are written above the root value in object files, or in dedicated files called declaration files.
+They are written above the root value in object files, or in dedicated files called declaration files in object notaton ro binary encoding.
 
 #### Example
 
@@ -213,7 +215,7 @@ union Union {
 ```gramex
 let import = '#' '!' "import" '(' path:str (',' second_param)? (',' path_meta: metamap)? ')';
 let path = url | rel_fs_path | '@' (ns = !'/'+) '/' (ns = _+);
-let second_param = "as" ns:ident | ',' '[' list<ident> ']';
+let second_param = "as" ns:ident | '[' list<ident> ']';
 ```
 
 Imports are directives that bring the items of another declaration file into scope.
@@ -362,7 +364,7 @@ In the binary encoding, the encoding of a field whose type is a generic paramete
 
 Such a field is always a `u32`, interpreted as:
 
-- A pointer to an object, if the instance is an object type (non fixed [struct](#structs) or [variant](#unions), [`str`](#str), [`list`](#list), [`map`](#map), [`any`](#any)...).
+- A pointer to an object, if the instance is an object type (non fixed [struct](#structs) or [variant](#unions), [`str`](#str), [`list`](#list), [`map`](#map)).
 - The inlined instance encoding, if the instance is [fixed](#fixed-struct) and 4 bytes or smaller.
 - A pointer to an object that encodes the instance value directly (without a length), if the instance is fixed and larger than 4 bytes.
 
@@ -380,7 +382,6 @@ let metadata = '@' name:ident meta_params?;
 let root_metadata = '@' '!' name:ident meta_params?;
 
 let meta_params = '(' params:list<value> ')';
-;
 ```
 
 Directives are object-notation construct for adding sematic meaning without requiring a new keyword.
@@ -407,9 +408,11 @@ Metadata of the same name are allowed on the same item, but directives are not.
 struct User {
 	@regex_pat("[a-zA-Z0-9]+")
 	name: str,
-	id: @private_constructor
-		struct UserId(uuid),
+	id: UserId,
 }
+
+@private_constructor
+struct UserId(uuid)
 ```
 
 # Core types
@@ -628,9 +631,7 @@ Element {
 
 ## `far`
 
-The `far` type is a pointer to an object in any segment.
-
-`far` is used in large files (> `16GB`), where a `u32` pointer is not enough.
+The `far` type is a pointer to an object in large files (> `16GB`), where a `u32` pointer is not enough.
 
 Its default value is a null pointer.
 
@@ -674,15 +675,19 @@ Items can define their default values through the `default` directive.
 ### Inner definitions
 
 ```gramex
-let inner_def =
+let inner_def = id?:nb (
 	"struct" name?:ident struct_body |
 	"union" name?:ident union_body
-;
+);
 ```
 
 Items can be declared inline within the fields of other items, becoming the types of those fields.
 
-They are anonymous taking optional name used as kind of metadata, and they inherit the [`fixed`](#fixed-struct) directive and the [generics](#generics) of their parent item.
+They are anonymous and can not be referenced, taking optional name used as kind of metadata.
+
+they inherit the [`fixed`](#fixed-struct) directive and the [generics](#generics) of their parent item.
+
+They receive their ids like top level items except counting down from `65535 (2^16 -1)` and resolved after the top item ones.
 
 Inner definitions can also be used inside generic parameters.
 
@@ -865,7 +870,7 @@ Fixed structs are frozen in time and cannot evolve. They are subject to the same
 #### Example
 
 ```structom
-// align: 4, size: 10
+// align: 4, size: 14
 struct Parent {
 	a: u16,
 	b: Fixed,
@@ -1179,7 +1184,7 @@ A `str` can be at most `4.2 billion (2^32 -1)` bytes long.
 ```gramex
 let str_type = "str";
 let str_value = str_escaped | str_multiline;
-let str_escaped = '"' (escape_code | !('"' | '\\'))* '"';;
+let str_escaped = '"' (escape_code | !('"' | '\\'))* '"';
 let str_multiline = '"'[3] (escape_code | !('"'[3] | '\\'))* '"'[3];
 let escape_code = '\\' (
 	'\\' | '"' | 'n' | 't' | 'r' |
@@ -1583,6 +1588,115 @@ struct Bytes(u64)
 ]
 ```
 
+# Declaration Types
+
+Declerations are represented as a set of builtin types found in id range `0x10xx`.
+
+each decleration construct is represented by a deticated type named after it and having its invariants.
+
+the root type is `DeclFile` which represent a full decleration file.
+
+```structom
+// reserved items, fields and variants has `_` as name
+#0x1000 struct DeclFile {
+	items: list<Item>,
+}
+
+#0x1001 struct Item {
+	id: u16,
+	name: str,
+	kind: ItemKind,
+	// #default(..)
+	default_value?: any,
+	generic_params: list<GenericParam>,
+	rich_notation: list<RichNotation>,
+}
+
+#0x1002 union ItemKind(u8) {
+	Struct (Body),
+	Union {
+		tag_type: TagType,
+		variants: list<Variant>,
+	},
+}
+
+#0x1003 union Body(u8) {
+	Tagged(TypeId),
+	Fields {
+		// #fixed
+		fixed: bool,
+		// #tree(field)
+		tree_field?: u16,
+		fields: list<Field>,
+	},
+}
+
+// ns: 0xffff is the generic parameter namespace where `id` is its index in item.generic_params
+// arr has its len encoded in a second geenric param inside `id`
+#0x1004 struct TypeId {
+	ns: u16,
+	id: u16,
+	params: list<TypeId>,
+}
+
+#0x1005 struct GenericParam {
+	name: str,
+}
+
+#0x1006 union TagType(u8) {
+	U8,
+	U16,
+	U32,
+}
+
+#0x1007 union FieldPresence(u8) {
+	Required,
+	Option { default_value?: any },
+}
+
+#0x1008 struct Field {
+	id: u16,
+	name: str,
+	typeid: TypeId,
+	presence: FieldPresence,
+}
+
+#0x1009 struct Variant {
+	tag: u16,
+	name: str,
+	body?: Body,
+	rich_notation: list<RichNotation>,
+}
+
+#0x100a union BitFieldKind(u8) {
+	Atomic(u8),
+	TypeId(TypeId),
+}
+
+#0x100b struct BitField {
+	name: str,
+	kind: BitFieldKind,
+}
+
+#0x100c struct Unit {
+	names: list<str>,
+	mult: any,
+	min?: any,
+	max?: any,
+}
+
+#0x100d union RichNotation(u8) {
+	Marker, // bare #rich
+	BitField {
+		size: u8,
+		fields: list<BitField>,
+	},
+	UnitField {
+		units: list<Unit>,
+	},
+}
+```
+
 # Appendix
 
 ## Profile
@@ -1804,13 +1918,15 @@ union Union(u8) {
 
 ## File extensions
 
-- `.stomd`: declaration file.
+- `.stomd`: object notation declaration file.
 - `.stomo`: object value file.
 - `.stomb`: binary value file.
 
 Object notation files are always UTF-8 encoded.
 
 Binary files start with `STOM` (`53 54 4F 4D`) magic number.
+
+Binary declaration files has extension `.stomo` but root value of [`DeclFile`](#declaration-types).
 
 ## Typeid map
 
