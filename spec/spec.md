@@ -13,10 +13,10 @@ This document is the language specification for Structom. It covers the full fea
 - A rich schema system with a [module system](#imports), [forward and backward compatibility](#evolution-guide) and binary encoding.
 - A schemaless mode in both the object notation and the binary encoding.
 - Rich modeling constructs: [tagged unions](#unions), [tagged types](#tagged-struct), [tree structs](#tree-struct), [generics](#generics), [anonymous items](#inner-definitions), and more.
-- Zero-copy binary decoding with support for object based streaming and out-of-order decoding.
+- Zero-copy binary decoding with support for object-based streaming and out-of-order decoding.
 - A wide set of rich data types: [instant](#inst), [duration](#dur), [UUID](#uuid), [bigint](#bint) [bitfield](#bitfield), and more.
 - Erasable [metadata](#metadata) for better tooling, with a set of common built-in metadata.
-- many optional extensions implementations can opt to.
+- Many optional extensions that implementations can opt into.
 
 # Foundations
 
@@ -130,9 +130,9 @@ Data is encoded in little-endian byte order, aligned to its natural alignment, w
 
 Data is encoded as signed or unsigned integers of `n` bits, specified by the `u`/`i` field types.
 
-Array-like data is encoded as a field holding the length followed by the items fields, through a pointer or inlined. Arrays are always `0`-indexed.
+Array-like data is encoded as a field holding the length followed by the item fields, through a pointer or inlined. Arrays are always `0`-indexed.
 
-Pointers are `u32` fields that encode forward byte offsets relative to the pointer's own position pointing to objects.
+Pointers are `u32` fields that encode forward byte offsets, relative to the pointer's own position, to objects.
 
 Null pointers are encoded with the value `0`.
 
@@ -148,16 +148,16 @@ Null pointers are encoded with the value `0`.
 
 A binary file starts with a header that specifies its core attributes. The header is required for standalone files but optional for inlined blobs.
 
-The header begins with the magic number `53 54 4F 4D` (`STOM`) followed by a `u8` `version` field, it is `1` in this version.
+The header begins with the magic number `53 54 4F 4D` (`STOM`) followed by a `u8` `version` field, which is `1` in this version.
 
-Then it is followed by an `u8` `opt` option bit flags having the following flags:
+It is followed by a `u8` `opt` field of option bit flags, having the following flags:
 
 - `imp`: whether there are imports.
-- `ld`: whether there are a local decleration.
+- `ld`: whether there is a local declaration.
 
-If `imp` is `1`, a list of imports is followed encoded as a `u16` length field followed by the inlined `str`s encoding the import paths.
+If `imp` is `1`, a list of imports follows, encoded as a `u16` length field followed by the inlined `str`s encoding the import paths.
 
-If `ld` is `1`, a `u32` pointer to a [`DeclFile`](#declaration-types) object encoding local item decleration is followed.
+If `ld` is `1`, a `u32` pointer to a [`DeclFile`](#declaration-types) object encoding the local item declarations follows.
 
 Finally, a `typeid` of the root value follows.
 
@@ -171,23 +171,23 @@ A header with 1 import (`"schema"`), and the root value `import("schema").first_
 
 A binary file is composed of multiple objects, each encoding a specific data structure defined by the schema.
 
-Objects are aligned to minimuim `u32` boundries based on the maximuim alignment of their fields.
+Objects are aligned to a minimum of `u32` boundaries based on the maximum alignment of their fields.
 
-they usually start with a `u32` field encoding the object's full size scaled by 4 bytes.
+They usually start with a `u32` field encoding the object's full size scaled by 4 bytes.
 
 An object whose size is fixed in time does not need the size field, like boxed fixed structs in generic fields.
 
-The root value is the first object at byte 0 of the body, non object values are encoded inside an object without `len` field.
+The root value is the first object at byte 0 of the body; non-object values are encoded inside an object without a `len` field.
 
 Parent objects always come before their children.
 
-objects can span `4` to `16GB (2 ^ 34)` bytes, with theoretical maximuim file size of `64EB (2 ^ 66)` bytes, though non `far` pointers can reach `16GB (2 ^ 34)` bytes ahead of them.
+Objects can span `4` to `16GB (2 ^ 34)` bytes, with a theoretical maximum file size of `64EB (2 ^ 66)` bytes, though non-`far` pointers can reach `16GB (2 ^ 34)` bytes ahead of them.
 
 # Declarations Basics
 
 Declarations act as schemas and define the shape of data structures.
 
-They are written above the root value in object files, or in dedicated files called declaration files in object notaton ro binary encoding.
+They are written above the root value in object files, or in dedicated files called declaration files in object notation or binary encoding.
 
 #### Example
 
@@ -220,20 +220,20 @@ let second_param = "as" ns:ident | '[' list<ident> ']';
 
 Imports are directives that bring the items of another declaration file into scope.
 
-They take a `str` parameter containing the path of the decleration file, it can be:
+They take a `str` parameter containing the path of the declaration file, it can be:
 
 - a URL
 - a relative file-system path
-- a user defined id specifed as `@ns/id`.
+- a user-defined id specified as `@ns/id`.
 
-They also take second optional parameter which can be:
+They also take a second optional parameter which can be:
 
 - `as` followed by a `ns` identifier, where the imported items are brought into their own namespace `ns`.
-- a bracket enclosed comma separated list of identifiers of the imported items bringed into scope unnamespaced.
+- a bracket-enclosed comma-separated list of identifiers of the imported items brought into scope unnamespaced.
 
-If the second parameter is not specifier, all the imported file items are bringed into the scope unnamespaced.
+If the second parameter is not specified, all the imported file's items are brought into the scope unnamespaced.
 
-Additionally, imports can have a third meta map value parameter specifing some metadata about the import, like a semver string of the required version.
+Additionally, imports can have a third meta map value parameter specifying some metadata about the import, like a semver string of the required version.
 
 Imports cannot be circular.
 
@@ -264,7 +264,7 @@ struct Root {
 
 ---
 
-In the binary encoding, imports are encoded as a list inside the [header](#header). A namespace id is the import's index in that array plus 1.
+In the binary encoding, imports are encoded as a list inside the [header](#header). A namespace id is the import's index in that array plus 2.
 
 ## Type
 
@@ -308,7 +308,7 @@ Type identifiers are fields in the binary encoding that specify the type of a va
 
 A type identifier is composed of two `u16` fields: a namespace identifier `ns`, and the type `id` within that namespace.
 
-`ns` `0` is the built-in types namespace, `ns` `1` is local declerations, The remaining values are assigned to imported files, using their index in the header's `import` array plus 2.
+`ns` `0` is the built-in types namespace, `ns` `1` is local declarations. The remaining values are assigned to imported files, using their index in the header's `import` array plus 2.
 
 If the resolved item is [generic](#generics), its parameters follow the base `typeid` as additional `typeid`s.
 
@@ -364,7 +364,7 @@ In the binary encoding, the encoding of a field whose type is a generic paramete
 
 Such a field is always a `u32`, interpreted as:
 
-- A pointer to an object, if the instance is an object type (non fixed [struct](#structs) or [variant](#unions), [`str`](#str), [`list`](#list), [`map`](#map)).
+- A pointer to an object, if the instance is an object type (non-fixed [struct](#structs) or [variant](#unions), [`str`](#str), [`list`](#list), [`map`](#map)).
 - The inlined instance encoding, if the instance is [fixed](#fixed-struct) and 4 bytes or smaller.
 - A pointer to an object that encodes the instance value directly (without a length), if the instance is fixed and larger than 4 bytes.
 
@@ -384,7 +384,7 @@ let root_metadata = '@' '!' name:ident meta_params?;
 let meta_params = '(' params:list<value> ')';
 ```
 
-Directives are object-notation construct for adding sematic meaning without requiring a new keyword.
+Directives are an object-notation construct for adding semantic meaning without requiring a new keyword.
 
 Metadata is an object-notation-only construct for user-defined extra data.
 
@@ -392,11 +392,11 @@ It is useful for external tooling and is ignored by the parser.
 
 Directives and Metadata are declared before items, values, types, fields, variants, and [generic parameters](#generics), using a `#` or `@` followed by the name respectively.
 
-They can optionally take builtin types value as parameters enclosed in parentheses.
+They can optionally take built-in type values as parameters enclosed in parentheses.
 
-Directives and metadata that applies to the whole file are declared before any items, using a `!` before the name.
+Directives and metadata that apply to the whole file are declared before any items, using a `!` before the name.
 
-Metadata of the same name are allowed on the same item, but directives are not.
+Multiple metadata entries with the same name are allowed on the same item, but duplicate directives are not.
 
 #### Example
 
@@ -612,7 +612,7 @@ let any_value = value;
 
 `any` is encoded as a `typeid` field without generic parameters, followed by the value encoded as if it is a [generic field](#binary-encoding-1) instantiated to the given `typeid`.
 
-If the base type has generic parameters, the `typeid` field become `ns: 0x0000, id: 0xffff`, followed by a pointer to an object encoding the whole `typeid`, then the value encoded inlined.
+If the base type has generic parameters, the `typeid` field becomes `ns: 0x0000, id: 0xffff`, followed by a pointer to an object encoding the whole `typeid`, then the value encoded inlined.
 
 #### Example
 
@@ -658,9 +658,9 @@ Items are schema constructs that define composite data structures with concrete 
 
 They are product types ([structs](#structs)) and sum types ([unions](#unions)) with rich semantics: [generics](#generics), [tagging](#tagged-struct), [trees](#tree-struct), [anonymous items](#inner-definitions), [fixed items](#fixed-struct), [rich notation](#rich-types), and more.
 
-Each item gets its own `0`-indexed id based on its order in the file, and can specify its own using `#id`,
+Each item gets its own `0`-indexed id based on its order in the file, and can specify its own using `#id`.
 
-ids doesnt continue after specifed ones unless no previous unassigned id is left.
+IDs don't continue after specified ones unless no previous unassigned id is left.
 
 A single file can contain at most `65536 (2^16)` items.
 
@@ -668,7 +668,7 @@ Items named `_` are skipped, but their ids are still counted.
 
 Items can refer to each other in any order, not only to items above them.
 
-Items can shadow nonspecified imported items and non fundimantal builtins not specified in the profile.
+Items can shadow unspecified imported items and non-fundamental built-ins not specified in the profile.
 
 Items can define their default values through the `default` directive.
 
@@ -683,11 +683,11 @@ let inner_def = id?:nb (
 
 Items can be declared inline within the fields of other items, becoming the types of those fields.
 
-They are anonymous and can not be referenced, taking optional name used as kind of metadata.
+They are anonymous and cannot be referenced, taking an optional name used as a kind of metadata.
 
-they inherit the [`fixed`](#fixed-struct) directive and the [generics](#generics) of their parent item.
+They inherit the [`fixed`](#fixed-struct) directive and the [generics](#generics) of their parent item.
 
-They receive their ids like top level items except counting down from `65535 (2^16 -1)` and resolved after the top item ones.
+They receive their ids like top-level items except counting down from `65535 (2^16 -1)` and resolved after the top item ones.
 
 Inner definitions can also be used inside generic parameters.
 
@@ -721,7 +721,7 @@ Structs translate to structs, objects, maps, tables, records, and similar constr
 
 A struct's default value is a null pointer, or the default value of all its fields if it is [fixed](#fixed-struct) or [tagged](#tagged-struct).
 
-Structs can be nested inside themselves, except for [fixed](#fixed-struct) ones which can not directly contain themself.
+Structs can be nested inside themselves, except for [fixed](#fixed-struct) ones which cannot directly contain themselves.
 
 #### Example
 
@@ -756,11 +756,11 @@ Generally, the struct body is a list of field definitions inside a curly block.
 
 Each field definition is composed of a name and a [type specifier](#type-specifier). A field can be made optional with `?`.
 
-Optional field can be provided a default value through `= value`.
+An optional field can be given a default value through `= value`.
 
-Each field has its own `0` based id according to its declaration order, it can specify its own id using `#id`.
+Each field has its own `0`-based id according to its declaration order, it can specify its own id using `#id`.
 
-ids doesnt continue after specifed ones unless no previous unassigned id is left, no space in ids is allowed.
+IDs don't continue after specified ones unless no previous unassigned id is left, and no gaps in ids are allowed.
 
 Fields named `_` are skipped, but their place in the binary encoding is reserved.
 
@@ -787,7 +787,7 @@ let field_value = name:ident ':' value;
 
 Structs are represented by a list of fields and their values inside a curly block.
 
-Unkown fields are an error.
+Unknown fields are an error.
 
 The type specifier can be omitted if it can be inferred.
 
@@ -831,7 +831,7 @@ field_loop: for field in fields.sort(field => field.id) {
 
 Bit fields ([`bool`](#bool)s) are allocated together as `u8` fields. They fill bits `0` through `7`, and then a new byte is allocated.
 
-Optional fields that are not non fixed structs allocate an additional bit field after them. If it is `1`, a value is given inside the field. Otherwise, the default value / absent case is used.
+Optional fields that are not non-fixed structs allocate an additional bit field after them. If it is `1`, a value is given inside the field. Otherwise, the default value / absent case is used.
 
 Unspecified optional pointer fields are encoded as null pointers.
 
@@ -863,7 +863,7 @@ A struct with the `fixed` directive is encoded inline in its parent struct.
 
 A fixed struct is encoded as one big field containing all its fields, using the regular struct encoding without the `len` field.
 
-This big field is aligned to the maximum alignment of its fields and is sized to fit them all, not neccessary aligned.
+This big field is aligned to the maximum alignment of its fields and is sized to fit them all, not necessarily aligned.
 
 Fixed structs are frozen in time and cannot evolve. They are subject to the same limits as regular structs.
 
@@ -914,9 +914,9 @@ struct B<T>(T)
 let tree_value = fields_value? '[' children:list<value>? ']';
 ```
 
-The `tree` directive marks a struct as a tree struct providing it a nicer syntax.
+The `tree` directive marks a struct as a tree struct, giving it a nicer syntax.
 
-`tree` accept a `children` identifier parameter that specifies the field containing the list of children, its type can be an `arr`, a `list`, or a tagged struct wrapping one of them.
+`tree` accepts a `children` identifier parameter that specifies the field containing the list of children, its type can be an `arr`, a `list`, or a tagged struct wrapping one of them.
 
 A bracket-enclosed list of values can be provided after the fields block as the value of the children field. In that case, the fields block becomes optional.
 
@@ -951,7 +951,7 @@ Each variant has its own tag, based on its declaration order, and can be one of 
 
 Unions translate to tagged unions, discriminated unions, enumerations, and similar constructs in other languages.
 
-A union does not have a default value unless manually specified using `default` directive.
+A union does not have a default value unless manually specified using the `default` directive.
 
 #### Example
 
@@ -989,7 +989,7 @@ Each variant is defined by an identifier, optionally followed by a [struct body]
 
 Variants named `_` are skipped, but their tags are still counted.
 
-Each variant gets its own `0` based tag based on its declaration order, it can specify its own using `#tag`, ids continue counting after it if it is larger than the previous, and skipped assigned ones.
+Each variant gets its own `0`-based tag according to its declaration order, it can specify its own using `#tag`, tags continue counting after it if it is larger than the previous one, skipping assigned ones.
 
 A union can define its tag type inside parentheses after the name.
 
@@ -1088,7 +1088,7 @@ let arr_value = '[' list<value>? ']';
 
 The `arr` [type specifier](#type-specifier) takes 2 generic arguments: the `item` type specifier and the `size` of the `arr`.
 
-`size` can be at most `65535 (2^16 -1)` and can not be zero.
+`size` can be at most `65535 (2^16 -1)` and cannot be zero.
 
 Its value is a list of `size` values enclosed in brackets.
 
@@ -1158,7 +1158,7 @@ The `list` typeid takes an additional `item` `typeid` parameter.
 
 A `list` is encoded as a pointer to an object containing a `u32` `len` field followed by a sequence of `len` aligned `item` fields.
 
-if the item type is non fixed struct, an additional `item_len` `u32` field scaled by 4 bytes representing a shared `len` field between items is added after the `len` field.
+If the item type is a non-fixed struct, an additional `item_len` `u32` field, scaled by 4 bytes and representing a length shared between items, is added after the `len` field.
 
 If the length is zero, the pointer is null.
 
@@ -1203,13 +1203,13 @@ The escape codes are:
 - `\r`: carriage return (`\r`).
 - `\u{xxx}`: a Unicode [code point](https://en.wikipedia.org/wiki/Code_point) given as 1 to 6 hex digits `xxx`, optionally separated by underscores.
 
-`str` also have a multiline version where:
+`str` also has a multiline version where:
 
 - the opening and closing quotes are tripled.
 - `"` and `""` are allowed unescaped
-- the whitespace till newline around the text is stripped.
-- the indentation is stripped from the start of each line based on what the clossing `"""` has, mismatched line starts are ignored.
-- the indentation is ` ` and `\t` while line separator is `\n`.
+- the whitespace up to the newline around the text is stripped.
+- the indentation is stripped from the start of each line based on the indentation of the closing `"""`, mismatched line starts are ignored.
+- indentation consists of spaces and tabs, and the line separator is `\n`.
 
 ### Binary encoding
 
@@ -1259,7 +1259,7 @@ The `map` [type specifier](#type-specifier) takes 2 generic arguments: the `key`
 
 Its value is a list of `:`-separated key-value pairs enclosed in a curly block.
 
-identifier keys are transformed into `str` keys.
+Identifier keys are transformed into `str` keys.
 
 If no type is specified or inferred, the default is `map<any, any>`.
 
@@ -1302,7 +1302,7 @@ Rich types are types that have two forms:
 
 Rich notations are optional. Parsers that support them can use them to provide a richer user experience, while parsers that do not should dump them as-is.
 
-if the type is infered, the type specifier can be omitted.
+If the type is inferred, the type specifier can be omitted.
 
 `rich` is an item/variant-level [directive](#metadata-and-directives) that marks an item as a rich type. If a mismatching value syntax is provided, the value is dumped instead of raising an error.
 
@@ -1590,14 +1590,14 @@ struct Bytes(u64)
 
 # Declaration Types
 
-Declerations are represented as a set of builtin types found in id range `0x10xx`.
+Declarations are represented as a set of built-in types found in the id range `0x10xx`.
 
-each decleration construct is represented by a deticated type named after it and having its invariants.
+Each declaration construct is represented by a dedicated type named after it and having its invariants.
 
-the root type is `DeclFile` which represent a full decleration file.
+The root type is `DeclFile`, which represents a full declaration file.
 
 ```structom
-// reserved items, fields and variants has `_` as name
+// reserved items, fields and variants have `_` as their name
 #0x1000 struct DeclFile {
 	items: list<Item>,
 }
@@ -1632,7 +1632,7 @@ the root type is `DeclFile` which represent a full decleration file.
 }
 
 // ns: 0xffff is the generic parameter namespace where `id` is its index in item.generic_params
-// arr has its len encoded in a second geenric param inside `id`
+// arr has its len encoded in a second generic param inside `id`
 #0x1004 struct TypeId {
 	ns: u16,
 	id: u16,
@@ -1711,18 +1711,18 @@ Not all features are required, implementations can choose to support only what t
 
 A profile string is composed of several feature groups separated by `,`.
 
-Each group is composed of a base and optional extensions specified inside a comma separated list enclosed in curly block.
+Each group is composed of a base and optional extensions specified inside a comma-separated list enclosed in a curly block.
 
 The groups and their extensions are:
 
-- `obj`: the object notation, schemaless mode (builtin types and `any`).
+- `obj`: the object notation, schemaless mode (built-in types and `any`).
 
-- `bin`: the binary encoding, schemaless mode (builtin types and `any`).
+- `bin`: the binary encoding, schemaless mode (built-in types and `any`).
 
-- `decl`: declarations and user defined items, include module system and schema mode of object notation and binary encoding, having the following extensions:
-    - `gen`: generics support for user defined items.
+- `decl`: declarations and user-defined items, including the module system and the schema mode of the object notation and binary encoding, having the following extensions:
+    - `gen`: generics support for user-defined items.
 
-- `rich`: rich notation, enable the raw values of builtin rich types, having the following extensions:
+- `rich`: rich notation, enables the raw values of built-in rich types, having the following extensions:
     - `uuid`: [`uuid`](#uuid) rich notation.
     - `inst`: [`inst`](#inst) rich notation.
     - `dur`: [`dur`](#dur) rich notation.
@@ -1751,7 +1751,7 @@ Below is a list of [directives](#metadata-and-directives) defined by the languag
 
 - [`import`](#imports): bring the declarations of another declaration file into scope.
 
-- [`fixed`](#fixed-struct): make the struct or variant encoded inlined.
+- [`fixed`](#fixed-struct): encode the struct or variant inline.
 
 - [`default`](#items): define a default value for an item.
 
@@ -1819,13 +1819,13 @@ This section describes the evolution guidelines for the binary encoding. The obj
 
 In general, readers should fail safely on missing fields, and writers must write all padding as zero.
 
-Metadata can be changed in any way, but directives not.
+Metadata can be changed in any way, but directives cannot.
 
 Items, fields, and variants can be renamed if object notation stability is not important.
 
 File paths must remain stable and item id order must be preserved. Items must be deprecated instead of removed.
 
-For structs, field tag order must be preserved. Fields must be added with a tag after the last, and deprecated instead of removed.
+For structs, field id order must be preserved. Fields must be added with a id after the last, and deprecated instead of removed.
 
 Fields cannot change their types or optionality, but they can change their default values, writers must always write all specified values even if they are the default.
 
@@ -1926,7 +1926,7 @@ Object notation files are always UTF-8 encoded.
 
 Binary files start with `STOM` (`53 54 4F 4D`) magic number.
 
-Binary declaration files has extension `.stomo` but root value of [`DeclFile`](#declaration-types).
+Binary declaration files have the extension `.stomo`, but with a root value of [`DeclFile`](#declaration-types).
 
 ## Typeid map
 
