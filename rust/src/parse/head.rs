@@ -2,7 +2,7 @@ use core::ops::{BitAnd, BitOrAssign};
 
 use alloc_crate::{format, string::ToString, vec::Vec};
 use hashbrown::{HashSet, hash_map::Entry};
-use lean_string::LeanStr;
+use lean_string::{LeanStr, ToLeanStr};
 
 use crate::{
 	decl::{
@@ -54,7 +54,7 @@ fn parse_import<'src>(cur: &mut Cursor<'src, '_>) -> Option<Import<'src>> {
 enum UnknownFeat<'_ref> {
 	Ignore,
 	Error,
-	Collect(&'_ref mut HashSet<LeanStr>),
+	Collect(&'_ref mut HashMap<LeanStr, UnresolvedKind>),
 }
 fn unkown_feat<'src>(
 	unkown: &mut UnknownFeat, feat: &Ident, group_ident: &Ident, cur: &mut StrCursor,
@@ -69,7 +69,7 @@ fn unkown_feat<'src>(
 			true
 		}
 		UnknownFeat::Collect(set) => {
-			set.insert(feat.val.into());
+			set.insert(feat.val.into(), UnresolvedKind::Rich);
 			false
 		}
 	}
@@ -123,12 +123,12 @@ const RICH_FEATS: &[(&str, Rich)] = &[
 ];
 
 pub fn parse_profile(
-	cur: &mut StrCursor, unsupported_rich: Option<&mut HashSet<LeanStr>>,
+	cur: &mut StrCursor, unresolved: Option<&mut HashMap<LeanStr, UnresolvedKind>>,
 	emit_unsupported: bool,
 ) -> (Profile, bool) {
 	let (mut obj, mut bin, mut decl, mut rich) = (None, None, None, None);
 	let (mut unkown_normal, mut unknown_rich) = if emit_unsupported {
-		(UnknownFeat::Error, UnknownFeat::Collect(unsupported_rich.unwrap()))
+		(UnknownFeat::Error, UnknownFeat::Collect(unresolved.unwrap()))
 	} else {
 		(UnknownFeat::Ignore, UnknownFeat::Ignore)
 	};
@@ -159,6 +159,13 @@ pub fn parse_profile(
 	(profile, unsupported)
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UnresolvedKind {
+	NameSpace,
+	Import,
+	Rich,
+}
+
 pub struct Scope<'src, 'prov> {
 	pub prov: &'prov dyn DeclProv,
 
@@ -170,7 +177,7 @@ pub struct Scope<'src, 'prov> {
 
 	pub generics: HashMap<&'src str, ItemId>,
 
-	pub unsuported_rich: HashSet<LeanStr>,
+	pub unresolved: HashMap<LeanStr, UnresolvedKind>,
 	pub profile: Profile,
 }
 impl<'prov> Scope<'_, 'prov> {
@@ -182,7 +189,7 @@ impl<'prov> Scope<'_, 'prov> {
 			namespaces: HashMap::default(),
 			top: HashMap::default(),
 			generics: HashMap::default(),
-			unsuported_rich: HashSet::new(),
+			unresolved: HashMap::default(),
 			profile: Profile::new(),
 		}
 	}
@@ -226,7 +233,7 @@ fn parse_head<'src>(
 					let str = cur.str()?;
 					let (request, unsuported) = parse_profile(
 						&mut cur.enter_str(&str),
-						Some(&mut scope.unsuported_rich),
+						Some(&mut scope.unresolved),
 						true,
 					);
 					let supported = Profile::supported().with_bin(None);
@@ -263,19 +270,15 @@ fn import_res_into_file(
 	}
 }
 fn add_specified_imports(
-	items: &[Ident], file: DeclFileBox, scope: &mut Scope, cur: &mut Cursor,
+	items: &[Ident], file: Result<DeclFileBox, ()>, scope: &mut Scope, cur: &mut Cursor,
 ) {
 	for item in items {
-		let Some(def) = file.item_by_name(&item.val) else {
-			cur.error(format!("importing undefined item \"{item}\""), item.span);
-			return;
-		};
 		let Entry::Vacant(entry) = scope.top.entry(item.val.into()) else {
 			cur.error(
 				format!("multiple imported items with the same name \"{item}\"",),
 				item.span,
 			);
-			return;
+			continue;
 		};
 		if scope.namespaces.contains_key(item.val) {
 			cur.error(
@@ -283,7 +286,16 @@ fn add_specified_imports(
 				item.span,
 			)
 		}
-		entry.insert_entry((file.ns(), def.id, def.generic_params().len() as u16));
+		if let Ok(file) = &file {
+			let Some(def) = file.item_by_name(&item.val) else {
+				cur.error(format!("importing undefined item \"{item}\""), item.span);
+				scope.unresolved.insert(item.val.to_lean_str(), UnresolvedKind::Import);
+				continue;
+			};
+			entry.insert_entry((file.ns(), def.id, def.generic_params().len() as u16));
+		} else {
+			scope.unresolved.insert(item.val.to_lean_str(), UnresolvedKind::Import);
+		}
 	}
 }
 fn add_import<'src>(
@@ -291,7 +303,7 @@ fn add_import<'src>(
 	scope: &mut Scope<'src, '_>, cur: &mut Cursor,
 ) {
 	let Import { path, ns, items, .. } = import;
-	let Ok(file) = import_res_into_file(res, path, cur) else { return };
+	let file = import_res_into_file(res, path, cur);
 
 	if let Some(ns) = ns {
 		let Entry::Vacant(entry) = scope.namespaces.entry(&ns.val) else {
@@ -307,10 +319,14 @@ fn add_import<'src>(
 				ns.span,
 			);
 		}
-		entry.insert_entry(file);
+		if let Ok(file) = file {
+			entry.insert_entry(file);
+		} else {
+			scope.unresolved.insert(ns.val.to_lean_str(), UnresolvedKind::NameSpace);
+		}
 	} else if let Some(items) = items {
 		add_specified_imports(items, file, scope, cur);
-	} else {
+	} else if let Ok(file) = file {
 		scope.unnamespaced.push(file)
 	}
 }

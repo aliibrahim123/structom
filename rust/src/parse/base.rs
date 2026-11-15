@@ -12,7 +12,7 @@ use crate::{
 	},
 	parse::{
 		Span,
-		head::Scope,
+		head::{Scope, UnresolvedKind},
 		str_cursor::Ident,
 		token_cursor::*,
 		tokens::{
@@ -187,7 +187,7 @@ fn resolve_primary(
 		Continue((TypeId::new_unchecked(DeclNs::GENERIC_PARAMS, item), 0))
 	} else if let Some(res) = scope.resolve_top(primary.val) {
 		Continue(res)
-	} else if scope.unsuported_rich.contains(primary.val) {
+	} else if scope.unresolved.contains_key(primary.val) {
 		Break(TypeId::ANY)
 	} else {
 		cur.error(format!("undefined item \"{primary}\""), primary.span);
@@ -216,7 +216,9 @@ fn resolve_prim_dot_sec(
 		cur.off -= 2;
 		return Break(typeid);
 	} else {
-		cur.error(format!("undefined namespace \"{primary}\""), primary.span);
+		if !matches!(scope.unresolved.get(primary.val), Some(UnresolvedKind::NameSpace)) {
+			cur.error(format!("undefined namespace \"{primary}\""), primary.span);
+		}
 		return Break(TypeId::ANY);
 	}
 }
