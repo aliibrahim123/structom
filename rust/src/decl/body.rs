@@ -10,14 +10,14 @@ use crate::{
 	value::Value,
 };
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 enum FieldType {
 	Required,
 	Optional { default_value: Option<Value> },
 	Reserved,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Field {
 	id: FieldId,
 	name: LeanStr,
@@ -73,7 +73,7 @@ impl Field {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct UnassignedSpace;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Fields {
 	is_fixed: bool,
 	tree_children: Option<FieldId>,
@@ -88,28 +88,28 @@ impl Fields {
 	pub fn new(is_fixed: bool) -> Self {
 		Self { is_fixed, fields: ItemStore::new(), tree_children: None }
 	}
-	pub fn add_field(&mut self, field: Field) -> Result<FieldId, AssignError> {
+	pub fn add_field(&mut self, field: Field) -> Result<FieldId, (Field, AssignError)> {
 		self.fields.add(field.name.clone(), field).map(|(field, id)| {
 			field.id = FieldId(id as u16);
 			field.id
 		})
 	}
 	pub fn add_field_at(
-		&mut self, field: Field, id: usize,
-	) -> Result<FieldId, AssignError> {
-		self.fields.add_at(field.name.clone(), field, id).map(|(field, id)| {
+		&mut self, field: Field, id: u16,
+	) -> Result<FieldId, (Field, AssignError)> {
+		self.fields.add_at(field.name.clone(), field, id as _).map(|(field, id)| {
 			field.id = FieldId(id as u16);
 			field.id
 		})
 	}
 	pub fn reserve(
-		&mut self, typeid: TypeId, id: Option<usize>,
+		&mut self, typeid: TypeId, id: Option<u16>,
 	) -> Result<FieldId, AssignError> {
 		let mut field = Field::new("_", typeid);
 		field.type_ = FieldType::Reserved;
 		match id {
-			Some(id) => self.add_field_at(field, id),
-			None => self.add_field(field),
+			Some(id) => self.add_field_at(field, id).map_err(|(_, err)| err),
+			None => self.add_field(field).map_err(|(_, err)| err),
 		}
 	}
 	pub fn as_tree(&mut self, children: FieldId) -> Result<(), AssignError> {
@@ -144,7 +144,7 @@ impl Fields {
 	}
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Body {
 	Fields(Fields),
 	Tagged(TypeId),

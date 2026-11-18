@@ -77,20 +77,22 @@ impl DeclFileBuilder {
 		});
 		paths.collect()
 	}
-	pub fn add_item(&mut self, item: Item) -> Result<ItemId, AssignError> {
+	pub fn add_item(&mut self, item: Item) -> Result<ItemId, (Item, AssignError)> {
 		self.0.items.add(item.name.clone(), item).map(|(item, id)| {
 			item.id = ItemId(id as u16);
 			item.id
 		})
 	}
-	pub fn add_item_at(&mut self, item: Item, id: usize) -> Result<ItemId, AssignError> {
+	pub fn add_item_at(
+		&mut self, item: Item, id: u16,
+	) -> Result<ItemId, (Item, AssignError)> {
 		self.0.items.add_at(item.name.clone(), item, id as usize).map(|(item, id)| {
 			item.id = ItemId(id as u16);
 			item.id
 		})
 	}
 	pub fn reserve<'params>(
-		&mut self, name: Option<&str>, id: Option<usize>,
+		&mut self, name: Option<&str>, id: Option<u16>,
 		generic_params: impl IntoIterator<Item = &'params str>,
 	) -> Result<ItemId, AssignError> {
 		let mut item =
@@ -99,8 +101,8 @@ impl DeclFileBuilder {
 			item.generic_params_mut().add(param)?;
 		}
 		match id {
-			Some(id) => self.add_item_at(item, id),
-			None => self.add_item(item),
+			Some(id) => self.add_item_at(item, id).map_err(|(_, err)| err),
+			None => self.add_item(item).map_err(|(_, err)| err),
 		}
 	}
 	pub fn define_reserved(
@@ -121,11 +123,11 @@ impl DeclFileBuilder {
 	pub fn metadata_mut(&mut self) -> &mut Metadata {
 		&mut self.0.metadata
 	}
-	pub fn finalize(self) -> Result<DeclFileBox, AssignError> {
+	pub fn finalize(self) -> Result<DeclFileBox, (Self, AssignError)> {
 		if self.0.items.items.iter().any(|item| {
 			return matches!(item.kind, ItemKind::Reserved) && item.name != "_";
 		}) {
-			return Err(AssignError::UnassignedId);
+			return Err((self, AssignError::UnassignedId));
 		}
 		Ok(DeclFileBox(Arc::new(self.0)))
 	}

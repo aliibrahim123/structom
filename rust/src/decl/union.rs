@@ -7,7 +7,7 @@ use crate::decl::{
 	rich::{Metadata, RichNotation},
 };
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Variant {
 	name: LeanStr,
 	tag: VariantTag,
@@ -73,7 +73,7 @@ impl TagType {
 	}
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Union {
 	tag_type: TagType,
 	variants: ItemStore<Variant, { u32::MAX }, true>,
@@ -87,9 +87,11 @@ impl Union {
 	pub fn new(tag_type: TagType) -> Self {
 		Self { tag_type, variants: ItemStore::new() }
 	}
-	pub fn add_variant(&mut self, variant: Variant) -> Result<VariantTag, AssignError> {
+	pub fn add_variant(
+		&mut self, variant: Variant,
+	) -> Result<VariantTag, (Variant, AssignError)> {
 		if self.variants.id_counter >= self.tag_type.max() {
-			return Err(AssignError::FullCapacity);
+			return Err((variant, AssignError::FullCapacity));
 		}
 		self.variants.add(variant.name.clone(), variant).map(|(var, id)| {
 			var.tag = VariantTag(id);
@@ -97,24 +99,25 @@ impl Union {
 		})
 	}
 	pub fn add_variant_at(
-		&mut self, variant: Variant, tag: usize,
-	) -> Result<VariantTag, AssignError> {
-		if tag as u32 > self.tag_type.max() {
-			return Err(AssignError::FullCapacity);
+		&mut self, variant: Variant, tag: u32,
+	) -> Result<VariantTag, (Variant, AssignError)> {
+		if tag > self.tag_type.max() {
+			return Err((variant, AssignError::IdOutOfRange));
 		}
-		self.variants.add_at(variant.name.clone(), variant, tag).map(|(var, id)| {
+		self.variants.add_at(variant.name.clone(), variant, tag as _).map(|(var, id)| {
 			var.tag = VariantTag(id);
 			var.tag
 		})
 	}
 	pub fn reserve_variant(
-		&mut self, id: Option<usize>, body: Option<Body>,
-	) -> Result<VariantTag, AssignError> {
+		&mut self, id: Option<u32>, body: Option<Body>,
+	) -> Result<VariantTag, (Option<Body>, AssignError)> {
 		let variant = Variant::new("_", body);
 		match id {
 			Some(id) => self.add_variant_at(variant, id),
 			None => self.add_variant(variant),
 		}
+		.map_err(|(var, err)| (var.body, err))
 	}
 	pub fn tag_type(&self) -> TagType {
 		match (self.tag_type, self.variants.id_counter) {

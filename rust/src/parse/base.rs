@@ -2,6 +2,7 @@ use core::ops::ControlFlow::{self, Break, Continue};
 
 use alloc_crate::{format, string::ToString};
 
+use gramex::Matcher;
 use thin_vec::ThinVec;
 
 use crate::{
@@ -36,6 +37,19 @@ pub enum Directive {
 	Unitfield,
 }
 impl Directive {
+	pub fn from_str(str: &str) -> Option<Self> {
+		match str {
+			"import" => Some(Self::Import),
+			"profile" => Some(Self::Profile),
+			"fixed" => Some(Self::Fixed),
+			"default" => Some(Self::Default),
+			"tree" => Some(Self::Tree),
+			"rich" => Some(Self::Rich),
+			"bitfield" => Some(Self::Bitfield),
+			"unitfield" => Some(Self::Unitfield),
+			_ => None,
+		}
+	}
 	pub fn invalid_place(self, cur: &mut Cursor, span: Span) {
 		let msg = match self {
 			Directive::Import => {
@@ -74,13 +88,28 @@ impl Directive {
 	}
 }
 
-fn try_metadata(cur: &mut Cursor, in_root: bool, metadata: &mut Metadata) {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MetaContext {
+	Root,
+	Normal,
+	RichItem,
+}
+
+fn try_metadata(cur: &mut Cursor, ctx: MetaContext, metadata: &mut Metadata) {
 	loop {
 		let start = cur.off;
 		let skip = cur.try_symbol(unit_comment);
-		if !cur.try_symbol(at) || in_root && !cur.try_symbol(bang) {
+		if !cur.try_symbol(at) || ctx == MetaContext::Root && !cur.try_symbol(bang) {
 			cur.rewind(start);
 			break;
+		}
+		if ctx != MetaContext::Root && cur.try_symbol(bang) {
+			cur.try_ident();
+			cur.skip_block(Block::Paren);
+			cur.error(
+				"root level metadata outside root".into(),
+				cur.tokens.0[start].span.join(cur.prev().span),
+			);
 		}
 		let Some(ident) = cur.ident() else { continue };
 		if skip || !cur.options.metadata {
@@ -93,56 +122,50 @@ fn try_metadata(cur: &mut Cursor, in_root: bool, metadata: &mut Metadata) {
 		_ = metadata.add(ident.val, items);
 	}
 }
-fn try_directive(cur: &mut Cursor, in_root: bool) -> Option<(Directive, Span)> {
+pub fn try_directive(cur: &mut Cursor, ctx: MetaContext) -> Option<(Directive, Span)> {
 	loop {
 		let start = cur.off;
 		let skip = cur.try_symbol(unit_comment);
-		let start_span = cur.peek().map_or(Span::EMPTY, |t| t.span);
-		if !cur.try_symbol(hash) || in_root && !cur.try_symbol(bang) {
+		let span = cur.peek().map_or(Span::EMPTY, |t| t.span);
+		if !cur.try_symbol(hash) || ctx == MetaContext::Root && !cur.try_symbol(bang) {
 			cur.rewind(start);
 			return None;
+		}
+		if ctx != MetaContext::Root && cur.try_symbol(bang) {
+			_ = cur.try_ident().is_some() || cur.try_symbol(int);
+			cur.skip_block(Block::Paren);
+			cur.error(
+				"root level directive outside root".into(),
+				cur.tokens.0[start].span.join(cur.prev().span),
+			);
+			continue;
 		}
 		if cur.test(int) {
 			if skip {
 				cur.skip();
 				continue;
 			}
-			return Some((Directive::Tag, start_span.join(cur.peek().unwrap().span)));
+			return Some((Directive::Tag, span.join(cur.peek().unwrap().span)));
 		}
 		let Some(ident) = cur.ident() else { continue };
-		let directive = match ident.val {
-			"import" => Directive::Import,
-			"profile" => Directive::Profile,
-			"fixed" => Directive::Fixed,
-			"default" => Directive::Default,
-			"tree" => Directive::Tree,
-			"rich" => Directive::Rich,
-			"bitfield" => Directive::Bitfield,
-			"unitfield" => Directive::Unitfield,
-			name => {
-				cur.error(
-					format!("invalid directive \"{name}\""),
-					start_span.join(ident.span),
-				);
-				cur.skip_block(Block::Paren);
-				continue;
-			}
-		};
-		if skip {
-			cur.skip_block(Block::Paren);
-			continue;
+		let dir = Directive::from_str(ident.val);
+		if dir.is_none() && ctx != MetaContext::RichItem {
+			cur.error(format!("invalid directive \"{ident}\""), span.join(ident.span));
 		}
-		return Some((directive, start_span.join(ident.span)));
+		match dir {
+			Some(d) if !skip => return Some((d, span.join(ident.span))),
+			_ => cur.skip_block(Block::Paren),
+		}
 	}
 }
 
 pub fn meta_loop(
-	cur: &mut Cursor, in_root: bool, metadata: &mut Metadata,
+	cur: &mut Cursor, ctx: MetaContext, metadata: &mut Metadata,
 ) -> Option<(Directive, Span)> {
 	loop {
 		let start = cur.off;
-		try_metadata(cur, in_root, metadata);
-		if let Some(res) = try_directive(cur, in_root) {
+		try_metadata(cur, ctx, metadata);
+		if let Some(res) = try_directive(cur, ctx) {
 			return Some(res);
 		} else if cur.off == start {
 			return None;
@@ -152,7 +175,8 @@ pub fn meta_loop(
 
 pub fn directiveless_meta(cur: &mut Cursor) -> Metadata {
 	let mut metadata = Metadata::new();
-	while let Some((directive, span)) = meta_loop(cur, false, &mut metadata) {
+	while let Some((directive, span)) = meta_loop(cur, MetaContext::Normal, &mut metadata)
+	{
 		directive.invalid_place(cur, span);
 	}
 	metadata
@@ -166,7 +190,7 @@ fn parse_arr_typespec(cur: &mut Cursor, scope: &mut Scope, head: head_type!()) -
 	let typeid = cur.eat_delim(angle_open, angle_close, |cur| {
 		let item = parse_typespec(cur, scope, false, head).ok()?;
 		cur.eat(comma).ok()?;
-		let nb = cur.eat_int("`arr` length")?;
+		let nb = cur.eat_int("`arr` length")?.0;
 		Some(TypeId::arr(item, nb))
 	});
 	typeid.unwrap_or(TypeId::ANY)

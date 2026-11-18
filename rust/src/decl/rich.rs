@@ -83,7 +83,7 @@ impl<'a, G: IntoIterator<Item = Value>> FromIterator<(&'a str, G)> for Metadata 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DuplicateNotation;
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct RichNotation(ThinVec<Form>);
 impl RichNotation {
 	pub fn new() -> Self {
@@ -141,7 +141,7 @@ impl RichNotation {
 	}
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Form {
 	Reader(Reader),
 	#[cfg(feature = "rich-bitfield")]
@@ -204,7 +204,7 @@ impl BitFieldField {
 }
 
 #[cfg(feature = "rich-bitfield")]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct BitField {
 	size: u8,
 	fields: Vec<BitFieldField>,
@@ -319,7 +319,7 @@ impl Unit {
 }
 
 #[cfg(feature = "rich-unitfield")]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct UnitField {
 	units: Vec<Unit>,
 	name_index: HashMap<LeanStr, u32>,

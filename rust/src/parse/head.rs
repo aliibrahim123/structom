@@ -13,7 +13,7 @@ use crate::{
 	},
 	parse::{
 		Span,
-		base::{Directive, meta_loop},
+		base::{Directive, MetaContext, meta_loop},
 		str_cursor::{Cursor as StrCursor, Ident},
 		token_cursor::*,
 		tokens::{
@@ -221,7 +221,7 @@ fn parse_head<'src>(
 ) -> Result<(Metadata, Vec<Import<'src>>), ()> {
 	let mut imports = Vec::new();
 	let mut metadata = Metadata::new();
-	while let Some((directive, span)) = meta_loop(cur, true, &mut metadata) {
+	while let Some((directive, span)) = meta_loop(cur, MetaContext::Root, &mut metadata) {
 		match directive {
 			Directive::Import => {
 				if let Some(import) = parse_import(cur) {

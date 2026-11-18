@@ -119,7 +119,7 @@ impl<'src> Cursor<'src, '_> {
 			Cow::Owned(val) => StrCursor::new_resolved(src, val, str.span, errors),
 		}
 	}
-	pub fn eat_int<T: IntFromStr + Display>(&mut self, kind: &str) -> Option<T> {
+	pub fn eat_int<T: IntFromStr + Display>(&mut self, kind: &str) -> Option<(T, Span)> {
 		let Some(&Token { kind: TokenKind::Int { base, has_dash, sign }, span }) =
 			self.peek()
 		else {
@@ -145,7 +145,7 @@ impl<'src> Cursor<'src, '_> {
 			self.error(msg, span);
 			return None;
 		};
-		Some(val)
+		Some((val, span))
 	}
 	pub fn comma_unless_end(&mut self) {
 		if !self.try_symbol(comma) && !self.peek().is_some_and(|t| t.is_block_closer()) {

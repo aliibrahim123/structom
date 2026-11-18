@@ -72,13 +72,13 @@ pub(crate) fn check_ident(name: &LeanStr) -> Result<(), AssignError> {
 	.ok_or(AssignError::InvalidName)
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 enum IdIndex {
 	Sparse(Vec<u32>),
 	Map(HashMap<u32, u32>),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct ItemStore<T, const MAX_ID: u32, const COUNT_AFTER: bool> {
 	pub items: Vec<T>,
 	id_index: IdIndex,
@@ -143,10 +143,12 @@ impl<T, const MAX: u32, const COUNT_AFTER: bool> ItemStore<T, MAX, COUNT_AFTER> 
 			}
 		}
 	}
-	pub fn add(&mut self, name: LeanStr, item: T) -> Result<(&mut T, u32), AssignError> {
+	pub fn add(
+		&mut self, name: LeanStr, item: T,
+	) -> Result<(&mut T, u32), (T, AssignError)> {
 		while self.has_index(self.id_counter) {
 			if self.id_counter == MAX {
-				return Err(AssignError::FullCapacity);
+				return Err((item, AssignError::FullCapacity));
 			}
 			self.id_counter += 1;
 		}
@@ -155,21 +157,23 @@ impl<T, const MAX: u32, const COUNT_AFTER: bool> ItemStore<T, MAX, COUNT_AFTER> 
 	}
 	pub fn add_at(
 		&mut self, name: LeanStr, item: T, id: usize,
-	) -> Result<(&mut T, u32), AssignError> {
+	) -> Result<(&mut T, u32), (T, AssignError)> {
 		if id > MAX as usize {
-			return Err(AssignError::IdOutOfRange);
+			return Err((item, AssignError::IdOutOfRange));
 		}
 		if self.has_index(id as u32) {
-			return Err(AssignError::UsedId);
+			return Err((item, AssignError::UsedId));
 		}
 		self.insert(name, item, id as u32)
 	}
 	fn insert(
 		&mut self, name: LeanStr, item: T, id: u32,
-	) -> Result<(&mut T, u32), AssignError> {
-		check_ident(&name)?;
+	) -> Result<(&mut T, u32), (T, AssignError)> {
+		if check_ident(&name).is_err() {
+			return Err((item, AssignError::InvalidName));
+		}
 		let Entry::Vacant(name_entry) = self.name_index.entry(name) else {
-			return Err(AssignError::DuplicateName);
+			return Err((item, AssignError::DuplicateName));
 		};
 		if COUNT_AFTER && id > self.id_counter {
 			self.id_counter = id

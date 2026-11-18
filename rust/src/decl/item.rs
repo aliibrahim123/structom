@@ -69,7 +69,7 @@ impl GenericParams {
 	}
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum ItemKind {
 	Struct(Body),
 	Union(Union),
@@ -77,7 +77,7 @@ pub enum ItemKind {
 	Reserved,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Item {
 	pub(crate) name: LeanStr,
 	pub(crate) id: ItemId,
@@ -88,10 +88,14 @@ pub struct Item {
 	metadata: Metadata,
 }
 impl Item {
-	pub fn struct_(name: &str, body: impl Into<Body>) -> Result<Self, UnassignedSpace> {
+	pub fn struct_(
+		name: &str, body: impl Into<Body>,
+	) -> Result<Self, (Body, UnassignedSpace)> {
 		let mut body = body.into();
 		if let Body::Fields(fields) = &mut body {
-			fields.finalize()?;
+			if fields.finalize().is_err() {
+				return Err((body, UnassignedSpace));
+			}
 		}
 		Ok(Self::new_lean(LeanStr::from(name), ItemKind::Struct(body)))
 	}

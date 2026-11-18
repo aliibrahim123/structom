@@ -132,7 +132,7 @@ Data is encoded as signed or unsigned integers of `n` bits, specified by the `u`
 
 Array-like data is encoded as a field holding the length followed by the item fields, through a pointer or inlined. Arrays are always `0`-indexed.
 
-Pointers are `u32` fields that encode forward byte offsets, relative to the pointer's own position, to objects.
+Pointers are `u32` fields that encode forward byte offsets scaled by 4 bytes, relative to the pointer's own position, to objects.
 
 Null pointers are encoded with the value `0`.
 
