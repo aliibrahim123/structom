@@ -1,0 +1,27 @@
+{
+	"lsp": {
+		"rust-analyzer": {
+			"initialization_options": {
+				"linkedProjects": [
+					"Cargo.toml",
+					"tests/Cargo.toml"
+				],
+				"cargo": {
+					"features": [
+						"parse",
+						"stringify",
+						"rich-bitfield",
+						"rich-unitfield",
+						"rich-uuid",
+						"rich-inst",
+						"rich-dur",
+						"rich-bint",
+						"rich-dec",
+						"rich-color",
+						"fs-provider"
+					]
+				}
+			}
+		}
+	}
+}
