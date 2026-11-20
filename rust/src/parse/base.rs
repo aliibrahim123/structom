@@ -2,7 +2,6 @@ use core::ops::ControlFlow::{self, Break, Continue};
 
 use alloc_crate::{format, string::ToString};
 
-use gramex::Matcher;
 use thin_vec::ThinVec;
 
 use crate::{
@@ -16,10 +15,7 @@ use crate::{
 		head::{Scope, UnresolvedKind},
 		str_cursor::Ident,
 		token_cursor::*,
-		tokens::{
-			Block, angle_close, angle_open, at, bang, comma, dot, hash, int, paren_close,
-			paren_open, unit_comment,
-		},
+		tokens::Block,
 		value::{parse_map, parse_value},
 	},
 };
@@ -81,9 +77,9 @@ impl Directive {
 
 		cur.error(msg.to_string(), span);
 		if self == Directive::Tag {
-			cur.try_eat(int);
+			cur.try_eat(Int);
 		} else {
-			cur.skip_block(Block::Paren)
+			cur.skip_block(Block::Paren);
 		}
 	}
 }
@@ -99,12 +95,12 @@ pub enum MetaContext {
 fn try_metadata(cur: &mut Cursor, ctx: MetaContext, metadata: &mut Metadata) {
 	loop {
 		let start = cur.off;
-		let skip = cur.try_symbol(unit_comment);
-		if !cur.try_symbol(at) || ctx == MetaContext::Root && !cur.try_symbol(bang) {
+		let skip = cur.try_symbol(UnitComment);
+		if !cur.try_symbol(At) || ctx == MetaContext::Root && !cur.try_symbol(Bang) {
 			cur.rewind(start);
 			break;
 		}
-		if ctx != MetaContext::Root && cur.try_symbol(bang) {
+		if ctx != MetaContext::Root && cur.try_symbol(Bang) {
 			cur.try_ident();
 			cur.skip_block(Block::Paren);
 			cur.error(
@@ -118,7 +114,7 @@ fn try_metadata(cur: &mut Cursor, ctx: MetaContext, metadata: &mut Metadata) {
 			continue;
 		}
 		let items: ThinVec<_> = cur
-			.try_delim_list(paren_open, paren_close, |cur| parse_value(cur, true))
+			.try_delim_list(Block::Paren, |cur| parse_value(cur, true))
 			.unwrap_or_default();
 		_ = metadata.add(ident.val, items);
 	}
@@ -126,14 +122,14 @@ fn try_metadata(cur: &mut Cursor, ctx: MetaContext, metadata: &mut Metadata) {
 pub fn try_directive(cur: &mut Cursor, ctx: MetaContext) -> Option<(Directive, Span)> {
 	loop {
 		let start = cur.off;
-		let skip = cur.try_symbol(unit_comment);
+		let skip = cur.try_symbol(UnitComment);
 		let span = cur.peek().map_or(Span::EMPTY, |t| t.span);
-		if !cur.try_symbol(hash) || ctx == MetaContext::Root && !cur.try_symbol(bang) {
+		if !cur.try_symbol(Hash) || ctx == MetaContext::Root && !cur.try_symbol(Bang) {
 			cur.rewind(start);
 			return None;
 		}
-		if ctx != MetaContext::Root && cur.try_symbol(bang) {
-			_ = cur.try_ident().is_some() || cur.try_symbol(int);
+		if ctx != MetaContext::Root && cur.try_symbol(Bang) {
+			_ = cur.try_ident().is_some() || cur.try_symbol(Int);
 			cur.skip_block(Block::Paren);
 			cur.error(
 				"root level directive outside root".into(),
@@ -141,7 +137,7 @@ pub fn try_directive(cur: &mut Cursor, ctx: MetaContext) -> Option<(Directive, S
 			);
 			continue;
 		}
-		if cur.test(int) {
+		if cur.test(Int) {
 			if skip {
 				cur.skip();
 				continue;
@@ -156,7 +152,7 @@ pub fn try_directive(cur: &mut Cursor, ctx: MetaContext) -> Option<(Directive, S
 		match dir {
 			Some(d) if !skip => return Some((d, span.join(ident.span))),
 			_ => cur.skip_block(Block::Paren),
-		}
+		};
 	}
 }
 
@@ -188,9 +184,9 @@ macro_rules! head_type {
 }
 
 fn parse_arr_typespec(cur: &mut Cursor, scope: &mut Scope, head: head_type!()) -> TypeId {
-	let typeid = cur.eat_delim(angle_open, angle_close, |cur| {
+	let typeid = cur.eat_delim(Block::Angle, |cur| {
 		let item = parse_typespec(cur, scope, false, head).ok()?;
-		cur.eat(comma).ok()?;
+		cur.eat(Comma).ok()?;
 		let nb = cur.eat_int("`arr` length")?.0;
 		Some(TypeId::arr(item, nb))
 	});
@@ -251,9 +247,7 @@ fn parse_typepec_generic(
 	params: u16, cur: &mut Cursor, scope: &mut Scope, start: Span, head: head_type!(),
 ) -> ThinVec<TypeId> {
 	let mut list: ThinVec<_> = cur
-		.try_delim_list(angle_open, angle_close, |cur| {
-			parse_typespec(cur, scope, false, head).ok()
-		})
+		.try_delim_list(Block::Angle, |cur| parse_typespec(cur, scope, false, head).ok())
 		.unwrap_or_default();
 	if list.len() != params as usize {
 		cur.error(
@@ -280,7 +274,7 @@ pub fn parse_typespec(
 		return Err(metadata);
 	};
 
-	let (mut typeid, params) = match match cur.try_symbol(dot) {
+	let (mut typeid, params) = match match cur.try_symbol(Dot) {
 		false => resolve_primary(&primary, cur, scope, head),
 		true => resolve_prim_dot_sec(&primary, cur, scope, in_value),
 	} {

@@ -1,7 +1,11 @@
-use core::{fmt::Display, str::FromStr};
+use core::fmt::Display;
 
 use alloc_crate::{borrow::Cow, fmt::Write, format, string::String, vec::Vec};
-use gramex::{Matcher, result::Expected, str::hex};
+use gramex::{
+	MatchAble, Matcher, Mode,
+	result::{Expected, MatchError, MatchResult},
+	str::hex,
+};
 
 use crate::{
 	parse::{
@@ -9,13 +13,12 @@ use crate::{
 		str_cursor::{Cursor as StrCursor, Ident},
 		tokenize::parse_digits,
 		tokens::{
-			Block, IntBase, Sign, Source, StrKind, Token, TokenKind, Tokens, angle_close,
-			angle_open, brace_close, brace_open, bracket_close, bracket_open, comma,
-			ident, paren_close, paren_open, unit_comment,
+			Block, IntBase, Sign, Source, StrKind, Token, TokenKind, TokenTag, Tokens,
 		},
 	},
-	utils::{IntFromStr, StrExt, VecLike},
+	utils::{IntFromStr, VecLike},
 };
+pub use TokenTag::*;
 pub use gramex::cursor::Cursor as _;
 
 #[derive(Debug, Clone)]
@@ -82,11 +85,11 @@ impl<'src> Cursor<'src, '_> {
 		self.try_eat(matcher).is_some()
 	}
 	pub fn ident(&mut self) -> Option<Ident<'src>> {
-		let span = self.eat(ident).ok()?.span;
+		let span = self.eat(Ident).ok()?.span;
 		Some(Ident { val: self.src.source_of(span), span })
 	}
 	pub fn try_ident(&mut self) -> Option<Ident<'src>> {
-		let span = self.try_eat(ident)?.span;
+		let span = self.try_eat(Ident)?.span;
 		Some(Ident { val: self.src.source_of(span), span })
 	}
 	pub fn try_ident_kw(&mut self, name: &str) -> bool {
@@ -149,24 +152,27 @@ impl<'src> Cursor<'src, '_> {
 		Some((val, span))
 	}
 	pub fn comma_unless_end(&mut self) {
-		if !self.try_symbol(comma) && !self.peek().is_some_and(|t| t.is_block_closer()) {
-			self.expected(comma.expected());
+		if !self.try_symbol(Comma) && !self.peek().is_some_and(|t| t.is_block_closer()) {
+			self.expected(Comma.expected());
 		}
 	}
 	pub fn skip_block(&mut self, block: Block) -> bool {
-		let Some(close_off) = block.try_open(self) else { return false };
+		let (open, close) = block.delim_tags();
+		let Some(close_off) = self.try_eat(open).map(Token::get_close_off) else {
+			return false;
+		};
 		if let Some(close_off) = close_off {
 			self.off += close_off as usize;
 			return true;
 		}
 		let mut depth = 1;
 		while depth > 0 {
-			if let Some(closed_off) = block.try_open(self) {
+			if let Some(closed_off) = self.try_eat(open).map(Token::get_close_off) {
 				match closed_off {
 					Some(closed_off) => self.off += closed_off as usize,
 					None => depth += 1,
 				}
-			} else if block.try_close(self) {
+			} else if self.try_symbol(close) {
 				depth -= 1;
 			} else if self.is_end() {
 				panic!();
@@ -186,49 +192,49 @@ impl<'src> Cursor<'src, '_> {
 		}
 	}
 	pub fn eat_delim_list<T, V: VecLike<T> + Default>(
-		&mut self, open: impl Matcher<Tokens<'src>>, close: impl Matcher<Tokens<'src>>,
-		item: impl FnMut(&mut Self) -> Option<T>,
+		&mut self, block: Block, item: impl FnMut(&mut Self) -> Option<T>,
 	) -> V {
-		if !self.test(&open) {
+		let (open, _) = block.delim_tags();
+		if !self.test(open) {
 			self.expected(open.expected());
 			return V::default();
 		}
-		self.try_delim_list(open, close, item).unwrap()
+		self.try_delim_list(block, item).unwrap()
 	}
 	pub fn try_delim_list<T, V: VecLike<T> + Default>(
-		&mut self, open: impl Matcher<Tokens<'src>>, close: impl Matcher<Tokens<'src>>,
-		mut item: impl FnMut(&mut Self) -> Option<T>,
+		&mut self, block: Block, mut item: impl FnMut(&mut Self) -> Option<T>,
 	) -> Option<V> {
+		let (open, close) = block.delim_tags();
 		let mut items = V::default();
 		if !self.try_symbol(open) {
 			return None;
 		}
-		while !self.try_symbol(&close) {
+		while !self.try_symbol(close) {
 			if self.is_end() {
 				panic!();
 			}
-			let skip = self.try_symbol(unit_comment);
+			let skip = self.try_symbol(UnitComment);
 			if let Some(item) = item(self) {
 				if !skip {
 					items.push(item)
 				};
-				if !(self.try_symbol(comma) || self.test(&close)) {
-					self.expected(comma.expected())
+				if !(self.try_symbol(Comma) || self.test(close)) {
+					self.expected(Comma.expected())
 				}
 			} else {
-				self.skip_until(|cur| cur.try_symbol(comma) || cur.test(&close));
+				self.skip_until(|cur| cur.try_symbol(Comma) || cur.test(close));
 			}
 		}
 		Some(items)
 	}
 	pub fn eat_delim<T>(
-		&mut self, open: impl Matcher<Tokens<'src>>, close: impl Matcher<Tokens<'src>>,
-		mut item: impl FnMut(&mut Self) -> Option<T>,
+		&mut self, block: Block, mut item: impl FnMut(&mut Self) -> Option<T>,
 	) -> Option<T> {
+		let (open, close) = block.delim_tags();
 		self.eat(open).ok()?;
 		let item = item(self);
-		if self.eat(&close).is_err() {
-			self.skip_until(|cur| cur.try_symbol(&close));
+		if self.eat(close).is_err() {
+			self.skip_until(|cur| cur.try_symbol(close));
 		}
 		item
 	}
@@ -239,29 +245,68 @@ impl<'src> Cursor<'src, '_> {
 		self.errors.push(ParseError::new(msg, span, self.src));
 	}
 }
+
+impl<'slice> Matcher<Tokens<'slice>> for TokenTag {
+	type Capture<'src>
+		= Token
+	where
+		Tokens<'slice>: 'src;
+	fn do_match<'src, M: Mode>(
+		&self, matched: &'src Tokens<'slice>, off: &mut usize,
+	) -> MatchResult<Self::Capture<'src>, M> {
+		if let Some(&token) = matched.0.get(*off).filter(|v| v.kind.tag() == *self) {
+			*off += 1;
+			Ok(M::wrap_success(token))
+		} else {
+			M::err(|| MatchError::expected(self.expected(), *off == matched.len(), *off))
+		}
+	}
+	fn expected(&self) -> Expected {
+		Expected::from(match self {
+			TokenTag::Ident => "an identifier",
+			TokenTag::StrTk { .. } => "a string",
+			TokenTag::Bytes { .. } => "a byte string",
+			TokenTag::Int { .. } => "an integer",
+			TokenTag::Float { .. } => "a float",
+
+			TokenTag::KwFalse => "`false`",
+			TokenTag::KwTrue => "`true`",
+			TokenTag::KwStruct => "`struct`",
+			TokenTag::KwUnion => "`union`",
+			TokenTag::KwNone => "`none`",
+
+			TokenTag::BraceOpen { .. } => "`{`",
+			TokenTag::BracketOpen { .. } => "`[`",
+			TokenTag::ParenOpen { .. } => "`(`",
+			TokenTag::AngleOpen { .. } => "`<`",
+
+			TokenTag::BraceClose => "`}`",
+			TokenTag::BracketClose => "`]`",
+			TokenTag::ParenClose => "`)`",
+			TokenTag::AngleClose => "`>`",
+
+			TokenTag::Comma => "`,`",
+			TokenTag::Colon => "`:`",
+			TokenTag::Dot => "`.`",
+			TokenTag::Question => "`?`",
+			TokenTag::Equal => "`=`",
+			TokenTag::Hash => "`#`",
+			TokenTag::At => "`@`",
+			TokenTag::Bang => "`!`",
+
+			TokenTag::UnitComment => "`/-`",
+			TokenTag::Dummy => "",
+		})
+	}
+}
+
 impl Block {
-	fn test_open(self, cur: &mut Cursor) -> bool {
+	fn delim_tags(self) -> (TokenTag, TokenTag) {
 		match self {
-			Block::Paren => cur.test(paren_open),
-			Block::Brace => cur.test(brace_open),
-			Block::Bracket => cur.test(bracket_open),
-			Block::Angle => cur.test(angle_open),
-		}
-	}
-	fn try_open(self, cur: &mut Cursor) -> Option<Option<u32>> {
-		match self {
-			Block::Paren => cur.try_eat(paren_open).map(Token::get_close_off),
-			Block::Brace => cur.try_eat(brace_open).map(Token::get_close_off),
-			Block::Bracket => cur.try_eat(bracket_open).map(Token::get_close_off),
-			Block::Angle => cur.try_eat(angle_open).map(Token::get_close_off),
-		}
-	}
-	fn try_close(self, cur: &mut Cursor) -> bool {
-		match self {
-			Block::Paren => cur.try_symbol(paren_close),
-			Block::Brace => cur.try_symbol(brace_close),
-			Block::Bracket => cur.try_symbol(bracket_close),
-			Block::Angle => cur.try_symbol(angle_close),
+			Block::Paren => (ParenOpen, ParenClose),
+			Block::Bracket => (BracketOpen, BracketClose),
+			Block::Brace => (BraceOpen, BraceClose),
+			Block::Angle => (AngleOpen, AngleClose),
 		}
 	}
 }

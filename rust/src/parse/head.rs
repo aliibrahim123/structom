@@ -1,7 +1,7 @@
 use core::ops::{BitAnd, BitOrAssign};
 
-use alloc_crate::{format, string::ToString, vec::Vec};
-use hashbrown::{HashSet, hash_map::Entry};
+use alloc_crate::{format, vec::Vec};
+use hashbrown::hash_map::Entry;
 use lean_string::{LeanStr, ToLeanStr};
 
 use crate::{
@@ -16,9 +16,7 @@ use crate::{
 		base::{Directive, MetaContext, meta_loop},
 		str_cursor::{Cursor as StrCursor, Ident},
 		token_cursor::*,
-		tokens::{
-			Block, brace_open, bracket_close, bracket_open, paren_close, paren_open,
-		},
+		tokens::Block,
 		value::parse_map,
 	},
 	profile::{Bin, Decl, Profile, Rich},
@@ -35,18 +33,18 @@ struct Import<'src> {
 }
 
 fn parse_import<'src>(cur: &mut Cursor<'src, '_>) -> Option<Import<'src>> {
-	cur.eat_delim(paren_open, paren_close, |cur| {
+	cur.eat_delim(Block::Paren, |cur| {
 		let path = cur.str()?;
 		cur.comma_unless_end();
 
 		let (ns, items) = if cur.try_ident_kw("as") {
 			(cur.ident(), None)
 		} else {
-			(None, cur.try_delim_list(bracket_open, bracket_close, Cursor::ident))
+			(None, cur.try_delim_list(Block::Bracket, Cursor::ident))
 		};
 		cur.comma_unless_end();
 
-		let metamap = cur.test(brace_open).then(|| parse_map(cur, true)).flatten();
+		let metamap = cur.test(BraceOpen).then(|| parse_map(cur, true)).flatten();
 		Some(Import { path, ns, items, meta: metamap })
 	})
 }
@@ -229,7 +227,7 @@ fn parse_head<'src>(
 				}
 			}
 			Directive::Profile => {
-				if cur.eat_delim(paren_open, paren_close, |cur| {
+				if cur.eat_delim(Block::Paren, |cur| {
 					let str = cur.str()?;
 					let (request, unsuported) = parse_profile(
 						&mut cur.enter_str(&str),

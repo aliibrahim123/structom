@@ -112,9 +112,27 @@ impl StrKind {
 	}
 }
 
-#[derive_enum_matcher(for Tokens<'slice>, field = .kind, expected = tk_kind_to_expected)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TokenKind {
+macro_rules! token_kinds {
+	{$($name:ident $({$($fields:tt)*})?),+} => {
+		#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+		pub enum TokenKind {
+			$($name $({$($fields)*})?,)+
+		}
+		#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+		pub enum TokenTag {
+			$($name,)+
+		}
+		impl TokenKind {
+			pub fn tag(self) -> TokenTag {
+				match self {
+					$(TokenKind::$name {..} => TokenTag::$name,)+
+				}
+			}
+		}
+	};
+}
+
+token_kinds! {
 	Ident,
 	StrTk { kind: StrKind, unterminated: bool },
 	Bytes { unterminated: bool },
@@ -148,7 +166,7 @@ pub enum TokenKind {
 
 	UnitComment,
 
-	Dummy,
+	Dummy
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -186,7 +204,7 @@ impl Token {
 			_ => {}
 		}
 	}
-	pub fn get_close_off(&self) -> Option<u32> {
+	pub fn get_close_off(self) -> Option<u32> {
 		match self.kind {
 			TokenKind::ParenOpen { close_off } => close_off,
 			TokenKind::BraceOpen { close_off } => close_off,
@@ -200,46 +218,6 @@ impl Token {
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub struct Tokens<'a>(pub(crate) &'a [Token]);
 derive_slice_matchable!(Tokens(&[Token]), matchers: true, expected: Debug);
-
-fn tk_kind_to_expected(kind: &'static str) -> Expected {
-	Expected::A(
-		match kind {
-			"Ident" => "an identifier",
-			"StrTk" => "a string",
-			"Int" => "an integer",
-			"Float" => "a float",
-
-			"KwFalse" => "`false`",
-			"KwTrue" => "`true`",
-			"KwStruct" => "`struct`",
-			"KwUnion" => "`union`",
-			"KwNone" => "`none`",
-
-			"BraceOpen" => "`{`",
-			"BracketOpen" => "`[`",
-			"ParenOpen" => "`(`",
-			"AngleOpen" => "`<`",
-
-			"BraceClose" => "`}`",
-			"BracketClose" => "`]`",
-			"ParenClose" => "`)`",
-			"AngleClose" => "`>`",
-
-			"Comma" => "`,`",
-			"Colon" => "`:`",
-			"Dot" => "`.`",
-			"Question" => "`?`",
-			"Equal" => "`=`",
-			"Hash" => "`#`",
-			"At" => "`@`",
-			"Bang" => "`!`",
-
-			"UnitComment" => "`/-`",
-			_ => unreachable!(),
-		}
-		.into(),
-	)
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Block {

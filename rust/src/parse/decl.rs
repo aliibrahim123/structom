@@ -17,10 +17,7 @@ use crate::{
 		head::Scope,
 		str_cursor::Ident,
 		token_cursor::*,
-		tokens::{
-			Block, angle_close, angle_open, hash, kw_struct, kw_union, paren_close,
-			paren_open,
-		},
+		tokens::Block,
 	},
 };
 
@@ -52,7 +49,7 @@ fn arg_directive(
 	cur: &mut Cursor, res: &mut Option<NonZeroUsize>, name: &str, span: Span,
 ) {
 	check_multiple_directive(cur, res.is_some(), name, span);
-	if cur.test(paren_open) {
+	if cur.test(ParenOpen) {
 		*res = Some(NonZeroUsize::new(cur.off + 1).unwrap());
 		cur.skip_block(Block::Paren);
 	} else {
@@ -77,9 +74,7 @@ fn collect_directives<'src>(cur: &mut Cursor<'src, '_>) -> (Directives<'src>, Me
 			Default => arg_directive(cur, &mut dirs.value.default, "`default`", span),
 			Tree => {
 				check_multiple_directive(cur, dirs.tree.is_some(), "`tree`", span);
-				dirs.tree = cur
-					.eat_delim(paren_open, paren_close, |cur| cur.ident())
-					.or(dirs.tree);
+				dirs.tree = cur.eat_delim(Block::Paren, |cur| cur.ident()).or(dirs.tree);
 			}
 			Rich => {
 				check_multiple_directive(cur, dirs.value.rich, "`rich`", span);
@@ -102,7 +97,7 @@ fn collect_directives<'src>(cur: &mut Cursor<'src, '_>) -> (Directives<'src>, Me
 fn report_directives(cur: &mut Cursor, start: usize, end: usize) {
 	cur.rewind(start);
 	while cur.off < end {
-		cur.skip_until(|cur| cur.off >= end || cur.test(hash));
+		cur.skip_until(|cur| cur.off >= end || cur.test(Hash));
 		if let Some((directive, span)) = try_directive(cur, MetaContext::Normal) {
 			directive.invalid_place(cur, span);
 		}
@@ -130,9 +125,9 @@ fn parse_item_head<'src>(
 	let start = cur.off;
 	let (Directives { tag, fixed, tree, value }, metadata) = collect_directives(cur);
 
-	let is_struct = if cur.try_symbol(kw_struct) {
+	let is_struct = if cur.try_symbol(KwStruct) {
 		true
-	} else if cur.try_symbol(kw_union) {
+	} else if cur.try_symbol(KwUnion) {
 		if let Some(span) = fixed {
 			Directive::Fixed.invalid_place(cur, span);
 		}
@@ -144,7 +139,7 @@ fn parse_item_head<'src>(
 
 	let name = cur.ident().unwrap_or(Ident { val: "_", span: Span::EMPTY });
 	let generic_params = cur
-		.try_delim_list::<_, Vec<_>>(angle_open, angle_close, |cur| {
+		.try_delim_list::<_, Vec<_>>(Block::Angle, |cur| {
 			cur.ident().map(|ident| ident.val)
 		})
 		.unwrap_or_default();
