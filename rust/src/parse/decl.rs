@@ -1,4 +1,7 @@
-use core::ops::ControlFlow::{self, Break, Continue};
+use core::{
+	num::NonZeroUsize,
+	ops::ControlFlow::{self, Break, Continue},
+};
 
 use alloc_crate::{format, vec::Vec};
 
@@ -22,14 +25,21 @@ use crate::{
 };
 
 #[derive(Debug, Default)]
+struct ValueDirectives {
+	rich: bool,
+	default: Option<NonZeroUsize>,
+	#[cfg(feature = "rich-bitfield")]
+	bitfield: Option<NonZeroUsize>,
+	#[cfg(feature = "rich-unitfield")]
+	unitfield: Option<NonZeroUsize>,
+}
+
+#[derive(Debug, Default)]
 struct Directives<'src> {
 	tag: Option<(u16, Span)>,
 	fixed: Option<Span>,
-	default: Option<usize>,
 	tree: Option<Ident<'src>>,
-	rich: bool,
-	bitfield: Option<usize>,
-	unitfield: Option<usize>,
+	value: ValueDirectives,
 }
 
 fn check_multiple_directive(cur: &mut Cursor, emit: bool, name: &str, span: Span) {
@@ -38,10 +48,12 @@ fn check_multiple_directive(cur: &mut Cursor, emit: bool, name: &str, span: Span
 		cur.error(msg, span)
 	}
 }
-fn arg_directive(cur: &mut Cursor, res: &mut Option<usize>, name: &str, span: Span) {
+fn arg_directive(
+	cur: &mut Cursor, res: &mut Option<NonZeroUsize>, name: &str, span: Span,
+) {
 	check_multiple_directive(cur, res.is_some(), name, span);
 	if cur.test(paren_open) {
-		*res = Some(cur.off + 1);
+		*res = Some(NonZeroUsize::new(cur.off + 1).unwrap());
 		cur.skip_block(Block::Paren);
 	} else {
 		cur.expected("`(`");
@@ -62,7 +74,7 @@ fn collect_directives<'src>(cur: &mut Cursor<'src, '_>) -> (Directives<'src>, Me
 				check_multiple_directive(cur, dirs.fixed.is_some(), "`fixed`", span);
 				dirs.fixed = Some(span);
 			}
-			Default => arg_directive(cur, &mut dirs.default, "`default`", span),
+			Default => arg_directive(cur, &mut dirs.value.default, "`default`", span),
 			Tree => {
 				check_multiple_directive(cur, dirs.tree.is_some(), "`tree`", span);
 				dirs.tree = cur
@@ -70,18 +82,23 @@ fn collect_directives<'src>(cur: &mut Cursor<'src, '_>) -> (Directives<'src>, Me
 					.or(dirs.tree);
 			}
 			Rich => {
-				check_multiple_directive(cur, dirs.rich, "`rich`", span);
-				dirs.rich = true;
+				check_multiple_directive(cur, dirs.value.rich, "`rich`", span);
+				dirs.value.rich = true;
 				meta_ctx = MetaContext::RichItem;
 			}
-			Bitfield => arg_directive(cur, &mut dirs.bitfield, "`bitfield`", span),
-			Unitfield => arg_directive(cur, &mut dirs.unitfield, "`unitfield`", span),
+			Bitfield => {
+				dirs.value.rich = true;
+				arg_directive(cur, &mut dirs.value.bitfield, "`bitfield`", span);
+			}
+			Unitfield => {
+				dirs.value.rich = true;
+				arg_directive(cur, &mut dirs.value.unitfield, "`unitfield`", span);
+			}
 			_ => directive.invalid_place(cur, span),
 		}
 	}
 	(dirs, metadata)
 }
-
 fn report_directives(cur: &mut Cursor, start: usize, end: usize) {
 	cur.rewind(start);
 	while cur.off < end {
@@ -95,21 +112,15 @@ fn report_directives(cur: &mut Cursor, start: usize, end: usize) {
 #[derive(Debug)]
 struct ItemBuild<'src> {
 	id: ItemId,
-	default: Option<usize>,
-	tree: Option<Ident<'src>>,
-	bitfield: Option<usize>,
-	unitfield: Option<usize>,
+	kind: ItemKind<'src>,
+	body: usize,
+	value_dirs: ValueDirectives,
 }
 
-fn parse_generic_params<'src>(cur: &mut Cursor<'src, '_>) -> Vec<&'src str> {
-	cur.try_delim_list::<_, Vec<_>>(angle_open, angle_close, |cur| {
-		cur.ident().map(|ident| ident.val)
-	})
-	.unwrap_or_default()
-}
-
-fn parse_struct_head<'src>(cur: &mut Cursor<'src, '_>) -> Option<Item> {
-	todo!()
+#[derive(Debug)]
+enum ItemKind<'src> {
+	Struct { fixed: bool, tree: Option<Ident<'src>> },
+	Union,
 }
 
 fn parse_item_head<'src>(
@@ -117,31 +128,57 @@ fn parse_item_head<'src>(
 	items: &mut Vec<ItemBuild<'src>>,
 ) -> ControlFlow<Metadata> {
 	let start = cur.off;
-	let (directives, metadata) = collect_directives(cur);
+	let (Directives { tag, fixed, tree, value }, metadata) = collect_directives(cur);
 
-	let (name, generic_params) = if cur.try_symbol(kw_struct) {
-		let name = cur.ident().unwrap_or(Ident { val: "_", span: Span::EMPTY });
-		let generic_params = parse_generic_params(cur);
-		(name, generic_params)
+	let is_struct = if cur.try_symbol(kw_struct) {
+		true
 	} else if cur.try_symbol(kw_union) {
-		todo!()
+		if let Some(span) = fixed {
+			Directive::Fixed.invalid_place(cur, span);
+		}
+		false
 	} else {
 		report_directives(cur, start, cur.off);
 		return Break(metadata);
 	};
-	let tag = directives.tag.map(|(tag, _)| tag);
-	let id = match file.reserve(Some(name.val), tag, generic_params) {
+
+	let name = cur.ident().unwrap_or(Ident { val: "_", span: Span::EMPTY });
+	let generic_params = cur
+		.try_delim_list::<_, Vec<_>>(angle_open, angle_close, |cur| {
+			cur.ident().map(|ident| ident.val)
+		})
+		.unwrap_or_default();
+
+	let body = cur.off;
+	let kind = if is_struct {
+		let is_tagged = cur.skip_block(Block::Paren);
+		if is_tagged && let Some(span) = fixed {
+			Directive::Fixed.invalid_place(cur, span);
+		}
+		if !is_tagged && !cur.skip_block(Block::Brace) {
+			cur.expected(["{", "("]);
+			return Continue(());
+		}
+		ItemKind::Struct { fixed: fixed.is_some(), tree }
+	} else {
+		cur.skip_block(Block::Paren);
+		if !cur.skip_block(Block::Brace) {
+			cur.expected("{");
+			return Continue(());
+		}
+		ItemKind::Union
+	};
+
+	let generic_params_len = generic_params.len() as u16;
+	let id = match file.reserve(Some(name.val), tag.map(|(tag, _)| tag), generic_params) {
 		Ok(id) => id,
 		Err(AssignError::DuplicateName) => {
 			cur.error(format!("multiple items with the same name \"{name}\""), name.span);
 			return Continue(());
 		}
 		Err(AssignError::UsedId) => {
-			let tag = tag.unwrap();
-			cur.error(
-				format!("the specified id `{tag}` is used at \"{name}\""),
-				directives.tag.unwrap().1,
-			);
+			let (tag, span) = tag.unwrap();
+			cur.error(format!("the specified id `{tag}` is used at \"{name}\""), span);
 			return Continue(());
 		}
 		Err(AssignError::FullCapacity) => {
@@ -150,6 +187,18 @@ fn parse_item_head<'src>(
 		}
 		Err(_) => unreachable!(),
 	};
+
+	if scope.top.insert(name.val.into(), (file.ns(), id, generic_params_len)).is_some() {
+		cur.error(
+			format!("local item \"{name}\" conflict with an imported item",),
+			name.span,
+		);
+	};
+	if scope.namespaces.contains_key(name.val) {
+		cur.error(format!("local item \"{name}\" conflict with a namespace"), name.span);
+	}
+
+	items.push(ItemBuild { id, kind, body, value_dirs: value });
 	Continue(())
 }
 

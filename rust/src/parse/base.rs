@@ -95,6 +95,7 @@ pub enum MetaContext {
 	RichItem,
 }
 
+#[inline]
 fn try_metadata(cur: &mut Cursor, ctx: MetaContext, metadata: &mut Metadata) {
 	loop {
 		let start = cur.off;

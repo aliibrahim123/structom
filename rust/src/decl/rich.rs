@@ -89,6 +89,16 @@ impl RichNotation {
 	pub fn new() -> Self {
 		Self::default()
 	}
+
+	pub fn mark_true(&mut self) {
+		if self.0.len() == 0 {
+			self.0.push(Form::Marker);
+		}
+	}
+	pub fn is_rich(&self) -> bool {
+		!self.0.is_empty()
+	}
+
 	pub fn add_reader(&mut self, name: &str) -> Result<(), DuplicateNotation> {
 		if self.0.iter().any(|f| matches!(f, Form::Reader(other) if name == other.0)) {
 			return Err(DuplicateNotation);
@@ -143,6 +153,7 @@ impl RichNotation {
 
 #[derive(Debug, Clone)]
 pub enum Form {
+	Marker,
 	Reader(Reader),
 	#[cfg(feature = "rich-bitfield")]
 	BitField(BitField),

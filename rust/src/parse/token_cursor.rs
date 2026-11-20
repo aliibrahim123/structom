@@ -132,6 +132,7 @@ impl<'src> Cursor<'src, '_> {
 			IntBase::Hex => 16,
 			IntBase::Bin => 2,
 		};
+
 		let raw = self.src.source_of(span);
 		let dg_start = if sign != Sign::None { 1 } else { 0 }
 			+ if base != IntBase::Dec { 2 } else { 0 };
@@ -152,11 +153,11 @@ impl<'src> Cursor<'src, '_> {
 			self.expected(comma.expected());
 		}
 	}
-	pub fn skip_block(&mut self, block: Block) {
-		let Some(close_off) = block.try_open(self) else { return };
+	pub fn skip_block(&mut self, block: Block) -> bool {
+		let Some(close_off) = block.try_open(self) else { return false };
 		if let Some(close_off) = close_off {
 			self.off += close_off as usize;
-			return;
+			return true;
 		}
 		let mut depth = 1;
 		while depth > 0 {
@@ -173,6 +174,7 @@ impl<'src> Cursor<'src, '_> {
 				self.skip();
 			}
 		}
+		true
 	}
 	pub fn skip_until(&mut self, fun: impl Fn(&mut Self) -> bool) {
 		while !fun(self) && !self.is_end() {
