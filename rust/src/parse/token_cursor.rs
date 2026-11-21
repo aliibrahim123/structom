@@ -227,6 +227,17 @@ impl<'src> Cursor<'src, '_> {
 		}
 		Some(items)
 	}
+	pub fn try_delim<T>(
+		&mut self, block: Block, mut item: impl FnMut(&mut Self) -> Option<T>,
+	) -> Option<T> {
+		let (open, close) = block.delim_tags();
+		self.try_eat(open)?;
+		let item = item(self);
+		if self.eat(close).is_err() {
+			self.skip_until(|cur| cur.try_symbol(close));
+		}
+		item
+	}
 	pub fn eat_delim<T>(
 		&mut self, block: Block, mut item: impl FnMut(&mut Self) -> Option<T>,
 	) -> Option<T> {
