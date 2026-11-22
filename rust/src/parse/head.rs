@@ -33,7 +33,7 @@ struct Import<'src> {
 }
 
 fn parse_import<'src>(cur: &mut Cursor<'src, '_>) -> Option<Import<'src>> {
-	cur.eat_delim(Block::Paren, |cur| {
+	cur.delim(Block::Paren, |cur| {
 		let path = cur.str()?;
 		cur.comma_unless_end();
 
@@ -227,7 +227,7 @@ fn parse_head<'src>(
 				}
 			}
 			Directive::Profile => {
-				if cur.eat_delim(Block::Paren, |cur| {
+				if cur.delim(Block::Paren, |cur| {
 					let str = cur.str()?;
 					let (request, unsuported) = parse_profile(
 						&mut cur.enter_str(&str),

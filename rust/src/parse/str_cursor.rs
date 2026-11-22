@@ -15,6 +15,11 @@ pub struct Ident<'src> {
 	pub val: &'src str,
 	pub span: Span,
 }
+impl Default for Ident<'_> {
+	fn default() -> Self {
+		Self { val: "_", span: Span::EMPTY }
+	}
+}
 impl PartialEq<&str> for Ident<'_> {
 	fn eq(&self, other: &&str) -> bool {
 		self.val == *other

@@ -184,10 +184,10 @@ macro_rules! head_type {
 }
 
 fn parse_arr_typespec(cur: &mut Cursor, scope: &mut Scope, head: head_type!()) -> TypeId {
-	let typeid = cur.eat_delim(Block::Angle, |cur| {
+	let typeid = cur.delim(Block::Angle, |cur| {
 		let item = parse_typespec(cur, scope, false, head).ok()?;
 		cur.eat(Comma).ok()?;
-		let nb = cur.eat_int("`arr` length")?.0;
+		let nb = cur.int("`arr` length")?.0;
 		Some(TypeId::arr(item, nb))
 	});
 	typeid.unwrap_or(TypeId::ANY)

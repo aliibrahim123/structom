@@ -122,7 +122,7 @@ impl<'src> Cursor<'src, '_> {
 			Cow::Owned(val) => StrCursor::new_resolved(src, val, str.span, errors),
 		}
 	}
-	pub fn eat_int<T: IntFromStr + Display>(&mut self, kind: &str) -> Option<(T, Span)> {
+	pub fn int<T: IntFromStr + Display>(&mut self, kind: &str) -> Option<(T, Span)> {
 		let Some(&Token { kind: TokenKind::Int { base, has_dash, sign }, span }) =
 			self.peek()
 		else {
@@ -191,7 +191,7 @@ impl<'src> Cursor<'src, '_> {
 			}
 		}
 	}
-	pub fn eat_delim_list<T, V: VecLike<T> + Default>(
+	pub fn delim_list<T, V: VecLike<T> + Default>(
 		&mut self, block: Block, item: impl FnMut(&mut Self) -> Option<T>,
 	) -> V {
 		let (open, _) = block.delim_tags();
@@ -238,7 +238,7 @@ impl<'src> Cursor<'src, '_> {
 		}
 		item
 	}
-	pub fn eat_delim<T>(
+	pub fn delim<T>(
 		&mut self, block: Block, mut item: impl FnMut(&mut Self) -> Option<T>,
 	) -> Option<T> {
 		let (open, close) = block.delim_tags();

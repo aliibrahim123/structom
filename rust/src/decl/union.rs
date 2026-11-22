@@ -17,17 +17,26 @@ pub struct Variant {
 }
 
 impl Variant {
-	pub fn new(name: &str, body: Option<Body>) -> Self {
+	pub fn new(
+		name: &str, body: Option<Body>,
+	) -> Result<Self, (Option<Body>, AssignError)> {
 		Self::new_lean(LeanStr::from(name), body)
 	}
-	pub(crate) fn new_lean(name: LeanStr, body: Option<Body>) -> Self {
-		Self {
+	pub(crate) fn new_lean(
+		name: LeanStr, mut body: Option<Body>,
+	) -> Result<Self, (Option<Body>, AssignError)> {
+		if let Some(Body::Fields(fields)) = &mut body
+			&& fields.finalize().is_err()
+		{
+			return Err((body, AssignError::UnassignedId));
+		}
+		Ok(Self {
 			name,
 			tag: VariantTag::UNASSIGNED,
 			body,
 			rich_notation: RichNotation::new(),
 			metadata: Metadata::new(),
-		}
+		})
 	}
 	pub fn name(&self) -> &str {
 		&self.name
@@ -112,7 +121,7 @@ impl Union {
 	pub fn reserve_variant(
 		&mut self, id: Option<u32>, body: Option<Body>,
 	) -> Result<VariantTag, (Option<Body>, AssignError)> {
-		let variant = Variant::new("_", body);
+		let variant = Variant::new("_", body)?;
 		match id {
 			Some(id) => self.add_variant_at(variant, id),
 			None => self.add_variant(variant),
