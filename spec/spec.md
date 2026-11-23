@@ -685,7 +685,7 @@ Items can be declared inline within the fields of other items, becoming the type
 
 They are anonymous and cannot be referenced, taking an optional name used as a kind of metadata.
 
-They inherit the [`fixed`](#fixed-struct) directive and the [generics](#generics) of their parent item.
+They inherit the [generics](#generics) of their parent item.
 
 They receive their ids like top-level items except counting down from `65535 (2^16 -1)` and resolved after the top item ones.
 

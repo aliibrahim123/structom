@@ -40,7 +40,7 @@ fn parse_import<'src>(cur: &mut Cursor<'src, '_>) -> Option<Import<'src>> {
 		let (ns, items) = if cur.try_ident_kw("as") {
 			(cur.ident(), None)
 		} else {
-			(None, cur.try_delim_list(Block::Bracket, Cursor::ident))
+			(None, cur.try_delim_list(Block::Bracket, |cur, _| cur.ident()))
 		};
 		cur.comma_unless_end();
 
@@ -173,7 +173,7 @@ pub struct Scope<'src, 'prov> {
 	pub unnamespaced: Vec<DeclFileBox>,
 	pub top: HashMap<LeanStr, (DeclNs, ItemId, u16)>,
 
-	pub generics: HashMap<&'src str, ItemId>,
+	pub generics: Vec<&'src str>,
 
 	pub unresolved: HashMap<LeanStr, UnresolvedKind>,
 	pub profile: Profile,
@@ -186,7 +186,7 @@ impl<'prov> Scope<'_, 'prov> {
 			unnamespaced: Vec::new(),
 			namespaces: HashMap::default(),
 			top: HashMap::default(),
-			generics: HashMap::default(),
+			generics: Vec::default(),
 			unresolved: HashMap::default(),
 			profile: Profile::new(),
 		}

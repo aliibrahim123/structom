@@ -114,7 +114,7 @@ fn try_metadata(cur: &mut Cursor, ctx: MetaContext, metadata: &mut Metadata) {
 			continue;
 		}
 		let items: ThinVec<_> = cur
-			.try_delim_list(Block::Paren, |cur| parse_value(cur, true))
+			.try_delim_list(Block::Paren, |cur, _| parse_value(cur, true))
 			.unwrap_or_default();
 		_ = metadata.add(ident.val, items);
 	}
@@ -180,10 +180,14 @@ pub fn directiveless_meta(cur: &mut Cursor) -> Metadata {
 }
 
 macro_rules! head_type {
-	() => { &mut impl FnMut(&mut Cursor) -> ControlFlow<TypeId, Metadata> };
+	($src:lifetime) => { &mut impl FnMut(
+		&mut Cursor<$src, '_>, &mut Scope<'src, '_>
+	) -> ControlFlow<TypeId, Metadata> };
 }
 
-fn parse_arr_typespec(cur: &mut Cursor, scope: &mut Scope, head: head_type!()) -> TypeId {
+fn parse_arr_typespec<'src>(
+	cur: &mut Cursor<'src, '_>, scope: &mut Scope<'src, '_>, head: head_type!('src),
+) -> TypeId {
 	let typeid = cur.delim(Block::Angle, |cur| {
 		let item = parse_typespec(cur, scope, false, head).ok()?;
 		cur.eat(Comma).ok()?;
@@ -192,8 +196,9 @@ fn parse_arr_typespec(cur: &mut Cursor, scope: &mut Scope, head: head_type!()) -
 	});
 	typeid.unwrap_or(TypeId::ANY)
 }
-fn resolve_primary(
-	primary: &Ident, cur: &mut Cursor, scope: &mut Scope, head: head_type!(),
+fn resolve_primary<'src>(
+	primary: &Ident, cur: &mut Cursor<'src, '_>, scope: &mut Scope<'src, '_>,
+	head: head_type!('src),
 ) -> ControlFlow<TypeId, (TypeId, u16)> {
 	if *primary == "arr" {
 		return Break(parse_arr_typespec(cur, scope, head));
@@ -204,8 +209,8 @@ fn resolve_primary(
 			_ => 0,
 		};
 		Continue((typeid, params))
-	} else if let Some(&item) = scope.generics.get(primary.val) {
-		Continue((TypeId::new_unchecked(DeclNs::GENERIC_PARAMS, item), 0))
+	} else if let Some(id) = scope.generics.iter().position(|name| primary == name) {
+		Continue((TypeId::new_unchecked(DeclNs::GENERIC_PARAMS, ItemId(id as u16)), 0))
 	} else if let Some(res) = scope.resolve_top(primary.val) {
 		Continue(res)
 	} else if scope.unresolved.contains_key(primary.val) {
@@ -243,11 +248,14 @@ fn resolve_prim_dot_sec(
 		return Break(TypeId::ANY);
 	}
 }
-fn parse_typepec_generic(
-	params: u16, cur: &mut Cursor, scope: &mut Scope, start: Span, head: head_type!(),
+fn parse_typepec_generic<'src>(
+	params: u16, cur: &mut Cursor<'src, '_>, scope: &mut Scope<'src, '_>, start: Span,
+	head: head_type!('src),
 ) -> ThinVec<TypeId> {
 	let mut list: ThinVec<_> = cur
-		.try_delim_list(Block::Angle, |cur| parse_typespec(cur, scope, false, head).ok())
+		.try_delim_list(Block::Angle, |cur, _| {
+			parse_typespec(cur, scope, false, head).ok()
+		})
 		.unwrap_or_default();
 	if list.len() != params as usize {
 		cur.error(
@@ -259,10 +267,11 @@ fn parse_typepec_generic(
 	list
 }
 
-pub fn parse_typespec(
-	cur: &mut Cursor, scope: &mut Scope, in_value: bool, head: head_type!(),
+pub fn parse_typespec<'src>(
+	cur: &mut Cursor<'src, '_>, scope: &mut Scope<'src, '_>, in_value: bool,
+	head: head_type!('src),
 ) -> Result<TypeId, Metadata> {
-	let metadata = match head(cur) {
+	let metadata = match head(cur, scope) {
 		Break(typeid) => return Ok(typeid),
 		Continue(metadata) => metadata,
 	};

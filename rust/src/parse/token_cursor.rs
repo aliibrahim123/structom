@@ -192,7 +192,7 @@ impl<'src> Cursor<'src, '_> {
 		}
 	}
 	pub fn delim_list<T, V: VecLike<T> + Default>(
-		&mut self, block: Block, item: impl FnMut(&mut Self) -> Option<T>,
+		&mut self, block: Block, item: impl FnMut(&mut Self, bool) -> Option<T>,
 	) -> V {
 		let (open, _) = block.delim_tags();
 		if !self.test(open) {
@@ -202,7 +202,7 @@ impl<'src> Cursor<'src, '_> {
 		self.try_delim_list(block, item).unwrap()
 	}
 	pub fn try_delim_list<T, V: VecLike<T> + Default>(
-		&mut self, block: Block, mut item: impl FnMut(&mut Self) -> Option<T>,
+		&mut self, block: Block, mut item: impl FnMut(&mut Self, bool) -> Option<T>,
 	) -> Option<V> {
 		let (open, close) = block.delim_tags();
 		let mut items = V::default();
@@ -214,7 +214,7 @@ impl<'src> Cursor<'src, '_> {
 				panic!();
 			}
 			let skip = self.try_symbol(UnitComment);
-			if let Some(item) = item(self) {
+			if let Some(item) = item(self, skip) {
 				if !skip {
 					items.push(item)
 				};
