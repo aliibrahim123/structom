@@ -11,7 +11,7 @@ use crate::{
 };
 
 #[derive(Debug, Clone)]
-enum FieldType {
+pub(crate) enum FieldType {
 	Required,
 	Optional { default_value: Option<Value> },
 	Reserved,
@@ -21,9 +21,9 @@ enum FieldType {
 pub struct Field {
 	id: FieldId,
 	name: LeanStr,
-	typeid: TypeId,
-	type_: FieldType,
-	metadata: Metadata,
+	pub(crate) typeid: TypeId,
+	pub(crate) type_: FieldType,
+	pub(crate) metadata: Metadata,
 }
 impl Field {
 	pub fn new(name: &str, typeid: TypeId) -> Self {
@@ -77,7 +77,7 @@ pub struct UnassignedSpace;
 pub struct Fields {
 	is_fixed: bool,
 	tree_children: Option<FieldId>,
-	fields: ItemStore<Field, { u16::MAX as u32 }, false>,
+	pub(crate) fields: ItemStore<Field, { u16::MAX as u32 }, false>,
 }
 impl Default for Fields {
 	fn default() -> Self {
@@ -153,5 +153,19 @@ pub enum Body {
 impl From<Fields> for Body {
 	fn from(fields: Fields) -> Self {
 		Self::Fields(fields)
+	}
+}
+impl Body {
+	pub fn as_fields(&self) -> Option<&Fields> {
+		match self {
+			Self::Fields(fields) => Some(fields),
+			_ => None,
+		}
+	}
+	pub fn as_tagged(&self) -> Option<&TypeId> {
+		match self {
+			Self::Tagged(typeid) => Some(typeid),
+			_ => None,
+		}
 	}
 }

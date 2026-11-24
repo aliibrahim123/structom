@@ -135,13 +135,30 @@ impl RichNotation {
 			_ => None,
 		})
 	}
-	#[cfg(feature = "rich-unitfield")]
 	pub fn get_unitfield(&self) -> Option<&UnitField> {
 		self.0.iter().find_map(|form| match form {
 			Form::UnitField(uf) => Some(uf),
 			_ => None,
 		})
 	}
+	/*
+	#[cfg(feature = "rich-unitfield")]
+	pub fn get_unitfield_mut(&mut self) -> Option<&mut UnitField> {
+		self.0.iter_mut().find_map(|form| match form {
+			Form::UnitField(uf) => Some(uf),
+			_ => None,
+		})
+	}
+
+	#[cfg(feature = "rich-bitfield")]
+	pub fn get_bitfield_mut(&mut self) -> Option<&mut BitField> {
+		self.0.iter_mut().find_map(|form| match form {
+			Form::BitField(bf) => Some(bf),
+			_ => None,
+		})
+	}
+	#[cfg(feature = "rich-unitfield")]
+	 */
 
 	pub fn form_count(&self) -> usize {
 		self.0.len()

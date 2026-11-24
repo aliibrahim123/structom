@@ -82,10 +82,10 @@ pub struct Item {
 	pub(crate) name: LeanStr,
 	pub(crate) id: ItemId,
 	pub(crate) kind: ItemKind,
-	default_value: Option<Value>,
+	pub(crate) default_value: Option<Value>,
 	pub(crate) generic_params: GenericParams,
-	rich_notation: RichNotation,
-	metadata: Metadata,
+	pub(crate) rich_notation: RichNotation,
+	pub(crate) metadata: Metadata,
 }
 impl Item {
 	pub fn struct_(
@@ -127,6 +127,18 @@ impl Item {
 	}
 	pub fn default_value(&self) -> Option<&Value> {
 		self.default_value.as_ref()
+	}
+	pub fn as_struct(&self) -> Option<&Body> {
+		match &self.kind {
+			ItemKind::Struct(body) => Some(body),
+			_ => None,
+		}
+	}
+	pub fn as_union(&self) -> Option<&Union> {
+		match &self.kind {
+			ItemKind::Union(union) => Some(union),
+			_ => None,
+		}
 	}
 	pub fn generic_params(&self) -> &GenericParams {
 		&self.generic_params

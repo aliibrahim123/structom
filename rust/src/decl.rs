@@ -4,6 +4,7 @@ mod id;
 mod item;
 pub mod provider;
 pub mod rich;
+mod soft_mut;
 mod typeid;
 mod union;
 
@@ -18,6 +19,7 @@ pub mod items {
 	pub use super::file::DeclFileBuilder;
 	pub use super::id::{FieldId, ItemId, VariantTag};
 	pub use super::item::*;
+	pub use super::soft_mut::*;
 	pub use super::typeid::*;
 	pub use super::union::*;
 }

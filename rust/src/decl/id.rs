@@ -187,6 +187,9 @@ impl<T, const MAX: u32, const COUNT_AFTER: bool> ItemStore<T, MAX, COUNT_AFTER> 
 	pub fn get_by_id(&self, tag: u32) -> Option<&T> {
 		self.get_index(tag).and_then(|i| self.items.get(i as usize))
 	}
+	pub fn get_by_id_mut(&mut self, tag: u32) -> Option<&mut T> {
+		self.get_index(tag).and_then(|i| self.items.get_mut(i as usize))
+	}
 	pub fn get_by_name(&self, name: &str) -> Option<&T> {
 		self.name_index.get(name).and_then(|i| self.items.get(*i as usize))
 	}

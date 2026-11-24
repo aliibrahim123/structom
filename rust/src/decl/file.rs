@@ -8,7 +8,7 @@ use crate::decl::{
 	AssignError, DeclNs,
 	id::ItemStore,
 	item::{Item, ItemKind},
-	items::{ItemId, TypeId, TypeIdError},
+	items::{ItemId, SoftMut, TypeId, TypeIdError},
 	rich::Metadata,
 };
 
@@ -120,6 +120,9 @@ impl DeclFileBuilder {
 		mem::swap(&mut item.generic_params, &mut slot.generic_params);
 		*slot = item;
 		Ok(())
+	}
+	pub fn soft_mut_item<'a>(&'a mut self, id: ItemId) -> Option<SoftMut<'a, Item>> {
+		self.0.items.get_by_id_mut(id.0 as u32).map(SoftMut)
 	}
 	pub fn metadata_mut(&mut self) -> &mut Metadata {
 		&mut self.0.metadata

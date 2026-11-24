@@ -11,9 +11,9 @@ use crate::decl::{
 pub struct Variant {
 	name: LeanStr,
 	tag: VariantTag,
-	body: Option<Body>,
-	rich_notation: RichNotation,
-	metadata: Metadata,
+	pub(crate) body: Option<Body>,
+	pub(crate) rich_notation: RichNotation,
+	pub(crate) metadata: Metadata,
 }
 
 impl Variant {
@@ -85,7 +85,7 @@ impl TagType {
 #[derive(Debug, Clone)]
 pub struct Union {
 	tag_type: TagType,
-	variants: ItemStore<Variant, { u32::MAX }, true>,
+	pub(crate) variants: ItemStore<Variant, { u32::MAX }, true>,
 }
 impl Default for Union {
 	fn default() -> Self {
