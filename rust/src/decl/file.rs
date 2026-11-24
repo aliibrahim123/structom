@@ -117,6 +117,7 @@ impl DeclFileBuilder {
 		}
 		item.id = id;
 		mem::swap(&mut item.name, &mut slot.name);
+		mem::swap(&mut item.generic_params, &mut slot.generic_params);
 		*slot = item;
 		Ok(())
 	}

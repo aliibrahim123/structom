@@ -122,34 +122,25 @@ impl<'src> Cursor<'src, '_> {
 			Cow::Owned(val) => StrCursor::new_resolved(src, val, str.span, errors),
 		}
 	}
+	pub fn try_int<T: IntFromStr + Display>(&mut self) -> Option<(T, Span)> {
+		self.try_eat(Int)
+			.and_then(|token| parse_int(token, self.src.source_of(token.span)))
+	}
 	pub fn int<T: IntFromStr + Display>(&mut self, kind: &str) -> Option<(T, Span)> {
-		let Some(&Token { kind: TokenKind::Int { base, has_dash, sign }, span }) =
-			self.peek()
-		else {
-			self.expected("an integer");
-			return None;
-		};
-		self.skip();
-		let radix = match base {
-			IntBase::Dec => 10,
-			IntBase::Hex => 16,
-			IntBase::Bin => 2,
-		};
-
-		let raw = self.src.source_of(span);
-		let dg_start = if sign != Sign::None { 1 } else { 0 }
-			+ if base != IntBase::Dec { 2 } else { 0 };
-		let digits = &raw[dg_start..];
-		let digits = if has_dash { &digits.replace('_', "") } else { digits };
-		let Some(val) = T::from_str(digits, radix, sign == Sign::Neg) else {
-			let (min, max) = T::BOUNDS;
-			let msg = format!(
-				"number `{raw}` is out of range for {kind}, valid range is `{min}`..`{max}`"
-			);
-			self.error(msg, span);
-			return None;
-		};
-		Some((val, span))
+		self.eat(Int).ok().and_then(|token| {
+			match parse_int(token, self.src.source_of(token.span)) {
+				Some(res) => Some(res),
+				None => {
+					let raw = self.src.source_of(token.span);
+					let (min, max) = T::BOUNDS;
+					let msg = format!(
+						"number `{raw}` is out of range for {kind}, valid range is `{min}`..`{max}`"
+					);
+					self.error(msg, token.span);
+					None
+				}
+			}
+		})
 	}
 	pub fn comma_unless_end(&mut self) {
 		if !self.try_symbol(Comma) && !self.peek().is_some_and(|t| t.is_block_closer()) {
@@ -311,15 +302,21 @@ impl<'slice> Matcher<Tokens<'slice>> for TokenTag {
 	}
 }
 
-impl Block {
-	fn delim_tags(self) -> (TokenTag, TokenTag) {
-		match self {
-			Block::Paren => (ParenOpen, ParenClose),
-			Block::Bracket => (BracketOpen, BracketClose),
-			Block::Brace => (BraceOpen, BraceClose),
-			Block::Angle => (AngleOpen, AngleClose),
-		}
-	}
+fn parse_int<T: IntFromStr + Display>(token: Token, raw: &str) -> Option<(T, Span)> {
+	let Token { kind: TokenKind::Int { base, has_dash, sign }, span } = token else {
+		unreachable!()
+	};
+	let radix = match base {
+		IntBase::Dec => 10,
+		IntBase::Hex => 16,
+		IntBase::Bin => 2,
+	};
+
+	let dg_start =
+		if sign != Sign::None { 1 } else { 0 } + if base != IntBase::Dec { 2 } else { 0 };
+	let digits = &raw[dg_start..];
+	let digits = if has_dash { &digits.replace('_', "") } else { digits };
+	T::from_str(digits, radix, sign == Sign::Neg).map(|nb| (nb, span))
 }
 
 fn resolve_str_normal<'src>(

@@ -180,13 +180,14 @@ pub fn directiveless_meta(cur: &mut Cursor) -> Metadata {
 }
 
 macro_rules! head_type {
-	($src:lifetime) => { &mut impl FnMut(
-		&mut Cursor<$src, '_>, &mut Scope<'src, '_>
+	($csrc:lifetime, $psrc:lifetime) => { &mut impl FnMut(
+		&mut Cursor<$csrc, '_>, &mut Scope<'psrc, '_>
 	) -> ControlFlow<TypeId, Metadata> };
 }
 
-fn parse_arr_typespec<'src>(
-	cur: &mut Cursor<'src, '_>, scope: &mut Scope<'src, '_>, head: head_type!('src),
+fn parse_arr_typespec<'csrc, 'psrc>(
+	cur: &mut Cursor<'csrc, '_>, scope: &mut Scope<'psrc, '_>,
+	head: head_type!('csrc, 'psrc),
 ) -> TypeId {
 	let typeid = cur.delim(Block::Angle, |cur| {
 		let item = parse_typespec(cur, scope, false, head).ok()?;
@@ -196,9 +197,9 @@ fn parse_arr_typespec<'src>(
 	});
 	typeid.unwrap_or(TypeId::ANY)
 }
-fn resolve_primary<'src>(
-	primary: &Ident, cur: &mut Cursor<'src, '_>, scope: &mut Scope<'src, '_>,
-	head: head_type!('src),
+fn resolve_primary<'csrc, 'psrc>(
+	primary: &Ident, cur: &mut Cursor<'csrc, '_>, scope: &mut Scope<'psrc, '_>,
+	head: head_type!('csrc, 'psrc),
 ) -> ControlFlow<TypeId, (TypeId, u16)> {
 	if *primary == "arr" {
 		return Break(parse_arr_typespec(cur, scope, head));
@@ -248,9 +249,9 @@ fn resolve_prim_dot_sec(
 		return Break(TypeId::ANY);
 	}
 }
-fn parse_typepec_generic<'src>(
-	params: u16, cur: &mut Cursor<'src, '_>, scope: &mut Scope<'src, '_>, start: Span,
-	head: head_type!('src),
+fn parse_typepec_generic<'csrc, 'psrc>(
+	params: u16, cur: &mut Cursor<'csrc, '_>, scope: &mut Scope<'psrc, '_>, start: Span,
+	head: head_type!('csrc, 'psrc),
 ) -> ThinVec<TypeId> {
 	let mut list: ThinVec<_> = cur
 		.try_delim_list(Block::Angle, |cur, _| {
@@ -267,9 +268,9 @@ fn parse_typepec_generic<'src>(
 	list
 }
 
-pub fn parse_typespec<'src>(
-	cur: &mut Cursor<'src, '_>, scope: &mut Scope<'src, '_>, in_value: bool,
-	head: head_type!('src),
+pub fn parse_typespec<'csrc, 'psrc>(
+	cur: &mut Cursor<'csrc, '_>, scope: &mut Scope<'psrc, '_>, in_value: bool,
+	head: head_type!('csrc, 'psrc),
 ) -> Result<TypeId, Metadata> {
 	let metadata = match head(cur, scope) {
 		Break(typeid) => return Ok(typeid),

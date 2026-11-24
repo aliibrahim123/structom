@@ -243,4 +243,12 @@ impl Block {
 			Block::Angle => TokenKind::AngleClose,
 		}
 	}
+	pub fn delim_tags(self) -> (TokenTag, TokenTag) {
+		match self {
+			Block::Paren => (TokenTag::ParenOpen, TokenTag::ParenClose),
+			Block::Bracket => (TokenTag::BracketOpen, TokenTag::BracketClose),
+			Block::Brace => (TokenTag::BraceOpen, TokenTag::BraceClose),
+			Block::Angle => (TokenTag::AngleOpen, TokenTag::AngleClose),
+		}
+	}
 }

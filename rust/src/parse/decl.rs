@@ -29,6 +29,46 @@ use crate::{
 	utils::IntFromStr,
 };
 
+struct Context<'src, 'other, 'prov> {
+	file: &'other mut DeclFileBuilder,
+	post_process: &'other mut Vec<PostProcess>,
+	scope: &'other mut Scope<'src, 'prov>,
+	cur_inner_def_id: &'other mut u16,
+}
+
+#[derive(Debug)]
+struct ItemLoc {
+	id: ItemId,
+	kind: ItemKind,
+	start: usize,
+}
+
+#[derive(Debug)]
+struct VarPostProc {
+	tag: VariantTag,
+	directives: PostDirectives,
+	fields_defaults: Vec<(FieldId, usize)>,
+}
+#[derive(Debug)]
+enum PostProcKinded {
+	None,
+	Struct { fields_defaults: Vec<(FieldId, usize)> },
+	Union { variants_procs: Vec<VarPostProc> },
+}
+
+#[derive(Debug)]
+struct PostProcess {
+	id: ItemId,
+	directives: PostDirectives,
+	kinded: PostProcKinded,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ItemKind {
+	Struct,
+	Union,
+}
+
 #[derive(Debug, Default)]
 struct PostDirectives {
 	default: Option<NonZeroUsize>,
@@ -72,7 +112,7 @@ fn tag_only_meta<T: IntFromStr + Display>(
 			return tag;
 		}
 		if cur.test(Int) {
-			tag = cur.int(kind).filter(|_| !skip).or(tag)
+			tag = cur.try_int().filter(|_| !skip).or(tag)
 		} else {
 			cur.try_ident();
 			cur.skip_block(Block::Paren);
@@ -160,45 +200,6 @@ fn collect_directives<'src, T: IntFromStr + Display + Default>(
 	(dirs, metadata)
 }
 
-struct Context<'src, 'other, 'prov> {
-	file: &'other mut DeclFileBuilder,
-	post_process: &'other mut Vec<PostProcess>,
-	scope: &'other mut Scope<'src, 'prov>,
-}
-
-#[derive(Debug)]
-struct ItemLoc {
-	id: ItemId,
-	kind: ItemKind,
-	start: usize,
-}
-
-#[derive(Debug)]
-struct VarPostProc {
-	tag: VariantTag,
-	directives: PostDirectives,
-	fields_defaults: Vec<(FieldId, usize)>,
-}
-#[derive(Debug)]
-enum PostProcKinded {
-	None,
-	Struct { fields_defaults: Vec<(FieldId, usize)> },
-	Union { variants_procs: Vec<VarPostProc> },
-}
-
-#[derive(Debug)]
-struct PostProcess {
-	id: ItemId,
-	directives: PostDirectives,
-	kinded: PostProcKinded,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ItemKind {
-	Struct,
-	Union,
-}
-
 fn resport_assign_err(
 	err: AssignError, cur: &mut Cursor, kinds: &str, name: &Ident,
 	tag: Option<(impl Display, Span)>, parent: Option<&Ident>,
@@ -226,14 +227,14 @@ fn resport_assign_err(
 }
 
 fn reserve_item(
-	name: &Ident, tag: Option<(u16, Span)>, generic_params: Vec<&str>, cur: &mut Cursor,
+	name: &Ident, id: Option<(u16, Span)>, generic_params: Vec<&str>, cur: &mut Cursor,
 	ctx: &mut Context,
 ) -> Result<ItemId, ()> {
 	let Context { file, scope, .. } = ctx;
 	let generic_params_len = generic_params.len() as u16;
-	let id = match file.reserve(Some(name.val), tag.map(|(tag, _)| tag), generic_params) {
+	let id = match file.reserve(Some(name.val), id.map(|(tag, _)| tag), generic_params) {
 		Ok(id) => id,
-		Err(err) => return Err(resport_assign_err(err, cur, "items", name, tag, None)),
+		Err(err) => return Err(resport_assign_err(err, cur, "items", name, id, None)),
 	};
 
 	if scope.top.insert(name.val.into(), (file.ns(), id, generic_params_len)).is_some() {
@@ -269,6 +270,14 @@ fn parse_item_kw(cur: &mut Cursor) -> ControlFlow<(), ItemKind> {
 		return Break(());
 	}
 }
+fn skip_item_body(cur: &mut Cursor, kind: ItemKind) {
+	if kind == ItemKind::Struct {
+		_ = cur.skip_block(Block::Paren) || cur.skip_block(Block::Brace);
+	} else {
+		cur.skip_block(Block::Paren);
+		cur.skip_block(Block::Brace);
+	}
+}
 fn discover_item(
 	cur: &mut Cursor, locations: &mut Vec<ItemLoc>, ctx: &mut Context,
 ) -> ControlFlow<()> {
@@ -280,47 +289,58 @@ fn discover_item(
 	let name = cur.ident().unwrap_or_default();
 	let generic_params = parse_generic_params(cur);
 
-	if kind == ItemKind::Struct {
-		_ = cur.skip_block(Block::Paren) || cur.skip_block(Block::Brace);
-	} else {
-		cur.skip_block(Block::Paren);
-		cur.skip_block(Block::Brace);
-	}
-
 	if let Ok(id) = reserve_item(&name, tag, generic_params, cur, ctx) {
 		locations.push(ItemLoc { id, start, kind });
 	}
 	Continue(())
 }
 
-fn reserve_inner_item(file: &mut DeclFileBuilder, id: Option<(u16, Span)>) -> ItemId {
-	todo!()
+fn reserve_inner_item(
+	name: &Ident, id_dir: Option<(u16, Span)>, cur: &mut Cursor, ctx: &mut Context,
+) -> Result<ItemId, ()> {
+	let id = match id_dir {
+		Some((id, _)) => id,
+		None => loop {
+			let cur_id = &mut *ctx.cur_inner_def_id;
+			if ctx.file.item_by_id(ItemId(*cur_id)).is_none() {
+				break *cur_id;
+			}
+			if *cur_id == 0 {
+				cur.error("all items id had been used".into(), Span::EMPTY);
+				return Err(());
+			}
+			*cur_id -= 1;
+		},
+	};
+	ctx.file
+		.reserve(Some(name.val), Some(id), ctx.scope.generics.iter().copied())
+		.map_err(|err| resport_assign_err(err, cur, "items", name, id_dir, None))
 }
 
 fn parse_typespec<'src>(
 	cur: &mut Cursor<'src, '_>, ctx: &mut Context<'src, '_, '_>,
 ) -> TypeId {
-	let Context { file, post_process, scope } = ctx;
+	let Context { file, post_process, scope, cur_inner_def_id } = ctx;
 	base::parse_typespec(cur, scope, false, &mut |cur, scope| {
-		let ctx = &mut Context { file, post_process, scope };
-		let mut item = match parse_item(cur, ctx, |cur, id, ctx| {
+		let ctx = &mut Context { file, post_process, scope, cur_inner_def_id };
+		let item = match parse_item(cur, ctx, |cur, id, ctx| {
 			let kind = parse_item_kw(cur)?;
 			let name = cur.try_ident().unwrap_or_default();
-			let id = reserve_inner_item(ctx.file, id);
+			let Ok(id) = reserve_inner_item(&name, id, cur, ctx) else {
+				skip_item_body(cur, kind);
+				return Break(());
+			};
 			Continue((kind, name, id))
 		}) {
 			Continue(item) => item,
 			Break(metadata) => return Continue(metadata),
 		};
-		for name in &ctx.scope.generics {
-			item.generic_params_mut().add(name).unwrap();
-		}
 		let id = item.id();
-		ctx.file.define_reserved(id, item);
-		let params = ctx.scope.generics.iter().enumerate().map(|(ind, _)| {
+		file.define_reserved(id, item);
+		let params = scope.generics.iter().enumerate().map(|(ind, _)| {
 			TypeId::new_unchecked(DeclNs::GENERIC_PARAMS, ItemId(ind as u16))
 		});
-		Break(TypeId::with_params_unchecked(ctx.file.ns(), id, params))
+		Break(TypeId::with_params_unchecked(file.ns(), id, params))
 	})
 	.unwrap_or(TypeId::ANY)
 }
@@ -564,17 +584,33 @@ fn parse_root_level_item<'src>(
 	ctx.file.define_reserved(id, item).unwrap();
 }
 
+fn resolve_rich_notation(
+	cur: &mut Cursor<'_, '_>, process: &PostProcess, file: &mut DeclFileBuilder,
+	scope: &mut Scope<'_, '_>,
+) {
+}
+
 pub fn parse_decl<'src>(
 	cur: &mut Cursor<'src, '_>, path: &str, scope: &mut Scope<'src, '_>,
 ) -> DeclFileBuilder {
 	let mut file = DeclFileBuilder::new(path);
 	let mut locations = Vec::new();
 	let mut post_process = Vec::new();
-	let mut ctx = Context { file: &mut file, post_process: &mut post_process, scope };
+	let mut ctx = Context {
+		file: &mut file,
+		post_process: &mut post_process,
+		scope,
+		cur_inner_def_id: &mut u16::MAX,
+	};
 	while discover_item(cur, &mut locations, &mut ctx).is_continue() {}
 
 	for loc in locations {
 		parse_root_level_item(cur, loc, &mut ctx);
+	}
+
+	#[cfg(any(feature = "rich-bitfield", feature = "rich-unitfield"))]
+	for process in &post_process {
+		resolve_rich_notation(cur, process, &mut file, scope)
 	}
 	file
 }

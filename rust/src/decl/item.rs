@@ -83,7 +83,7 @@ pub struct Item {
 	pub(crate) id: ItemId,
 	pub(crate) kind: ItemKind,
 	default_value: Option<Value>,
-	generic_params: GenericParams,
+	pub(crate) generic_params: GenericParams,
 	rich_notation: RichNotation,
 	metadata: Metadata,
 }
