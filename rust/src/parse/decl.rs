@@ -97,18 +97,25 @@ struct Directives<'src, T: IntFromStr> {
 	post: PostDirectives,
 }
 
-fn tag_only_meta<T: IntFromStr + Display>(
-	cur: &mut Cursor, kind: &str,
-) -> Option<(T, Span)> {
+fn skip_metadata(cur: &mut Cursor) {
+	loop {
+		let start = cur.off;
+		let skip = cur.try_symbol(UnitComment);
+		if !cur.try_symbol(At) {
+			return;
+		};
+		cur.try_ident();
+		cur.skip_block(Block::Paren);
+	}
+}
+fn tag_only_meta<T: IntFromStr + Display>(cur: &mut Cursor) -> Option<(T, Span)> {
 	let mut tag = None;
 	loop {
+		skip_metadata(cur);
+		let start = cur.off;
 		let skip = cur.try_symbol(UnitComment);
-		if cur.try_symbol(At) {
-			cur.try_ident();
-			cur.skip_block(Block::Paren);
-			continue;
-		}
 		if !cur.try_symbol(Hash) {
+			cur.rewind(start);
 			return tag;
 		}
 		if cur.test(Int) {
@@ -199,6 +206,14 @@ fn collect_directives<'src, T: IntFromStr + Display + Default>(
 	}
 	(dirs, metadata)
 }
+fn report_directives(cur: &mut Cursor) {
+	while let Some((directive, span)) = {
+		skip_metadata(cur);
+		try_directive(cur, MetaContext::Normal)
+	} {
+		directive.invalid_place(cur, span);
+	}
+}
 
 fn resport_assign_err(
 	err: AssignError, cur: &mut Cursor, kinds: &str, name: &Ident,
@@ -282,12 +297,19 @@ fn discover_item(
 	cur: &mut Cursor, locations: &mut Vec<ItemLoc>, ctx: &mut Context,
 ) -> ControlFlow<()> {
 	let start = cur.off;
-	let tag = tag_only_meta(cur, "item id");
+	let tag = tag_only_meta(cur);
+
+	let skip = cur.try_symbol(UnitComment);
 
 	let kind = parse_item_kw(cur)?;
 
 	let name = cur.ident().unwrap_or_default();
 	let generic_params = parse_generic_params(cur);
+
+	skip_item_body(cur, kind);
+	if skip {
+		return Continue(());
+	}
 
 	if let Ok(id) = reserve_item(&name, tag, generic_params, cur, ctx) {
 		locations.push(ItemLoc { id, start, kind });
@@ -336,7 +358,7 @@ fn parse_typespec<'src>(
 			Break(metadata) => return Continue(metadata),
 		};
 		let id = item.id();
-		file.define_reserved(id, item);
+		_ = file.define_reserved(id, item);
 		let params = scope.generics.iter().enumerate().map(|(ind, _)| {
 			TypeId::new_unchecked(DeclNs::GENERIC_PARAMS, ItemId(ind as u16))
 		});
@@ -530,10 +552,13 @@ fn parse_item<'src>(
 		&mut Context<'src, '_, '_>,
 	) -> ControlFlow<(), (ItemKind, Ident<'src>, ItemId)>,
 ) -> ControlFlow<Metadata, Item> {
+	let start = cur.off;
 	let (Directives { tag: id, fixed, tree, rich, post, .. }, metadata) =
 		collect_directives(cur, "item");
 
 	let Continue((kind, name, id)) = head(cur, id, ctx) else {
+		cur.rewind(start);
+		report_directives(cur);
 		return Break(metadata);
 	};
 
@@ -584,10 +609,19 @@ fn parse_root_level_item<'src>(
 	ctx.file.define_reserved(id, item).unwrap();
 }
 
-fn resolve_rich_notation(
-	cur: &mut Cursor<'_, '_>, process: &PostProcess, file: &mut DeclFileBuilder,
-	scope: &mut Scope<'_, '_>,
+fn resolve_bitfield(
+	cur: &mut Cursor, body: NonZeroUsize, file: &mut DeclFileBuilder, scope: &mut Scope,
 ) {
+}
+
+fn resolve_rich_notation(
+	cur: &mut Cursor, process: &PostProcess, file: &mut DeclFileBuilder,
+	scope: &mut Scope,
+) {
+	#[cfg(feature = "rich-bitfield")]
+	if let Some(body) = process.directives.bitfield {
+		resolve_bitfield(cur, body, file, scope);
+	}
 }
 
 pub fn parse_decl<'src>(

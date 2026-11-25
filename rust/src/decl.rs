@@ -13,6 +13,10 @@ pub use crate::decl::{
 	id::DeclNs,
 	provider::DeclProv,
 };
+use crate::decl::{
+	item::Item,
+	items::{TypeId, TypeIdError},
+};
 
 pub mod items {
 	pub use super::body::*;
@@ -32,4 +36,14 @@ pub enum AssignError {
 	IdOutOfRange,
 	DuplicateName,
 	InvalidName,
+	UnresolvedType,
+	InvalidType,
+}
+
+pub fn resolve_item<'prov>(
+	typeid: &TypeId, prov: &'prov dyn DeclProv,
+) -> Result<&'prov Item, TypeIdError> {
+	prov.get_file(typeid.ns())
+		.and_then(|file| file.item_by_id(typeid.item()))
+		.ok_or(TypeIdError::UnknownItem)
 }

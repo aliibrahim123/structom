@@ -1494,7 +1494,7 @@ color { r: 255, g: 0, b: 0, a: 255 }
 
 `bitfield` is a [directive](#metadata-and-directives) that defines a bit field rich notation for an item.
 
-It can be attached to [structs](#tagged-struct) and [variants](#unions) that tag `u8`, `u16`, `u32`, `u64`, or `arr<u8>`. It can also be attached to [unions](#unions) whose variants are all unit variants, in which case it specifies their `size`.
+It can be attached to [structs](#tagged-struct) and [variants](#unions) that tag `u8`, `u16`, `u32`, `u64`, or `arr<u8>`. It can also be attached to [unions](#unions) whose variants are all unit variants.
 
 `bitfield` takes an optional integer `size` parameter for the size of the bit field, which by default is the whole container.
 
@@ -1505,7 +1505,7 @@ It also takes the layout as a `map<ident, int | type_spec>` of field identifiers
 - Nested bit fields, specified by a type specifier.
 - Unions whose variants are all unit variants, specified by a type specifier and encoded as a tag field.
 
-Fields are allocated in declaration order, starting from the least significant bit.
+Fields are allocated in declaration order, starting from the least significant bit, remaining space is pad.
 
 Fields named `_` are skipped, but their place is reserved.
 

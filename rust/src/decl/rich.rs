@@ -3,7 +3,7 @@ use core::fmt::Display;
 use core::ops::Index;
 
 #[cfg(feature = "rich-bitfield")]
-use crate::decl::id::FieldId;
+use crate::decl::{DeclProv, id::FieldId, resolve_item};
 #[cfg(feature = "rich-unitfield")]
 use crate::utils::HashMap;
 use alloc_crate::vec::Vec;
@@ -11,7 +11,9 @@ use lean_string::LeanStr;
 use thin_vec::ThinVec;
 
 use crate::{
-	decl::{AssignError, id::check_ident, items::TypeId},
+	decl::{
+		AssignError, body::Body, id::ItemId, id::check_ident, items::TypeId, union::Union,
+	},
 	value::Value,
 };
 
@@ -81,91 +83,171 @@ impl<'a, G: IntoIterator<Item = Value>> FromIterator<(&'a str, G)> for Metadata 
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct DuplicateNotation;
+pub enum NotationError {
+	Duplicate,
+	Disallowed,
+	LargeSize,
+}
 
 #[derive(Debug, Default, Clone)]
-pub struct RichNotation(ThinVec<Form>);
+pub(crate) struct RichCapabilities {
+	#[cfg(feature = "rich-bitfield")]
+	allow_bitfield: bool,
+	#[cfg(feature = "rich-bitfield")]
+	bitfield_size: u16,
+	#[cfg(feature = "rich-unitfield")]
+	allow_unitfield: bool,
+	#[cfg(feature = "rich-unitfield")]
+	unitfield_target: UnitFieldTarget,
+}
+
+#[derive(Debug, Clone)]
+pub struct RichNotation {
+	caps: RichCapabilities,
+	forms: ThinVec<Form>,
+}
 impl RichNotation {
-	pub fn new() -> Self {
-		Self::default()
+	pub(crate) fn new(caps: RichCapabilities) -> Self {
+		Self { caps, forms: ThinVec::new() }
 	}
 
 	pub fn mark_true(&mut self) {
-		if self.0.len() == 0 {
-			self.0.push(Form::Marker);
+		if self.forms.len() == 0 {
+			self.forms.push(Form::Marker);
 		}
 	}
 	pub fn is_rich(&self) -> bool {
-		!self.0.is_empty()
+		!self.forms.is_empty()
 	}
 
-	pub fn add_reader(&mut self, name: &str) -> Result<(), DuplicateNotation> {
-		if self.0.iter().any(|f| matches!(f, Form::Reader(other) if name == other.0)) {
-			return Err(DuplicateNotation);
+	pub fn add_reader(&mut self, name: &str) -> Result<(), NotationError> {
+		if self.forms.iter().any(|f| matches!(f, Form::Reader(ot) if name == ot.0)) {
+			return Err(NotationError::Duplicate);
 		}
-		self.0.push(Form::Reader(Reader::from(name)));
+		self.forms.push(Form::Reader(Reader::from(name)));
 		Ok(())
 	}
 	#[cfg(feature = "rich-bitfield")]
-	pub fn add_bitfield(&mut self, size: u8) -> Result<&mut BitField, DuplicateNotation> {
-		if self.0.iter().any(|form| matches!(form, Form::BitField(_))) {
-			return Err(DuplicateNotation);
+	pub fn add_bitfield(
+		&mut self, size: Option<u16>,
+	) -> Result<&mut BitField, NotationError> {
+		if !self.caps.allow_bitfield {
+			return Err(NotationError::Disallowed);
 		}
-		self.0.push(Form::BitField(BitField::new(size)));
-		let Some(Form::BitField(bitfield)) = self.0.last_mut() else { unreachable!() };
+		if self.forms.iter().any(|form| matches!(form, Form::BitField(_))) {
+			return Err(NotationError::Duplicate);
+		}
+		let size = match size {
+			Some(size) if size > self.caps.bitfield_size => {
+				return Err(NotationError::LargeSize);
+			}
+			Some(size) => size,
+			None => self.caps.bitfield_size,
+		};
+		self.forms.push(Form::BitField(BitField::new(size)));
+		let Some(Form::BitField(bitfield)) = self.forms.last_mut() else {
+			unreachable!()
+		};
 		Ok(bitfield)
 	}
 	#[cfg(feature = "rich-unitfield")]
-	pub fn add_unitfield(&mut self) -> Result<&mut UnitField, DuplicateNotation> {
-		if self.0.iter().any(|form| matches!(form, Form::UnitField(_))) {
-			return Err(DuplicateNotation);
+	pub fn add_unitfield(&mut self) -> Result<&mut UnitField, NotationError> {
+		if !self.caps.allow_unitfield {
+			return Err(NotationError::Disallowed);
 		}
-		self.0.push(Form::UnitField(UnitField::new()));
-		let Some(Form::UnitField(unitfield)) = self.0.last_mut() else { unreachable!() };
+		if self.forms.iter().any(|form| matches!(form, Form::UnitField(_))) {
+			return Err(NotationError::Duplicate);
+		}
+		self.forms.push(Form::UnitField(UnitField::new(self.caps.unitfield_target)));
+		let Some(Form::UnitField(unitfield)) = self.forms.last_mut() else {
+			unreachable!()
+		};
 		Ok(unitfield)
 	}
 
 	pub fn has_reader(&self, name: &str) -> bool {
-		self.0.iter().any(|form| matches!(form, Form::Reader(r) if r.0 == name))
+		self.forms.iter().any(|form| matches!(form, Form::Reader(r) if r.0 == name))
 	}
 	#[cfg(feature = "rich-bitfield")]
 	pub fn get_bitfield(&self) -> Option<&BitField> {
-		self.0.iter().find_map(|form| match form {
+		self.forms.iter().find_map(|form| match form {
 			Form::BitField(bf) => Some(bf),
 			_ => None,
 		})
 	}
+	#[cfg(feature = "rich-unitfield")]
 	pub fn get_unitfield(&self) -> Option<&UnitField> {
-		self.0.iter().find_map(|form| match form {
+		self.forms.iter().find_map(|form| match form {
 			Form::UnitField(uf) => Some(uf),
 			_ => None,
 		})
 	}
-	/*
-	#[cfg(feature = "rich-unitfield")]
-	pub fn get_unitfield_mut(&mut self) -> Option<&mut UnitField> {
-		self.0.iter_mut().find_map(|form| match form {
-			Form::UnitField(uf) => Some(uf),
-			_ => None,
-		})
-	}
-
-	#[cfg(feature = "rich-bitfield")]
-	pub fn get_bitfield_mut(&mut self) -> Option<&mut BitField> {
-		self.0.iter_mut().find_map(|form| match form {
-			Form::BitField(bf) => Some(bf),
-			_ => None,
-		})
-	}
-	#[cfg(feature = "rich-unitfield")]
-	 */
 
 	pub fn form_count(&self) -> usize {
-		self.0.len()
+		self.forms.len()
 	}
 	pub fn forms(&self) -> &[Form] {
-		&self.0
+		&self.forms
 	}
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum RichTarget<'a> {
+	Body(&'a Body),
+	Union(&'a Union),
+	Other,
+}
+
+#[cfg(feature = "rich-bitfield")]
+fn set_bitfield_caps(target: RichTarget, caps: &mut RichCapabilities) {
+	match target {
+		RichTarget::Body(Body::Tagged(typeid)) if typeid.is_builtin() => {
+			(caps.allow_bitfield, caps.bitfield_size) = match typeid.item() {
+				ItemId::U8 => (true, 8),
+				ItemId::U16 => (true, 16),
+				ItemId::U32 => (true, 32),
+				ItemId::U64 => (true, 64),
+				ItemId::ARR if typeid.params()[0] == TypeId::U8 => {
+					(true, typeid.params()[1].item().value())
+				}
+				_ => (false, 0),
+			}
+		}
+		RichTarget::Union(union)
+			if union.variants().iter().all(|var| var.body().is_none()) =>
+		{
+			caps.allow_bitfield = true;
+			caps.bitfield_size = union.tag_type().bits() as u16;
+		}
+		_ => {}
+	}
+}
+#[cfg(feature = "rich-unitfield")]
+fn set_unitfield_caps(target: RichTarget, caps: &mut RichCapabilities) {
+	if let RichTarget::Body(Body::Tagged(typeid)) = target
+		&& typeid.is_builtin()
+	{
+		(caps.allow_unitfield, caps.unitfield_target) = match typeid.item() {
+			ItemId::U8 | ItemId::U16 | ItemId::U32 | ItemId::U64 => {
+				(true, UnitFieldTarget::Uint)
+			}
+			ItemId::I8 | ItemId::I16 | ItemId::I32 | ItemId::I64 => {
+				(true, UnitFieldTarget::Int)
+			}
+			ItemId::F16 | ItemId::F32 | ItemId::F64 => (true, UnitFieldTarget::Float),
+			ItemId::BINT => (true, UnitFieldTarget::Bint),
+			ItemId::DEC => (true, UnitFieldTarget::Dec),
+			_ => (false, UnitFieldTarget::Uint),
+		}
+	}
+}
+pub(crate) fn caps_of(target: RichTarget) -> RichCapabilities {
+	let mut caps = RichCapabilities::default();
+	#[cfg(feature = "rich-bitfield")]
+	set_bitfield_caps(target, &mut caps);
+	#[cfg(feature = "rich-unitfield")]
+	set_unitfield_caps(target, &mut caps);
+	caps
 }
 
 #[derive(Debug, Clone)]
@@ -204,7 +286,7 @@ impl Display for Reader {
 #[cfg(feature = "rich-bitfield")]
 #[derive(Debug, Clone)]
 pub enum BitFieldType {
-	Atomic(u8),
+	Atomic(u16),
 	Typed(TypeId),
 }
 
@@ -234,34 +316,53 @@ impl BitFieldField {
 #[cfg(feature = "rich-bitfield")]
 #[derive(Debug, Clone)]
 pub struct BitField {
-	size: u8,
+	size: u16,
+	top: u16,
 	fields: Vec<BitFieldField>,
 }
+
 #[cfg(feature = "rich-bitfield")]
 impl BitField {
-	fn new(size: u8) -> Self {
-		Self { size, fields: Vec::new() }
+	fn new(size: u16) -> Self {
+		Self { size, top: 0, fields: Vec::new() }
 	}
 	pub fn add(
-		&mut self, name: &str, type_: BitFieldType,
+		&mut self, name: &str, type_: BitFieldType, prov: &dyn DeclProv,
 	) -> Result<FieldId, AssignError> {
-		self.add_lean(LeanStr::from(name), type_)
+		self.add_lean(LeanStr::from(name), type_, prov)
 	}
 	pub(crate) fn add_lean(
-		&mut self, name: LeanStr, type_: BitFieldType,
+		&mut self, name: LeanStr, type_: BitFieldType, prov: &dyn DeclProv,
 	) -> Result<FieldId, AssignError> {
-		check_ident(&name)?;
-		if self.fields.len() >= u16::MAX as usize {
-			return Err(AssignError::FullCapacity);
-		}
+		check_ident(&name).map_err(|_| AssignError::InvalidName)?;
 		if self.fields.iter().any(|field| field.name == name) {
 			return Err(AssignError::DuplicateName);
 		}
+
+		let size = match &type_ {
+			BitFieldType::Atomic(size) => *size,
+			BitFieldType::Typed(typeid) if *typeid == TypeId::BOOL => 1,
+			BitFieldType::Typed(typeid) => {
+				let item = resolve_item(typeid, prov)
+					.map_err(|_| AssignError::UnresolvedType)?;
+				if let Some(bitfield) = item.rich_notation().get_bitfield() {
+					bitfield.size()
+				} else {
+					return Err(AssignError::InvalidType);
+				}
+			}
+		};
+
+		if self.top as u32 + size as u32 > self.size as u32 {
+			return Err(AssignError::FullCapacity);
+		}
+		self.top += size;
+
 		let id = FieldId(self.fields.len() as u16);
 		self.fields.push(BitFieldField::new(name, id, type_));
 		Ok(id)
 	}
-	pub fn size(&self) -> u8 {
+	pub fn size(&self) -> u16 {
 		self.size
 	}
 	pub fn field_by_name(&self, name: &str) -> Option<&BitFieldField> {
@@ -278,6 +379,16 @@ impl BitField {
 	}
 }
 
+#[derive(Debug, Default, Clone, Copy)]
+enum UnitFieldTarget {
+	#[default]
+	Uint,
+	Int,
+	Float,
+	Bint,
+	Dec,
+}
+
 #[cfg(feature = "rich-unitfield")]
 #[derive(Debug, Clone)]
 pub struct Unit {
@@ -288,9 +399,9 @@ pub struct Unit {
 }
 #[cfg(feature = "rich-unitfield")]
 #[derive(Debug, Clone)]
-pub struct Names<'a>(&'a [LeanStr]);
+pub struct UnitNames<'a>(&'a [LeanStr]);
 #[cfg(feature = "rich-unitfield")]
-impl Names<'_> {
+impl UnitNames<'_> {
 	pub fn len(&self) -> usize {
 		self.0.len()
 	}
@@ -302,14 +413,15 @@ impl Names<'_> {
 	}
 }
 #[cfg(feature = "rich-unitfield")]
-impl Index<usize> for Names<'_> {
+impl Index<usize> for UnitNames<'_> {
 	type Output = str;
 	fn index(&self, index: usize) -> &Self::Output {
 		&self.0[index].as_str()
 	}
 }
+
 #[cfg(feature = "rich-unitfield")]
-impl<'a> IntoIterator for Names<'a> {
+impl<'a> IntoIterator for UnitNames<'a> {
 	type Item = &'a str;
 	type IntoIter =
 		core::iter::Map<core::slice::Iter<'a, LeanStr>, fn(&'a LeanStr) -> &'a str>;
@@ -319,9 +431,15 @@ impl<'a> IntoIterator for Names<'a> {
 }
 
 #[cfg(feature = "rich-unitfield")]
+fn check_unit_value(value: &Value, target: UnitFieldTarget) -> Result<(), AssignError> {
+	Ok(())
+}
+
+#[cfg(feature = "rich-unitfield")]
 impl Unit {
 	pub fn new<'a>(names: impl IntoIterator<Item = &'a str>, mult: Value) -> Self {
-		Self::new_lean(names.into_iter().map(LeanStr::from).collect(), mult)
+		let names = names.into_iter().map(LeanStr::from).collect();
+		Self { names, mult, min: None, max: None }
 	}
 	pub fn with_bounds<'a>(
 		names: impl IntoIterator<Item = &'a str>, mult: Value, min: Option<Value>,
@@ -329,11 +447,8 @@ impl Unit {
 	) -> Self {
 		Self { names: names.into_iter().map(LeanStr::from).collect(), mult, min, max }
 	}
-	pub(crate) fn new_lean(names: Vec<LeanStr>, mult: Value) -> Self {
-		Self { names, mult, min: None, max: None }
-	}
-	pub fn names(&self) -> Names<'_> {
-		Names(&self.names)
+	pub fn names(&self) -> UnitNames<'_> {
+		UnitNames(&self.names)
 	}
 	pub fn mult(&self) -> &Value {
 		&self.mult
@@ -349,15 +464,24 @@ impl Unit {
 #[cfg(feature = "rich-unitfield")]
 #[derive(Debug, Clone)]
 pub struct UnitField {
+	target: UnitFieldTarget,
 	units: Vec<Unit>,
 	name_index: HashMap<LeanStr, u32>,
 }
 #[cfg(feature = "rich-unitfield")]
 impl UnitField {
-	fn new() -> Self {
-		Self { units: Vec::new(), name_index: HashMap::default() }
+	fn new(target: UnitFieldTarget) -> Self {
+		Self { target, units: Vec::new(), name_index: HashMap::default() }
 	}
 	pub fn add(&mut self, unit: Unit) -> Result<(), AssignError> {
+		check_unit_value(&unit.mult, self.target)?;
+		if let Some(min) = &unit.min {
+			check_unit_value(min, self.target)?;
+		}
+		if let Some(max) = &unit.max {
+			check_unit_value(max, self.target)?;
+		}
+
 		if unit.names.iter().any(|name| self.name_index.contains_key(name)) {
 			return Err(AssignError::DuplicateName);
 		}

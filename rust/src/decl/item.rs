@@ -7,7 +7,7 @@ use crate::{
 		body::{Body, UnassignedSpace},
 		id::ItemId,
 		items::TypeId,
-		rich::{Metadata, RichNotation},
+		rich::{Metadata, RichNotation, RichTarget, caps_of},
 		union::Union,
 	},
 	value::Value,
@@ -103,12 +103,17 @@ impl Item {
 		Self::new_lean(LeanStr::from(name), ItemKind::Union(union))
 	}
 	pub(crate) fn new_lean(name: LeanStr, kind: ItemKind) -> Self {
+		let caps = caps_of(match &kind {
+			ItemKind::Struct(body) => RichTarget::Body(body),
+			ItemKind::Union(union) => RichTarget::Union(union),
+			_ => RichTarget::Other,
+		});
 		Self {
 			name,
 			id: ItemId::UNASSIGNED,
 			kind,
 			default_value: None,
-			rich_notation: RichNotation::new(),
+			rich_notation: RichNotation::new(caps),
 			metadata: Metadata::new(),
 			generic_params: GenericParams::new(),
 		}

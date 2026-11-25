@@ -7,7 +7,7 @@ use lean_string::{LeanStr, ToLeanStr};
 use crate::{
 	decl::{
 		DeclFile, DeclFileBox, DeclNs, DeclProv,
-		items::{ItemId, TypeId},
+		items::{DeclFileBuilder, Item, ItemId, TypeId},
 		provider::{ImportError, ImportResult},
 		rich::Metadata,
 	},
@@ -164,10 +164,26 @@ pub enum UnresolvedKind {
 	Rich,
 }
 
+#[derive(Debug)]
+pub enum LocalFile {
+	None,
+	Box(DeclFileBox),
+	Build(DeclFileBuilder),
+}
+impl LocalFile {
+	pub fn as_file(&self) -> Option<&DeclFile> {
+		match self {
+			LocalFile::None => None,
+			LocalFile::Box(file) => Some(file),
+			LocalFile::Build(file) => Some(file),
+		}
+	}
+}
+
 pub struct Scope<'src, 'prov> {
 	pub prov: &'prov dyn DeclProv,
 
-	pub local_file: Option<DeclFileBox>,
+	pub local_file: LocalFile,
 
 	pub namespaces: HashMap<&'src str, DeclFileBox>,
 	pub unnamespaced: Vec<DeclFileBox>,
@@ -179,9 +195,9 @@ pub struct Scope<'src, 'prov> {
 	pub profile: Profile,
 }
 impl<'prov> Scope<'_, 'prov> {
-	pub fn new(local_file: Option<DeclFileBox>, prov: &'prov dyn DeclProv) -> Self {
+	pub fn new(local_file: Option<DeclFileBuilder>, prov: &'prov dyn DeclProv) -> Self {
 		Self {
-			local_file,
+			local_file: local_file.map_or(LocalFile::None, LocalFile::Build),
 			prov,
 			unnamespaced: Vec::new(),
 			namespaces: HashMap::default(),
@@ -204,13 +220,16 @@ impl<'prov> Scope<'_, 'prov> {
 		})
 	}
 	pub fn resolve_file(&self, ns: DeclNs) -> Option<&DeclFile> {
-		if let Some(file) = &self.local_file
+		if let Some(file) = &self.local_file.as_file()
 			&& file.ns == ns
 		{
 			Some(file)
 		} else {
 			self.prov.get_file(ns)
 		}
+	}
+	pub fn resolve_item(&self, typeid: TypeId) -> Option<&Item> {
+		self.resolve_file(typeid.ns()).and_then(|file| file.item_by_id(typeid.item()))
 	}
 }
 

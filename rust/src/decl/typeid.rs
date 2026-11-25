@@ -54,6 +54,10 @@ impl TypeId {
 	pub fn params(&self) -> &[TypeId] {
 		&self.params
 	}
+	pub fn arr_param(&self) -> Option<(&TypeId, u16)> {
+		((self.ns(), self.item()) == (DeclNs::BUILT_INS, ItemId::ARR))
+			.then(|| (&self.params()[0], self.params()[1].item().value()))
+	}
 	pub fn is_builtin(&self) -> bool {
 		self.ns == DeclNs::BUILT_INS
 	}

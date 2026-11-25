@@ -4,7 +4,7 @@ use crate::decl::{
 	AssignError,
 	id::ItemStore,
 	items::{Body, VariantTag},
-	rich::{Metadata, RichNotation},
+	rich::{Metadata, RichNotation, RichTarget, caps_of},
 };
 
 #[derive(Debug, Clone)]
@@ -30,11 +30,12 @@ impl Variant {
 		{
 			return Err((body, AssignError::UnassignedId));
 		}
+		let caps = caps_of(body.as_ref().map_or(RichTarget::Other, RichTarget::Body));
 		Ok(Self {
 			name,
 			tag: VariantTag::UNASSIGNED,
 			body,
-			rich_notation: RichNotation::new(),
+			rich_notation: RichNotation::new(caps),
 			metadata: Metadata::new(),
 		})
 	}
@@ -78,6 +79,22 @@ impl TagType {
 			Self::U16 => u16::MAX as u32,
 			Self::U32 => u32::MAX,
 			Self::Auto => u32::MAX,
+		}
+	}
+	pub fn bytes(&self) -> u8 {
+		match self {
+			Self::U8 => 1,
+			Self::U16 => 2,
+			Self::U32 => 4,
+			Self::Auto => 4,
+		}
+	}
+	pub fn bits(&self) -> u8 {
+		match self {
+			Self::U8 => 8,
+			Self::U16 => 16,
+			Self::U32 => 32,
+			Self::Auto => 32,
 		}
 	}
 }

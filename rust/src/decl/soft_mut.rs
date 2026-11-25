@@ -24,7 +24,7 @@ impl SoftMut<'_, Item> {
 	pub fn set_default_value(&mut self, value: Value) {
 		self.0.default_value = Some(value);
 	}
-	pub fn defualt_value_mut(&mut self) -> &mut Option<Value> {
+	pub fn default_value_mut(&mut self) -> &mut Option<Value> {
 		&mut self.0.default_value
 	}
 	pub fn as_struct<'a>(&'a mut self) -> Option<SoftMut<'a, Body>> {
