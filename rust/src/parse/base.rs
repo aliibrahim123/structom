@@ -268,7 +268,7 @@ fn parse_typepec_generic<'csrc, 'psrc>(
 	list
 }
 
-pub fn parse_typespec<'csrc, 'psrc>(
+pub fn try_parse_typespec<'csrc, 'psrc>(
 	cur: &mut Cursor<'csrc, '_>, scope: &mut Scope<'psrc, '_>, in_value: bool,
 	head: head_type!('csrc, 'psrc),
 ) -> Result<TypeId, Metadata> {
@@ -278,9 +278,6 @@ pub fn parse_typespec<'csrc, 'psrc>(
 	};
 
 	let Some(primary) = cur.try_ident() else {
-		if !in_value {
-			cur.expected("a type specifier")
-		}
 		return Err(metadata);
 	};
 
@@ -299,4 +296,12 @@ pub fn parse_typespec<'csrc, 'psrc>(
 	typeid.params = parse_typepec_generic(params, cur, scope, primary.span, head);
 
 	Ok(typeid)
+}
+
+pub fn parse_typespec<'csrc, 'psrc>(
+	cur: &mut Cursor<'csrc, '_>, scope: &mut Scope<'psrc, '_>, in_value: bool,
+	head: head_type!('csrc, 'psrc),
+) -> Result<TypeId, Metadata> {
+	try_parse_typespec(cur, scope, in_value, head)
+		.inspect_err(|_| cur.expected("a type specifier"))
 }

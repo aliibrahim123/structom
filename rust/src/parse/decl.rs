@@ -16,17 +16,20 @@ use crate::{
 			Body, DeclFileBuilder, Field, FieldId, Fields, Item, ItemId, TagType, TypeId,
 			Union, Variant, VariantTag,
 		},
-		rich::Metadata,
+		provider::{LocalScope, Void},
+		rich::{BitField, BitFieldType, Metadata, NotationError},
 	},
 	parse::{
 		Span,
-		base::{self, Directive, MetaContext, meta_loop, try_directive},
+		base::{
+			self, Directive, MetaContext, directiveless_meta, meta_loop, try_directive,
+		},
 		head::{self, Scope},
 		str_cursor::Ident,
 		token_cursor::*,
 		tokens::Block,
 	},
-	utils::IntFromStr,
+	utils::{BoolExt, IntFromStr},
 };
 
 struct Context<'src, 'other, 'prov> {
@@ -58,7 +61,7 @@ enum PostProcKinded {
 
 #[derive(Debug)]
 struct PostProcess {
-	id: ItemId,
+	item_id: ItemId,
 	directives: PostDirectives,
 	kinded: PostProcKinded,
 }
@@ -71,11 +74,11 @@ enum ItemKind {
 
 #[derive(Debug, Default)]
 struct PostDirectives {
-	default: Option<NonZeroUsize>,
+	default: Option<(Span, NonZeroUsize)>,
 	#[cfg(feature = "rich-bitfield")]
-	bitfield: Option<NonZeroUsize>,
+	bitfield: Option<(Span, NonZeroUsize)>,
 	#[cfg(feature = "rich-unitfield")]
-	unitfield: Option<NonZeroUsize>,
+	unitfield: Option<(Span, NonZeroUsize)>,
 }
 impl PostDirectives {
 	fn is_some(&self) -> bool {
@@ -133,11 +136,11 @@ fn check_multiple_directive(cur: &mut Cursor, emit: bool, name: &str, span: Span
 	}
 }
 fn arg_directive(
-	cur: &mut Cursor, res: &mut Option<NonZeroUsize>, name: &str, span: Span,
+	cur: &mut Cursor, res: &mut Option<(Span, NonZeroUsize)>, name: &str, span: Span,
 ) {
 	check_multiple_directive(cur, res.is_some(), name, span);
 	if cur.test(ParenOpen) {
-		*res = Some(NonZeroUsize::new(cur.off + 1).unwrap());
+		*res = Some((span, NonZeroUsize::new(cur.off + 1).unwrap()));
 		cur.skip_block(Block::Paren);
 	} else {
 		cur.expected("`(`");
@@ -571,7 +574,7 @@ fn parse_item<'src>(
 
 		if post.is_some() || !fields_defaults.is_empty() {
 			let kinded = PostProcKinded::Struct { fields_defaults };
-			ctx.post_process.push(PostProcess { id, directives: post, kinded });
+			ctx.post_process.push(PostProcess { item_id: id, directives: post, kinded });
 		}
 
 		Item::struct_(name.val, body).unwrap()
@@ -580,7 +583,7 @@ fn parse_item<'src>(
 		let (union, variants_procs) = parse_union_body(cur, ctx);
 		if post.is_some() || !variants_procs.is_empty() {
 			let kinded = PostProcKinded::Union { variants_procs };
-			ctx.post_process.push(PostProcess { id, directives: post, kinded });
+			ctx.post_process.push(PostProcess { item_id: id, directives: post, kinded });
 		}
 		Item::union(name.val, union)
 	};
@@ -610,8 +613,90 @@ fn parse_root_level_item<'src>(
 }
 
 fn resolve_bitfield(
-	cur: &mut Cursor, body: NonZeroUsize, file: &mut DeclFileBuilder, scope: &mut Scope,
+	cur: &mut Cursor, item_id: ItemId, body: NonZeroUsize, file: &mut DeclFileBuilder,
+	scope: &mut Scope, span: Span,
 ) {
+	cur.off = body.into();
+
+	let has_size = cur.test(Int);
+	let size = has_size
+		.and_then(|| cur.int("bitfield size").map(|(val, _)| val))
+		.unwrap_or_else(|| {
+			file.item_by_id(item_id).unwrap().rich_notation().caps.bitfield_size
+		});
+	if has_size {
+		cur.comma_unless_end();
+	}
+
+	let mut bitfield = BitField::new(size);
+	cur.try_delim_list::<(), ()>(Block::Brace, |cur, skip| {
+		let Some(name) = cur.ident() else { return None };
+		_ = cur.eat(Colon);
+		let start = cur.peek().map_or(Span::EMPTY, |t| t.span);
+		let type_ = if let Some((val, _)) = cur.try_int() {
+			BitFieldType::Atomic(val)
+		} else {
+			let ty = base::try_parse_typespec(cur, scope, false, &mut |cur, _| {
+				Continue(directiveless_meta(cur))
+			});
+			BitFieldType::Typed(ty.ok()?)
+		};
+		let typespec_span = start.join(cur.prev().span);
+
+		if !skip {
+			match bitfield.add(name.val, type_, &LocalScope::new_build(&file, scope.prov))
+			{
+				Ok(_) => {}
+				Err(AssignError::DuplicateName) => cur.error(
+					format!("multiple fields with the same name \"{name}\""),
+					name.span,
+				),
+				Err(AssignError::FullCapacity) => {
+					cur.error("all bitfield size has been used".into(), span)
+				}
+				Err(AssignError::InvalidType) => {
+					let ty = cur.src.source_of(typespec_span);
+					cur.error(format!("type \"{ty}\" is not a bitfield"), typespec_span)
+				}
+				_ => unreachable!(),
+			}
+		}
+
+		Some(())
+	});
+
+	let mut item = file.soft_mut_item(item_id).unwrap();
+	match item.rich_notation_mut().add_bitfield(bitfield, !has_size) {
+		Ok(_) => {}
+		Err((_, NotationError::Disallowed)) => {
+			Directive::Bitfield.invalid_place(cur, span)
+		}
+		Err((bitfield, NotationError::Invalid)) if bitfield.field_count() == 0 => {
+			cur.error(
+				"the `bitfield` directive can not have fields on unions".into(),
+				span,
+			);
+		}
+		Err((_, NotationError::Invalid)) => {
+			let word_type = (*item).as_struct().unwrap();
+			let word_type = word_type.as_tagged().unwrap();
+			let word_type = word_type.display(&Void);
+			cur.error(format!("\"{word_type}\" can not fit {size} bitfield"), span)
+		}
+		_ => unreachable!(),
+	}
+}
+
+fn resolve_unitfield(
+	cur: &mut Cursor, item_id: ItemId, body: NonZeroUsize, file: &mut DeclFileBuilder,
+	scope: &mut Scope, span: Span,
+) {
+	let Ok(unitfield) =
+		file.soft_mut_item(item_id).unwrap().rich_notation_mut().add_unitfield()
+	else {
+		Directive::Unitfield.invalid_place(cur, span);
+		return;
+	};
 }
 
 fn resolve_rich_notation(
@@ -619,8 +704,12 @@ fn resolve_rich_notation(
 	scope: &mut Scope,
 ) {
 	#[cfg(feature = "rich-bitfield")]
-	if let Some(body) = process.directives.bitfield {
-		resolve_bitfield(cur, body, file, scope);
+	if let Some((span, body)) = process.directives.bitfield {
+		resolve_bitfield(cur, process.item_id, body, file, scope, span);
+	}
+	#[cfg(feature = "rich-unitfield")]
+	if let Some((span, body)) = process.directives.unitfield {
+		resolve_unitfield(cur, process.item_id, body, file, scope, span);
 	}
 }
 

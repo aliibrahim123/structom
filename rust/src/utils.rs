@@ -11,6 +11,18 @@ impl StrExt for str {
 	}
 }
 
+pub trait BoolExt {
+	fn and_then<T>(self, fun: impl FnOnce() -> Option<T>) -> Option<T>;
+}
+impl BoolExt for bool {
+	fn and_then<T>(self, fun: impl FnOnce() -> Option<T>) -> Option<T> {
+		match self {
+			true => fun(),
+			false => None,
+		}
+	}
+}
+
 pub type HashMap<K, V> = hashbrown::HashMap<K, V, rustc_hash::FxBuildHasher>;
 
 pub trait VecLike<T> {

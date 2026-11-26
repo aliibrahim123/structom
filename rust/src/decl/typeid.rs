@@ -1,9 +1,13 @@
-use core::hash::{Hash, Hasher};
+use core::{
+	fmt::{Debug, Display, Write},
+	hash::{Hash, Hasher},
+};
 
+use alloc_crate::string::String;
 use thin_vec::ThinVec;
 
 use crate::{
-	decl::{DeclNs, items::ItemId, rich::Metadata},
+	decl::{DeclNs, DeclProv, items::ItemId, rich::Metadata},
 	profile::Profile,
 };
 
@@ -75,6 +79,9 @@ impl TypeId {
 	pub fn metadata_mut(&mut self) -> &mut Metadata {
 		&mut self.metadata
 	}
+	pub fn display<'a>(&'a self, provider: &'a dyn DeclProv) -> TypeIdDisplay<'a> {
+		TypeIdDisplay { typeid: self, provider }
+	}
 }
 impl Default for TypeId {
 	fn default() -> Self {
@@ -105,6 +112,42 @@ impl Hash for TypeId {
 		self.ns.hash(state);
 		self.item.hash(state);
 		self.params.hash(state);
+	}
+}
+
+pub struct TypeIdDisplay<'a> {
+	typeid: &'a TypeId,
+	provider: &'a dyn DeclProv,
+}
+impl Display for TypeIdDisplay<'_> {
+	fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+		let Self { typeid, provider } = self;
+		if typeid.is_builtin() {
+			f.write_str(builtin_name(typeid.item()))?;
+		} else if typeid.ns() == DeclNs::GENERIC_PARAMS {
+			write!(f, "GENERIC_PARAM_{:04x}", typeid.item().0)?;
+		} else if let Some(file) = provider.get_file(typeid.ns()) {
+			let item = file.item_by_id(typeid.item()).map_or("_", |i| i.name());
+			write!(f, "\"{}\".{item}", file.path())?;
+		} else {
+			write!(f, "UNKNOWN_{:04x}{:04x}", typeid.ns().0, typeid.item().0)?;
+		}
+		if !typeid.params().is_empty() {
+			f.write_char('<')?;
+			for (ind, param) in typeid.params().iter().enumerate() {
+				if ind != 0 {
+					f.write_str(", ")?
+				}
+				write!(f, "{}", param.display(*provider))?;
+			}
+			f.write_char('>')?;
+		}
+		Ok(())
+	}
+}
+impl Debug for TypeIdDisplay<'_> {
+	fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+		write!(f, "TypeId({self})")
 	}
 }
 
@@ -145,6 +188,37 @@ pub(crate) mod raw {
 	pub const DEC: u16 = 0x83;
 	pub const UUID: u16 = 0x84;
 	pub const COLOR: u16 = 0x85;
+}
+
+fn builtin_name(id: ItemId) -> &'static str {
+	match id {
+		ItemId::NONE => "none",
+		ItemId::ANY => "any",
+		ItemId::BOOL => "bool",
+		ItemId::FAR => "far",
+		ItemId::U8 => "u8",
+		ItemId::U16 => "u16",
+		ItemId::U32 => "u32",
+		ItemId::U64 => "u64",
+		ItemId::I8 => "i8",
+		ItemId::I16 => "i16",
+		ItemId::I32 => "i32",
+		ItemId::I64 => "i64",
+		ItemId::F32 => "f32",
+		ItemId::F64 => "f64",
+		ItemId::F16 => "f16",
+		ItemId::ARR => "arr",
+		ItemId::LIST => "list",
+		ItemId::MAP => "map",
+		ItemId::STR => "str",
+		ItemId::INST => "inst",
+		ItemId::DUR => "dur",
+		ItemId::BINT => "bint",
+		ItemId::DEC => "dec",
+		ItemId::UUID => "uuid",
+		ItemId::COLOR => "color",
+		_ => unreachable!(),
+	}
 }
 
 pub(crate) fn builtin_by_name(name: &str, profile: Profile) -> Option<TypeId> {

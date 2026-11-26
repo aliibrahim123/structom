@@ -12,7 +12,7 @@ use lean_string::LeanStr;
 #[cfg(feature = "fs-provider")]
 use crate::parse::parse_decl_file;
 use crate::{
-	decl::{DeclFile, DeclFileBox, DeclNs},
+	decl::{DeclFile, DeclFileBox, DeclNs, file::DeclFileBuilder},
 	value::Value,
 };
 
@@ -52,8 +52,8 @@ pub trait DeclProv {
 	fn import_file<'file>(
 		&'file self, path: &str, meta: Option<&Value>,
 	) -> ImportResult<'file>;
-	fn get_file(&self, id: DeclNs) -> Option<&DeclFile>;
-	fn get_file_box(&self, id: DeclNs) -> Option<DeclFileBox>;
+	fn get_file(&self, ns: DeclNs) -> Option<&DeclFile>;
+	fn get_file_box(&self, ns: DeclNs) -> Option<DeclFileBox>;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -66,10 +66,10 @@ impl DeclProv for Void {
 			"the `Void` provider doesnt provide anything".into(),
 		))
 	}
-	fn get_file(&self, _id: DeclNs) -> Option<&DeclFile> {
+	fn get_file(&self, _ns: DeclNs) -> Option<&DeclFile> {
 		None
 	}
-	fn get_file_box(&self, _id: DeclNs) -> Option<DeclFileBox> {
+	fn get_file_box(&self, _ns: DeclNs) -> Option<DeclFileBox> {
 		None
 	}
 }
@@ -124,11 +124,11 @@ impl DeclProv for List {
 			None => ImportResult::Err(ImportError::NotFound),
 		}
 	}
-	fn get_file(&self, id: DeclNs) -> Option<&DeclFile> {
-		self.ns_index.get(&id).map(|&index| self.files[index].deref())
+	fn get_file(&self, ns: DeclNs) -> Option<&DeclFile> {
+		self.ns_index.get(&ns).map(|&index| self.files[index].deref())
 	}
-	fn get_file_box(&self, id: DeclNs) -> Option<DeclFileBox> {
-		self.ns_index.get(&id).map(|&index| self.files[index].clone())
+	fn get_file_box(&self, ns: DeclNs) -> Option<DeclFileBox> {
+		self.ns_index.get(&ns).map(|&index| self.files[index].clone())
 	}
 }
 
@@ -204,13 +204,13 @@ impl DeclProv for GrowableList {
 			None => ImportResult::Err(ImportError::NotFound),
 		}
 	}
-	fn get_file(&self, id: DeclNs) -> Option<&DeclFile> {
+	fn get_file(&self, ns: DeclNs) -> Option<&DeclFile> {
 		let ns_index = &self.index.borrow().ns_index;
-		ns_index.get(&id).map(|&index| self.index_file(index).unwrap().deref())
+		ns_index.get(&ns).map(|&index| self.index_file(index).unwrap().deref())
 	}
-	fn get_file_box(&self, id: DeclNs) -> Option<DeclFileBox> {
+	fn get_file_box(&self, ns: DeclNs) -> Option<DeclFileBox> {
 		let ns_index = &self.index.borrow().ns_index;
-		ns_index.get(&id).map(|&index| self.index_file(index).unwrap().clone())
+		ns_index.get(&ns).map(|&index| self.index_file(index).unwrap().clone())
 	}
 }
 
@@ -247,11 +247,73 @@ impl DeclProv for BatchList {
 			None => ImportResult::Err(ImportError::NotFound),
 		}
 	}
-	fn get_file(&self, id: DeclNs) -> Option<&DeclFile> {
-		self.files.get(id.0.checked_sub(self.start)? as usize).map(|f| f.deref())
+	fn get_file(&self, ns: DeclNs) -> Option<&DeclFile> {
+		self.files.get(ns.0.checked_sub(self.start)? as usize).map(|f| f.deref())
 	}
-	fn get_file_box(&self, id: DeclNs) -> Option<DeclFileBox> {
-		self.files.get(id.0.checked_sub(self.start)? as usize).map(|f| f.clone())
+	fn get_file_box(&self, ns: DeclNs) -> Option<DeclFileBox> {
+		self.files.get(ns.0.checked_sub(self.start)? as usize).map(|f| f.clone())
+	}
+}
+
+#[derive(Debug, Clone)]
+enum LocalFile<'build> {
+	Box(DeclFileBox),
+	Build(&'build DeclFileBuilder),
+}
+
+#[derive(Clone)]
+pub struct LocalScope<'files> {
+	local: LocalFile<'files>,
+	provider: &'files dyn DeclProv,
+}
+impl LocalScope<'_> {
+	pub fn new_box<'files>(
+		local: DeclFileBox, provider: &'files dyn DeclProv,
+	) -> LocalScope<'files> {
+		LocalScope { local: LocalFile::Box(local), provider }
+	}
+	pub fn new_build<'files>(
+		local: &'files DeclFileBuilder, provider: &'files dyn DeclProv,
+	) -> LocalScope<'files> {
+		LocalScope { local: LocalFile::Build(local), provider }
+	}
+	pub fn local(&self) -> &DeclFile {
+		match &self.local {
+			LocalFile::Box(file) => file,
+			LocalFile::Build(file) => file,
+		}
+	}
+	pub fn provider(&self) -> &dyn DeclProv {
+		self.provider
+	}
+}
+impl DeclProv for LocalScope<'_> {
+	fn import_file<'file>(
+		&'file self, path: &str, meta: Option<&Value>,
+	) -> ImportResult<'file> {
+		self.provider.import_file(path, meta)
+	}
+	fn get_file(&self, ns: DeclNs) -> Option<&DeclFile> {
+		let local = self.local();
+		if local.ns() == ns { Some(local) } else { self.provider.get_file(ns) }
+	}
+
+	fn get_file_box(&self, ns: DeclNs) -> Option<DeclFileBox> {
+		if let LocalFile::Box(local) = &self.local
+			&& local.ns() == ns
+		{
+			Some(local.clone())
+		} else {
+			self.provider.get_file_box(ns)
+		}
+	}
+}
+impl Debug for LocalScope<'_> {
+	fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+		f.debug_struct("LocalFile")
+			.field("file", &self.local)
+			.field("fallback", &"...")
+			.finish()
 	}
 }
 
@@ -324,10 +386,10 @@ impl DeclProv for FsProv {
 		_ = self.list.add(file.clone());
 		ImportResult::Ok(file)
 	}
-	fn get_file_box(&self, id: DeclNs) -> Option<DeclFileBox> {
-		self.list.get_file_box(id)
+	fn get_file_box(&self, ns: DeclNs) -> Option<DeclFileBox> {
+		self.list.get_file_box(ns)
 	}
-	fn get_file(&self, id: DeclNs) -> Option<&DeclFile> {
-		self.list.get_file(id)
+	fn get_file(&self, ns: DeclNs) -> Option<&DeclFile> {
+		self.list.get_file(ns)
 	}
 }

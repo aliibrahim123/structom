@@ -86,15 +86,23 @@ impl<'a, G: IntoIterator<Item = Value>> FromIterator<(&'a str, G)> for Metadata 
 pub enum NotationError {
 	Duplicate,
 	Disallowed,
-	LargeSize,
+	Invalid,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+enum BitFieldAllow {
+	#[default]
+	No,
+	Yes,
+	ForUnion,
 }
 
 #[derive(Debug, Default, Clone)]
 pub(crate) struct RichCapabilities {
 	#[cfg(feature = "rich-bitfield")]
-	allow_bitfield: bool,
+	allow_bitfield: BitFieldAllow,
 	#[cfg(feature = "rich-bitfield")]
-	bitfield_size: u16,
+	pub(crate) bitfield_size: u16,
 	#[cfg(feature = "rich-unitfield")]
 	allow_unitfield: bool,
 	#[cfg(feature = "rich-unitfield")]
@@ -103,7 +111,7 @@ pub(crate) struct RichCapabilities {
 
 #[derive(Debug, Clone)]
 pub struct RichNotation {
-	caps: RichCapabilities,
+	pub(crate) caps: RichCapabilities,
 	forms: ThinVec<Form>,
 }
 impl RichNotation {
@@ -129,26 +137,25 @@ impl RichNotation {
 	}
 	#[cfg(feature = "rich-bitfield")]
 	pub fn add_bitfield(
-		&mut self, size: Option<u16>,
-	) -> Result<&mut BitField, NotationError> {
-		if !self.caps.allow_bitfield {
-			return Err(NotationError::Disallowed);
+		&mut self, mut bitfield: BitField, fit_container: bool,
+	) -> Result<(), (BitField, NotationError)> {
+		if self.caps.allow_bitfield == BitFieldAllow::No {
+			return Err((bitfield, NotationError::Disallowed));
+		}
+		if bitfield.size > self.caps.bitfield_size
+			|| !bitfield.fields().is_empty()
+				&& self.caps.allow_bitfield == BitFieldAllow::ForUnion
+		{
+			return Err((bitfield, NotationError::Invalid));
 		}
 		if self.forms.iter().any(|form| matches!(form, Form::BitField(_))) {
-			return Err(NotationError::Duplicate);
+			return Err((bitfield, NotationError::Duplicate));
 		}
-		let size = match size {
-			Some(size) if size > self.caps.bitfield_size => {
-				return Err(NotationError::LargeSize);
-			}
-			Some(size) => size,
-			None => self.caps.bitfield_size,
-		};
-		self.forms.push(Form::BitField(BitField::new(size)));
-		let Some(Form::BitField(bitfield)) = self.forms.last_mut() else {
-			unreachable!()
-		};
-		Ok(bitfield)
+		if fit_container {
+			bitfield.size = self.caps.bitfield_size;
+		}
+		self.forms.push(Form::BitField(bitfield));
+		Ok(())
 	}
 	#[cfg(feature = "rich-unitfield")]
 	pub fn add_unitfield(&mut self) -> Result<&mut UnitField, NotationError> {
@@ -203,20 +210,20 @@ fn set_bitfield_caps(target: RichTarget, caps: &mut RichCapabilities) {
 	match target {
 		RichTarget::Body(Body::Tagged(typeid)) if typeid.is_builtin() => {
 			(caps.allow_bitfield, caps.bitfield_size) = match typeid.item() {
-				ItemId::U8 => (true, 8),
-				ItemId::U16 => (true, 16),
-				ItemId::U32 => (true, 32),
-				ItemId::U64 => (true, 64),
+				ItemId::U8 => (BitFieldAllow::Yes, 8),
+				ItemId::U16 => (BitFieldAllow::Yes, 16),
+				ItemId::U32 => (BitFieldAllow::Yes, 32),
+				ItemId::U64 => (BitFieldAllow::Yes, 64),
 				ItemId::ARR if typeid.params()[0] == TypeId::U8 => {
-					(true, typeid.params()[1].item().value())
+					(BitFieldAllow::Yes, typeid.params()[1].item().value())
 				}
-				_ => (false, 0),
+				_ => (BitFieldAllow::No, 0),
 			}
 		}
 		RichTarget::Union(union)
 			if union.variants().iter().all(|var| var.body().is_none()) =>
 		{
-			caps.allow_bitfield = true;
+			caps.allow_bitfield = BitFieldAllow::ForUnion;
 			caps.bitfield_size = union.tag_type().bits() as u16;
 		}
 		_ => {}
@@ -323,7 +330,7 @@ pub struct BitField {
 
 #[cfg(feature = "rich-bitfield")]
 impl BitField {
-	fn new(size: u16) -> Self {
+	pub fn new(size: u16) -> Self {
 		Self { size, top: 0, fields: Vec::new() }
 	}
 	pub fn add(
@@ -356,8 +363,8 @@ impl BitField {
 		if self.top as u32 + size as u32 > self.size as u32 {
 			return Err(AssignError::FullCapacity);
 		}
-		self.top += size;
 
+		self.top += size;
 		let id = FieldId(self.fields.len() as u16);
 		self.fields.push(BitFieldField::new(name, id, type_));
 		Ok(id)
