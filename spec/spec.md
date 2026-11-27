@@ -1950,3 +1950,8 @@ Binary declaration files have the extension `.stomo`, but with a root value of [
 | `d`       |                   |                    |                    |                    |                   |                    |                    |                    |                  |                  |                  |     |     |     |     |     |
 | `e`       |                   |                    |                    |                    |                   |                    |                    |                    |                  |                  |                  |     |     |     |     |     |
 | `f`       |                   |                    |                    |                    |                   |                    |                    |                    |                  |                  |                  |     |     |     |     |     |
+
+#### `ns` = `0`, `id.high_byte` = rest
+
+- **`id.high_byte` = `10`**: [Declaration Types](#declaration-types)
+- **`id.high_byte` = `f*`**: implementation private space.

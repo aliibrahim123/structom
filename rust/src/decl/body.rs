@@ -1,4 +1,4 @@
-use lean_string::LeanStr;
+use compact_str::CompactString;
 
 use crate::{
 	decl::{
@@ -20,16 +20,16 @@ pub(crate) enum FieldType {
 #[derive(Debug, Clone)]
 pub struct Field {
 	id: FieldId,
-	name: LeanStr,
+	name: CompactString,
 	pub(crate) typeid: TypeId,
 	pub(crate) type_: FieldType,
 	pub(crate) metadata: Metadata,
 }
 impl Field {
 	pub fn new(name: &str, typeid: TypeId) -> Self {
-		Self::new_lean(LeanStr::from(name), typeid)
+		Self::new_compact(CompactString::from(name), typeid)
 	}
-	pub(crate) fn new_lean(name: LeanStr, typeid: TypeId) -> Self {
+	pub(crate) fn new_compact(name: CompactString, typeid: TypeId) -> Self {
 		Self {
 			id: FieldId::UNASSIGNED,
 			name,

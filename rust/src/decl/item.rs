@@ -1,4 +1,4 @@
-use lean_string::LeanStr;
+use compact_str::CompactString;
 use thin_vec::ThinVec;
 
 use crate::{
@@ -15,7 +15,7 @@ use crate::{
 
 #[derive(Debug, Clone)]
 pub struct GenericParam {
-	name: LeanStr,
+	name: CompactString,
 	id: ItemId,
 	metadata: Metadata,
 }
@@ -52,7 +52,7 @@ impl GenericParams {
 		}
 		let id = ItemId(self.0.len() as u16);
 		self.0.push(GenericParam {
-			name: LeanStr::from(name),
+			name: CompactString::from(name),
 			id,
 			metadata: Metadata::new(),
 		});
@@ -79,7 +79,7 @@ pub enum ItemKind {
 
 #[derive(Debug, Clone)]
 pub struct Item {
-	pub(crate) name: LeanStr,
+	pub(crate) name: CompactString,
 	pub(crate) id: ItemId,
 	pub(crate) kind: ItemKind,
 	pub(crate) default_value: Option<Value>,
@@ -97,12 +97,12 @@ impl Item {
 				return Err((body, UnassignedSpace));
 			}
 		}
-		Ok(Self::new_lean(LeanStr::from(name), ItemKind::Struct(body)))
+		Ok(Self::new_compact(CompactString::from(name), ItemKind::Struct(body)))
 	}
 	pub fn union(name: &str, union: Union) -> Self {
-		Self::new_lean(LeanStr::from(name), ItemKind::Union(union))
+		Self::new_compact(CompactString::from(name), ItemKind::Union(union))
 	}
-	pub(crate) fn new_lean(name: LeanStr, kind: ItemKind) -> Self {
+	pub(crate) fn new_compact(name: CompactString, kind: ItemKind) -> Self {
 		let caps = caps_of(match &kind {
 			ItemKind::Struct(body) => RichTarget::Body(body),
 			ItemKind::Union(union) => RichTarget::Union(union),

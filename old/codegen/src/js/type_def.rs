@@ -1,6 +1,6 @@
 use crate::js::Ctx;
 use std::{collections::HashSet, fmt::Write};
-use structom::{DeclProvider, internal::*};
+use structom::{internal::*, DeclProvider};
 
 /// generate type definition for a decleration file
 pub fn gen_type_def(source: &mut String, used_files: &mut HashSet<u64>, ctx: &Ctx) {
@@ -20,7 +20,9 @@ pub fn gen_type_def(source: &mut String, used_files: &mut HashSet<u64>, ctx: &Ct
 	source.push('\n');
 }
 
-fn write_enum(source: &mut String, item: &DeclItem, used_files: &mut HashSet<u64>, ctx: &Ctx) {
+fn write_enum(
+	source: &mut String, item: &DeclItem, used_files: &mut HashSet<u64>, ctx: &Ctx,
+) {
 	let DeclItem::Enum { name, variants, .. } = item else { unreachable!() };
 
 	write!(source, "export type {name} = ").unwrap();
@@ -49,7 +51,9 @@ fn write_enum(source: &mut String, item: &DeclItem, used_files: &mut HashSet<u64
 	source.push_str(";\n");
 }
 
-fn write_fields(source: &mut String, def: &StructDef, used_files: &mut HashSet<u64>, ctx: &Ctx) {
+fn write_fields(
+	source: &mut String, def: &StructDef, used_files: &mut HashSet<u64>, ctx: &Ctx,
+) {
 	for Field { name, typeid, is_optional, .. } in def.fields.values() {
 		write!(source, "\t{}{}: ", name, if *is_optional { "?" } else { "" }).unwrap();
 		write_type(source, &typeid, used_files, ctx).unwrap();
@@ -64,7 +68,9 @@ fn resolve_built_in_type(typeid: u16) -> &'static str {
 		BOOL_TYPEID => "boolean",
 		STR_TYPEID => "string",
 
-		U8_TYPEID | U16_TYPEID | U32_TYPEID | I8_TYPEID | I16_TYPEID | I32_TYPEID => "number",
+		U8_TYPEID | U16_TYPEID | U32_TYPEID | I8_TYPEID | I16_TYPEID | I32_TYPEID => {
+			"number"
+		}
 		U64_TYPEID | I64_TYPEID | VINT_TYPEID | VUINT_TYPEID => "bigint",
 		F32_TYPEID | F64_TYPEID => "number",
 		BINT_TYPEID => "undefined",

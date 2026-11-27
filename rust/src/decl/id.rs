@@ -1,15 +1,15 @@
 use core::sync::atomic::{AtomicU64, Ordering};
 
 use alloc_crate::vec::Vec;
+use compact_str::CompactString;
 use hashbrown::hash_map::Entry;
-use lean_string::LeanStr;
 
 use crate::{
 	decl::{AssignError, typeid::raw},
 	utils::HashMap,
 };
 
-static ID_COUNTER: AtomicU64 = AtomicU64::new(2);
+static ID_COUNTER: AtomicU64 = AtomicU64::new(3);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct DeclNs(pub(crate) u64);
@@ -64,7 +64,7 @@ impl VariantTag {
 	}
 }
 
-pub(crate) fn check_ident(name: &LeanStr) -> Result<(), AssignError> {
+pub(crate) fn check_ident(name: &CompactString) -> Result<(), AssignError> {
 	let mut chars = name.chars();
 	(chars.next().is_some_and(|c| matches!(c, 'a'..='z' | 'A'..='Z' | '_'))
 		&& chars.all(|c| matches!(c, 'a'..='z' | 'A'..='Z' | '0'..='9' | '_')))
@@ -82,7 +82,7 @@ enum IdIndex {
 pub(crate) struct ItemStore<T, const MAX_ID: u32, const COUNT_AFTER: bool> {
 	pub items: Vec<T>,
 	id_index: IdIndex,
-	name_index: HashMap<LeanStr, u32>,
+	name_index: HashMap<CompactString, u32>,
 	pub id_counter: u32,
 }
 impl<T, const MAX: u32, const COUNT_AFTER: bool> Default
@@ -144,7 +144,7 @@ impl<T, const MAX: u32, const COUNT_AFTER: bool> ItemStore<T, MAX, COUNT_AFTER> 
 		}
 	}
 	pub fn add(
-		&mut self, name: LeanStr, item: T,
+		&mut self, name: CompactString, item: T,
 	) -> Result<(&mut T, u32), (T, AssignError)> {
 		while self.has_index(self.id_counter) {
 			if self.id_counter == MAX {
@@ -156,7 +156,7 @@ impl<T, const MAX: u32, const COUNT_AFTER: bool> ItemStore<T, MAX, COUNT_AFTER> 
 		self.insert(name, item, self.id_counter)
 	}
 	pub fn add_at(
-		&mut self, name: LeanStr, item: T, id: usize,
+		&mut self, name: CompactString, item: T, id: usize,
 	) -> Result<(&mut T, u32), (T, AssignError)> {
 		if id > MAX as usize {
 			return Err((item, AssignError::IdOutOfRange));
@@ -167,7 +167,7 @@ impl<T, const MAX: u32, const COUNT_AFTER: bool> ItemStore<T, MAX, COUNT_AFTER> 
 		self.insert(name, item, id as u32)
 	}
 	fn insert(
-		&mut self, name: LeanStr, item: T, id: u32,
+		&mut self, name: CompactString, item: T, id: u32,
 	) -> Result<(&mut T, u32), (T, AssignError)> {
 		if check_ident(&name).is_err() {
 			return Err((item, AssignError::InvalidName));

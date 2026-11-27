@@ -2,6 +2,7 @@ mod body;
 mod file;
 mod id;
 mod item;
+pub(crate) mod private;
 pub mod provider;
 pub mod rich;
 mod soft_mut;

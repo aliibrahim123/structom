@@ -1,7 +1,7 @@
 use core::{mem, ops::Deref};
 
 use alloc_crate::{sync::Arc, vec::Vec};
-use lean_string::LeanStr;
+use compact_str::CompactString;
 use thin_vec::ThinVec;
 
 use crate::decl::{
@@ -15,7 +15,7 @@ use crate::decl::{
 #[derive(Debug)]
 pub struct DeclFile {
 	pub(crate) ns: DeclNs,
-	pub(crate) path: LeanStr,
+	pub(crate) path: CompactString,
 	items: ItemStore<Item, { u16::MAX as u32 }, false>,
 	metadata: Metadata,
 }
@@ -95,8 +95,10 @@ impl DeclFileBuilder {
 		&mut self, name: Option<&str>, id: Option<u16>,
 		generic_params: impl IntoIterator<Item = &'params str>,
 	) -> Result<ItemId, AssignError> {
-		let mut item =
-			Item::new_lean(LeanStr::from(name.unwrap_or("_")), ItemKind::Reserved);
+		let mut item = Item::new_compact(
+			CompactString::from(name.unwrap_or("_")),
+			ItemKind::Reserved,
+		);
 		for param in generic_params {
 			item.generic_params_mut().add(param)?;
 		}

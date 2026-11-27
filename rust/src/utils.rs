@@ -23,7 +23,14 @@ impl BoolExt for bool {
 	}
 }
 
-pub type HashMap<K, V> = hashbrown::HashMap<K, V, rustc_hash::FxBuildHasher>;
+#[cfg(all(feature = "siphash", feature = "std"))]
+pub type Hasher = alloc_crate::hash::RandomState;
+
+#[cfg(not(feature = "siphash"))]
+pub type Hasher = rustc_hash::FxBuildHasher;
+
+pub type HashMap<K, V> = hashbrown::HashMap<K, V, Hasher>;
+pub type HashSet<V> = hashbrown::HashSet<V, Hasher>;
 
 pub trait VecLike<T> {
 	fn push(&mut self, val: T);

@@ -7,7 +7,6 @@ use alloc_crate::{
 	string::String,
 };
 use gramex::result::{MatchError, MatchErrorKind};
-use lean_string::LeanString;
 
 use crate::{
 	parse::tokens::{Source, Span},

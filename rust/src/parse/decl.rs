@@ -3,11 +3,13 @@ use core::ops::BitOrAssign;
 use core::{
 	default,
 	fmt::Display,
+	iter::repeat_n,
 	num::NonZeroUsize,
 	ops::ControlFlow::{self, Break, Continue},
 };
 
 use alloc_crate::{format, vec::Vec};
+use gramex::Matcher;
 
 use crate::{
 	decl::{
@@ -16,8 +18,9 @@ use crate::{
 			Body, DeclFileBuilder, Field, FieldId, Fields, Item, ItemId, TagType, TypeId,
 			Union, Variant, VariantTag,
 		},
+		private::unit_def_typeid,
 		provider::{LocalScope, Void},
-		rich::{BitField, BitFieldType, Metadata, NotationError},
+		rich::{BitField, BitFieldType, Metadata, NotationError, Unit},
 	},
 	parse::{
 		Span,
@@ -28,8 +31,10 @@ use crate::{
 		str_cursor::Ident,
 		token_cursor::*,
 		tokens::Block,
+		value::parse_value,
 	},
 	utils::{BoolExt, IntFromStr},
+	value::Value,
 };
 
 struct Context<'src, 'other, 'prov> {
@@ -140,7 +145,7 @@ fn arg_directive(
 ) {
 	check_multiple_directive(cur, res.is_some(), name, span);
 	if cur.test(ParenOpen) {
-		*res = Some((span, NonZeroUsize::new(cur.off + 1).unwrap()));
+		*res = Some((span, NonZeroUsize::new(cur.off).unwrap()));
 		cur.skip_block(Block::Paren);
 	} else {
 		cur.expected("`(`");
@@ -612,58 +617,71 @@ fn parse_root_level_item<'src>(
 	ctx.file.define_reserved(id, item).unwrap();
 }
 
+fn parse_bitfield_field(
+	cur: &mut Cursor, bitfield: &mut BitField, skip: bool, span: Span,
+	file: &mut DeclFileBuilder, scope: &mut Scope,
+) -> Option<()> {
+	let Some(name) = cur.ident() else { return None };
+	_ = cur.eat(Colon);
+	let start = cur.peek().map_or(Span::EMPTY, |t| t.span);
+
+	let type_ = if let Some((val, _)) = cur.try_int() {
+		BitFieldType::Atomic(val)
+	} else {
+		let ty = base::try_parse_typespec(cur, scope, false, &mut |cur, _| {
+			Continue(directiveless_meta(cur))
+		});
+		BitFieldType::Typed(ty.ok()?)
+	};
+
+	if !skip {
+		match bitfield.add(name.val, type_, &LocalScope::new_build(&file, scope.prov)) {
+			Ok(_) => {}
+			Err(AssignError::DuplicateName) => cur.error(
+				format!("multiple fields with the same name \"{name}\""),
+				name.span,
+			),
+			Err(AssignError::FullCapacity) => {
+				cur.error("all bitfield size has been used".into(), span)
+			}
+			Err(AssignError::InvalidType) => {
+				let typespec_span = start.join(cur.prev().span);
+
+				let ty = cur.src.source_of(typespec_span);
+				cur.error(format!("type \"{ty}\" is not a bitfield"), typespec_span)
+			}
+			_ => unreachable!(),
+		}
+	}
+
+	Some(())
+}
+
 fn resolve_bitfield(
 	cur: &mut Cursor, item_id: ItemId, body: NonZeroUsize, file: &mut DeclFileBuilder,
 	scope: &mut Scope, span: Span,
 ) {
 	cur.off = body.into();
-
-	let has_size = cur.test(Int);
-	let size = has_size
-		.and_then(|| cur.int("bitfield size").map(|(val, _)| val))
-		.unwrap_or_else(|| {
-			file.item_by_id(item_id).unwrap().rich_notation().caps.bitfield_size
-		});
-	if has_size {
-		cur.comma_unless_end();
-	}
-
-	let mut bitfield = BitField::new(size);
-	cur.try_delim_list::<(), ()>(Block::Brace, |cur, skip| {
-		let Some(name) = cur.ident() else { return None };
-		_ = cur.eat(Colon);
-		let start = cur.peek().map_or(Span::EMPTY, |t| t.span);
-		let type_ = if let Some((val, _)) = cur.try_int() {
-			BitFieldType::Atomic(val)
-		} else {
-			let ty = base::try_parse_typespec(cur, scope, false, &mut |cur, _| {
-				Continue(directiveless_meta(cur))
+	let Some((bitfield, has_size, size)) = cur.delim(Block::Paren, |cur| {
+		let has_size = cur.test(Int);
+		let size = has_size
+			.and_then(|| cur.int("bitfield size").map(|(val, _)| val))
+			.unwrap_or_else(|| {
+				file.item_by_id(item_id).unwrap().rich_notation().caps.bitfield_size
 			});
-			BitFieldType::Typed(ty.ok()?)
-		};
-		let typespec_span = start.join(cur.prev().span);
-
-		if !skip {
-			match bitfield.add(name.val, type_, &LocalScope::new_build(&file, scope.prov))
-			{
-				Ok(_) => {}
-				Err(AssignError::DuplicateName) => cur.error(
-					format!("multiple fields with the same name \"{name}\""),
-					name.span,
-				),
-				Err(AssignError::FullCapacity) => {
-					cur.error("all bitfield size has been used".into(), span)
-				}
-				Err(AssignError::InvalidType) => {
-					let ty = cur.src.source_of(typespec_span);
-					cur.error(format!("type \"{ty}\" is not a bitfield"), typespec_span)
-				}
-				_ => unreachable!(),
-			}
+		if has_size {
+			cur.comma_unless_end();
 		}
 
-		Some(())
-	});
+		let mut bitfield = BitField::new(size);
+		cur.try_delim_list::<(), ()>(Block::Brace, |cur, skip| {
+			parse_bitfield_field(cur, &mut bitfield, skip, span, file, scope)
+		});
+
+		Some((bitfield, has_size, size))
+	}) else {
+		unreachable!()
+	};
 
 	let mut item = file.soft_mut_item(item_id).unwrap();
 	match item.rich_notation_mut().add_bitfield(bitfield, !has_size) {
@@ -691,12 +709,40 @@ fn resolve_unitfield(
 	cur: &mut Cursor, item_id: ItemId, body: NonZeroUsize, file: &mut DeclFileBuilder,
 	scope: &mut Scope, span: Span,
 ) {
-	let Ok(unitfield) =
-		file.soft_mut_item(item_id).unwrap().rich_notation_mut().add_unitfield()
-	else {
+	let mut item = file.soft_mut_item(item_id).unwrap();
+	let Ok(unitfield) = item.rich_notation_mut().add_unitfield() else {
 		Directive::Unitfield.invalid_place(cur, span);
 		return;
 	};
+
+	cur.off = body.into();
+	let typeid =
+		TypeId::map(TypeId::list(TypeId::STR), unit_def_typeid(unitfield.unit_type()));
+	let units = cur.delim(Block::Paren, |cur| parse_value(cur, &typeid, scope)).unwrap();
+	let Some(units) = units.into_map() else { return };
+	for (names, mut def) in units.into_iter() {
+		let names_value = names.as_list().unwrap();
+		let mut names = Vec::with_capacity(names_value.len());
+		for name in names_value {
+			let name = name.as_str().unwrap();
+			if unitfield.unit_by_name(name).is_some() {
+				cur.error(format!("multiple units with the same name \"{name}\""), span);
+				continue;
+			}
+			if names.contains(&name) {
+				cur.error(format!("duplicate unit name \"{name}\""), span);
+				continue;
+			}
+			names.push(name)
+		}
+
+		let def = def.as_struct_mut().unwrap();
+		let Some(mult) = def.take_field(FieldId(0)) else { continue };
+		let min = def.take_field(FieldId(1));
+		let max = def.take_field(FieldId(2));
+		let unit = Unit::with_bounds(names, mult, min, max);
+		_ = unitfield.add(unit);
+	}
 }
 
 fn resolve_rich_notation(
@@ -711,6 +757,68 @@ fn resolve_rich_notation(
 	if let Some((span, body)) = process.directives.unitfield {
 		resolve_unitfield(cur, process.item_id, body, file, scope, span);
 	}
+}
+
+macro_rules! resolve_field_default {
+	($cur:ident, $res: expr, $scope:ident, $file:expr, $process:expr, $($body_access:tt)+) => {
+		let (field_id, offset) = $res;
+		$cur.off = offset;
+		let typeid = $file
+			.item_by_id($process.item_id)
+			.unwrap()
+			.$($body_access)+
+			.as_fields()
+			.unwrap()
+			.field_by_id(field_id)
+			.unwrap()
+			.typeid();
+		let default = parse_value($cur, typeid, $scope).unwrap_or_default();
+		$file.soft_mut_item($process.item_id)
+			.unwrap()
+			.$($body_access)+
+			.as_fields()
+			.unwrap()
+			.field_mut(field_id)
+			.unwrap()
+			.set_default_value(default);
+		if $cur.test(Comma) || $cur.test(BraceClose) {
+			$cur.expected(Comma.expected())
+		}
+	};
+}
+
+fn resolve_defaults(
+	cur: &mut Cursor, process: &PostProcess, file: &mut DeclFileBuilder,
+	scope: &mut Scope,
+) {
+	if let Some((_, body)) = process.directives.default {
+		let params = file.item_by_id(process.item_id).unwrap().generic_params().len();
+		let params = repeat_n(TypeId::ANY, params);
+		let typeid = TypeId::with_params_unchecked(file.ns(), process.item_id, params);
+		cur.off = body.into();
+		let default = cur
+			.delim(Block::Paren, |cur| parse_value(cur, &typeid, scope))
+			.unwrap_or_default();
+		file.soft_mut_item(process.item_id).unwrap().set_default_value(default);
+	}
+	#[rustfmt::skip]
+	match &process.kinded {
+		PostProcKinded::None => {}
+		PostProcKinded::Struct { fields_defaults } => {
+			for &res in fields_defaults {
+				resolve_field_default!(cur, res, scope,file, process, as_struct().unwrap());
+			}
+		}
+		PostProcKinded::Union { variants_procs } => {
+			for variant_proc in variants_procs {
+				for &res in & variant_proc.fields_defaults {
+					resolve_field_default!(cur, res, scope,file, process,
+						as_union().unwrap().variant_by_tag(variant_proc.tag).unwrap().body().unwrap()
+					);
+				}
+			}
+		},
+	};
 }
 
 pub fn parse_decl<'src>(
@@ -730,10 +838,17 @@ pub fn parse_decl<'src>(
 	for loc in locations {
 		parse_root_level_item(cur, loc, &mut ctx);
 	}
+	let end = cur.off;
 
 	#[cfg(any(feature = "rich-bitfield", feature = "rich-unitfield"))]
 	for process in &post_process {
 		resolve_rich_notation(cur, process, &mut file, scope)
 	}
+
+	for process in &post_process {
+		resolve_defaults(cur, process, &mut file, scope)
+	}
+
+	cur.rewind(end);
 	file
 }

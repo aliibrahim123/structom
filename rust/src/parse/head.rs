@@ -1,8 +1,8 @@
 use core::ops::{BitAnd, BitOrAssign};
 
 use alloc_crate::{format, vec::Vec};
+use compact_str::CompactString;
 use hashbrown::hash_map::Entry;
-use lean_string::{LeanStr, ToLeanStr};
 
 use crate::{
 	decl::{
@@ -52,7 +52,7 @@ fn parse_import<'src>(cur: &mut Cursor<'src, '_>) -> Option<Import<'src>> {
 enum UnknownFeat<'_ref> {
 	Ignore,
 	Error,
-	Collect(&'_ref mut HashMap<LeanStr, UnresolvedKind>),
+	Collect(&'_ref mut HashMap<CompactString, UnresolvedKind>),
 }
 fn unkown_feat<'src>(
 	unkown: &mut UnknownFeat, feat: &Ident, group_ident: &Ident, cur: &mut StrCursor,
@@ -121,7 +121,7 @@ const RICH_FEATS: &[(&str, Rich)] = &[
 ];
 
 pub fn parse_profile(
-	cur: &mut StrCursor, unresolved: Option<&mut HashMap<LeanStr, UnresolvedKind>>,
+	cur: &mut StrCursor, unresolved: Option<&mut HashMap<CompactString, UnresolvedKind>>,
 	emit_unsupported: bool,
 ) -> (Profile, bool) {
 	let (mut obj, mut bin, mut decl, mut rich) = (None, None, None, None);
@@ -187,11 +187,11 @@ pub struct Scope<'src, 'prov> {
 
 	pub namespaces: HashMap<&'src str, DeclFileBox>,
 	pub unnamespaced: Vec<DeclFileBox>,
-	pub top: HashMap<LeanStr, (DeclNs, ItemId, u16)>,
+	pub top: HashMap<CompactString, (DeclNs, ItemId, u16)>,
 
 	pub generics: Vec<&'src str>,
 
-	pub unresolved: HashMap<LeanStr, UnresolvedKind>,
+	pub unresolved: HashMap<CompactString, UnresolvedKind>,
 	pub profile: Profile,
 }
 impl<'prov> Scope<'_, 'prov> {
@@ -306,12 +306,12 @@ fn add_specified_imports(
 		if let Ok(file) = &file {
 			let Some(def) = file.item_by_name(&item.val) else {
 				cur.error(format!("importing undefined item \"{item}\""), item.span);
-				scope.unresolved.insert(item.val.to_lean_str(), UnresolvedKind::Import);
+				scope.unresolved.insert(item.val.into(), UnresolvedKind::Import);
 				continue;
 			};
 			entry.insert_entry((file.ns(), def.id, def.generic_params().len() as u16));
 		} else {
-			scope.unresolved.insert(item.val.to_lean_str(), UnresolvedKind::Import);
+			scope.unresolved.insert(item.val.into(), UnresolvedKind::Import);
 		}
 	}
 }
@@ -339,7 +339,7 @@ fn add_import<'src>(
 		if let Ok(file) = file {
 			entry.insert_entry(file);
 		} else {
-			scope.unresolved.insert(ns.val.to_lean_str(), UnresolvedKind::NameSpace);
+			scope.unresolved.insert(ns.val.into(), UnresolvedKind::NameSpace);
 		}
 	} else if let Some(items) = items {
 		add_specified_imports(items, file, scope, cur);

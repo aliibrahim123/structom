@@ -6,8 +6,8 @@ use core::{
 };
 
 use alloc_crate::{boxed::Box, string::ToString, vec::Vec};
+use compact_str::CompactString;
 use hashbrown::{HashMap, hash_map::Entry};
-use lean_string::LeanStr;
 
 #[cfg(feature = "fs-provider")]
 use crate::parse::parse_decl_file;
@@ -84,7 +84,7 @@ pub enum AddError {
 #[derive(Debug, Clone, Default)]
 pub struct List {
 	files: Vec<DeclFileBox>,
-	name_index: HashMap<LeanStr, usize>,
+	name_index: HashMap<CompactString, usize>,
 	ns_index: HashMap<DeclNs, usize>,
 }
 impl List {
@@ -134,7 +134,7 @@ impl DeclProv for List {
 
 #[derive(Debug, Default, Clone)]
 struct ListIndex {
-	name_index: HashMap<LeanStr, usize>,
+	name_index: HashMap<CompactString, usize>,
 	ns_index: HashMap<DeclNs, usize>,
 }
 
@@ -218,7 +218,7 @@ impl DeclProv for GrowableList {
 pub struct BatchList {
 	start: u64,
 	files: Box<[DeclFileBox]>,
-	name_index: HashMap<LeanStr, usize>,
+	name_index: HashMap<CompactString, usize>,
 }
 impl BatchList {
 	pub fn new(files: impl IntoIterator<Item = DeclFileBox>) -> Result<Self, AddError> {

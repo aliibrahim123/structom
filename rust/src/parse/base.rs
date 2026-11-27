@@ -113,9 +113,8 @@ fn try_metadata(cur: &mut Cursor, ctx: MetaContext, metadata: &mut Metadata) {
 			cur.skip_block(Block::Paren);
 			continue;
 		}
-		let items: ThinVec<_> = cur
-			.try_delim_list(Block::Paren, |cur, _| parse_value(cur, true))
-			.unwrap_or_default();
+		let items: ThinVec<_> =
+			cur.try_delim_list(Block::Paren, |cur, _| todo!()).unwrap_or_default();
 		_ = metadata.add(ident.val, items);
 	}
 }

@@ -5,9 +5,11 @@ use core::ops::Index;
 #[cfg(feature = "rich-bitfield")]
 use crate::decl::{DeclProv, id::FieldId, resolve_item};
 #[cfg(feature = "rich-unitfield")]
-use crate::utils::HashMap;
+use crate::{decl::DeclNs, utils::HashMap};
+#[cfg(feature = "rich-unitfield")]
+use alloc_crate::io::ErrorKind::NetworkUnreachable;
 use alloc_crate::vec::Vec;
-use lean_string::LeanStr;
+use compact_str::CompactString;
 use thin_vec::ThinVec;
 
 use crate::{
@@ -19,7 +21,7 @@ use crate::{
 
 #[derive(Debug, Clone)]
 pub struct MetadataItem {
-	name: LeanStr,
+	name: CompactString,
 	params: ThinVec<Value>,
 }
 impl MetadataItem {
@@ -51,10 +53,10 @@ impl Metadata {
 	pub fn add(
 		&mut self, name: &str, params: impl IntoIterator<Item = Value>,
 	) -> Result<(), AssignError> {
-		self.add_lean(LeanStr::from(name), params.into_iter().collect())
+		self.add_compact(CompactString::from(name), params.into_iter().collect())
 	}
-	pub(crate) fn add_lean(
-		&mut self, name: LeanStr, params: ThinVec<Value>,
+	pub(crate) fn add_compact(
+		&mut self, name: CompactString, params: ThinVec<Value>,
 	) -> Result<(), AssignError> {
 		check_ident(&name)?;
 		self.0.push(MetadataItem { name, params });
@@ -106,7 +108,7 @@ pub(crate) struct RichCapabilities {
 	#[cfg(feature = "rich-unitfield")]
 	allow_unitfield: bool,
 	#[cfg(feature = "rich-unitfield")]
-	unitfield_target: UnitFieldTarget,
+	unitfield_type: u16,
 }
 
 #[derive(Debug, Clone)]
@@ -165,7 +167,8 @@ impl RichNotation {
 		if self.forms.iter().any(|form| matches!(form, Form::UnitField(_))) {
 			return Err(NotationError::Duplicate);
 		}
-		self.forms.push(Form::UnitField(UnitField::new(self.caps.unitfield_target)));
+		self.forms
+			.push(Form::UnitField(UnitField::new(ItemId(self.caps.unitfield_type))));
 		let Some(Form::UnitField(unitfield)) = self.forms.last_mut() else {
 			unreachable!()
 		};
@@ -234,18 +237,16 @@ fn set_unitfield_caps(target: RichTarget, caps: &mut RichCapabilities) {
 	if let RichTarget::Body(Body::Tagged(typeid)) = target
 		&& typeid.is_builtin()
 	{
-		(caps.allow_unitfield, caps.unitfield_target) = match typeid.item() {
-			ItemId::U8 | ItemId::U16 | ItemId::U32 | ItemId::U64 => {
-				(true, UnitFieldTarget::Uint)
-			}
-			ItemId::I8 | ItemId::I16 | ItemId::I32 | ItemId::I64 => {
-				(true, UnitFieldTarget::Int)
-			}
-			ItemId::F16 | ItemId::F32 | ItemId::F64 => (true, UnitFieldTarget::Float),
-			ItemId::BINT => (true, UnitFieldTarget::Bint),
-			ItemId::DEC => (true, UnitFieldTarget::Dec),
-			_ => (false, UnitFieldTarget::Uint),
-		}
+		#[rustfmt::skip]
+		if matches!(typeid.item(),
+			ItemId::U8 | ItemId::U16 | ItemId::U32 | ItemId::U64 |
+			ItemId::I8 | ItemId::I16 | ItemId::I32 | ItemId::I64 |
+			ItemId::F16 | ItemId::F32 | ItemId::F64 |
+			ItemId::BINT | ItemId::DEC
+		) {
+			caps.allow_unitfield = true;
+			caps.unitfield_type = typeid.item().value();
+		};
 	}
 }
 pub(crate) fn caps_of(target: RichTarget) -> RichCapabilities {
@@ -268,20 +269,20 @@ pub enum Form {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Reader(LeanStr);
+pub struct Reader(CompactString);
 impl Reader {
 	pub fn as_str(&self) -> &str {
 		self.0.as_str()
 	}
 }
-impl From<LeanStr> for Reader {
-	fn from(s: LeanStr) -> Self {
+impl From<CompactString> for Reader {
+	fn from(s: CompactString) -> Self {
 		Self(s)
 	}
 }
 impl From<&str> for Reader {
 	fn from(s: &str) -> Self {
-		Self(LeanStr::from(s))
+		Self(CompactString::from(s))
 	}
 }
 impl Display for Reader {
@@ -300,13 +301,13 @@ pub enum BitFieldType {
 #[cfg(feature = "rich-bitfield")]
 #[derive(Debug, Clone)]
 pub struct BitFieldField {
-	name: LeanStr,
+	name: CompactString,
 	id: FieldId,
 	type_: BitFieldType,
 }
 #[cfg(feature = "rich-bitfield")]
 impl BitFieldField {
-	fn new(name: LeanStr, id: FieldId, type_: BitFieldType) -> Self {
+	fn new(name: CompactString, id: FieldId, type_: BitFieldType) -> Self {
 		Self { name, id, type_ }
 	}
 	pub fn name(&self) -> &str {
@@ -336,10 +337,10 @@ impl BitField {
 	pub fn add(
 		&mut self, name: &str, type_: BitFieldType, prov: &dyn DeclProv,
 	) -> Result<FieldId, AssignError> {
-		self.add_lean(LeanStr::from(name), type_, prov)
+		self.add_compact(CompactString::from(name), type_, prov)
 	}
-	pub(crate) fn add_lean(
-		&mut self, name: LeanStr, type_: BitFieldType, prov: &dyn DeclProv,
+	pub(crate) fn add_compact(
+		&mut self, name: CompactString, type_: BitFieldType, prov: &dyn DeclProv,
 	) -> Result<FieldId, AssignError> {
 		check_ident(&name).map_err(|_| AssignError::InvalidName)?;
 		if self.fields.iter().any(|field| field.name == name) {
@@ -386,27 +387,17 @@ impl BitField {
 	}
 }
 
-#[derive(Debug, Default, Clone, Copy)]
-enum UnitFieldTarget {
-	#[default]
-	Uint,
-	Int,
-	Float,
-	Bint,
-	Dec,
-}
-
 #[cfg(feature = "rich-unitfield")]
 #[derive(Debug, Clone)]
 pub struct Unit {
-	names: Vec<LeanStr>,
+	names: Vec<CompactString>,
 	mult: Value,
 	min: Option<Value>,
 	max: Option<Value>,
 }
 #[cfg(feature = "rich-unitfield")]
 #[derive(Debug, Clone)]
-pub struct UnitNames<'a>(&'a [LeanStr]);
+pub struct UnitNames<'a>(&'a [CompactString]);
 #[cfg(feature = "rich-unitfield")]
 impl UnitNames<'_> {
 	pub fn len(&self) -> usize {
@@ -430,29 +421,36 @@ impl Index<usize> for UnitNames<'_> {
 #[cfg(feature = "rich-unitfield")]
 impl<'a> IntoIterator for UnitNames<'a> {
 	type Item = &'a str;
-	type IntoIter =
-		core::iter::Map<core::slice::Iter<'a, LeanStr>, fn(&'a LeanStr) -> &'a str>;
+	type IntoIter = core::iter::Map<
+		core::slice::Iter<'a, CompactString>,
+		fn(&'a CompactString) -> &'a str,
+	>;
 	fn into_iter(self) -> Self::IntoIter {
 		self.0.iter().map(|s| s.as_str())
 	}
 }
 
 #[cfg(feature = "rich-unitfield")]
-fn check_unit_value(value: &Value, target: UnitFieldTarget) -> Result<(), AssignError> {
+fn check_unit_value(value: &Value, target: ItemId) -> Result<(), AssignError> {
 	Ok(())
 }
 
 #[cfg(feature = "rich-unitfield")]
 impl Unit {
 	pub fn new<'a>(names: impl IntoIterator<Item = &'a str>, mult: Value) -> Self {
-		let names = names.into_iter().map(LeanStr::from).collect();
+		let names = names.into_iter().map(CompactString::from).collect();
 		Self { names, mult, min: None, max: None }
 	}
 	pub fn with_bounds<'a>(
 		names: impl IntoIterator<Item = &'a str>, mult: Value, min: Option<Value>,
 		max: Option<Value>,
 	) -> Self {
-		Self { names: names.into_iter().map(LeanStr::from).collect(), mult, min, max }
+		Self {
+			names: names.into_iter().map(CompactString::from).collect(),
+			mult,
+			min,
+			max,
+		}
 	}
 	pub fn names(&self) -> UnitNames<'_> {
 		UnitNames(&self.names)
@@ -471,22 +469,22 @@ impl Unit {
 #[cfg(feature = "rich-unitfield")]
 #[derive(Debug, Clone)]
 pub struct UnitField {
-	target: UnitFieldTarget,
+	unit_value: ItemId,
 	units: Vec<Unit>,
-	name_index: HashMap<LeanStr, u32>,
+	name_index: HashMap<CompactString, u32>,
 }
 #[cfg(feature = "rich-unitfield")]
 impl UnitField {
-	fn new(target: UnitFieldTarget) -> Self {
-		Self { target, units: Vec::new(), name_index: HashMap::default() }
+	fn new(unit_value: ItemId) -> Self {
+		Self { unit_value, units: Vec::new(), name_index: HashMap::default() }
 	}
 	pub fn add(&mut self, unit: Unit) -> Result<(), AssignError> {
-		check_unit_value(&unit.mult, self.target)?;
+		check_unit_value(&unit.mult, self.unit_value)?;
 		if let Some(min) = &unit.min {
-			check_unit_value(min, self.target)?;
+			check_unit_value(min, self.unit_value)?;
 		}
 		if let Some(max) = &unit.max {
-			check_unit_value(max, self.target)?;
+			check_unit_value(max, self.unit_value)?;
 		}
 
 		if unit.names.iter().any(|name| self.name_index.contains_key(name)) {
@@ -503,6 +501,9 @@ impl UnitField {
 	}
 	pub fn unit_count(&self) -> usize {
 		self.units.len()
+	}
+	pub fn unit_type(&self) -> TypeId {
+		TypeId::new_unchecked(DeclNs::BUILT_INS, self.unit_value)
 	}
 	pub fn units(&self) -> &[Unit] {
 		&self.units

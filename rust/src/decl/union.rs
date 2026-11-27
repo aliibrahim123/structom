@@ -1,4 +1,4 @@
-use lean_string::LeanStr;
+use compact_str::CompactString;
 
 use crate::decl::{
 	AssignError,
@@ -9,7 +9,7 @@ use crate::decl::{
 
 #[derive(Debug, Clone)]
 pub struct Variant {
-	name: LeanStr,
+	name: CompactString,
 	tag: VariantTag,
 	pub(crate) body: Option<Body>,
 	pub(crate) rich_notation: RichNotation,
@@ -20,10 +20,10 @@ impl Variant {
 	pub fn new(
 		name: &str, body: Option<Body>,
 	) -> Result<Self, (Option<Body>, AssignError)> {
-		Self::new_lean(LeanStr::from(name), body)
+		Self::new_compact(CompactString::from(name), body)
 	}
-	pub(crate) fn new_lean(
-		name: LeanStr, mut body: Option<Body>,
+	pub(crate) fn new_compact(
+		name: CompactString, mut body: Option<Body>,
 	) -> Result<Self, (Option<Body>, AssignError)> {
 		if let Some(Body::Fields(fields)) = &mut body
 			&& fields.finalize().is_err()
